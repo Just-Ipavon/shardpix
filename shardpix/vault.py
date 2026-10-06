@@ -304,7 +304,7 @@ def _read_share(path: Path, passphrase: str | None) -> shamir.Share | ImageOutco
     except UnsupportedImageError as exc:
         return ImageOutcome(path, Status.UNREADABLE, str(exc))
     except PayloadNotFoundError:
-        return ImageOutcome(path, Status.NO_PAYLOAD, "no share found (wrong passphrase?)")
+        return ImageOutcome(path, Status.NO_PAYLOAD, "no share: wrong passphrase or edited image")
     try:
         return shamir.Share.from_bytes(payload)
     except ShareFormatError as exc:
