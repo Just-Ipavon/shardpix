@@ -16,3 +16,5 @@ out/
 .DS_Store
 .idea/
 .vscode/
+.hypothesis/
+mutants/

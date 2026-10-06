@@ -24,9 +24,15 @@ Issues = "https://github.com/Just-Ipavon/shardpix/issues"
 
 [project.optional-dependencies]
 dev = [
+    "hypothesis>=6.100",
     "pytest>=8.0",
     "ruff>=0.5",
     "scipy>=1.10",
+]
+audit = [
+    "bandit>=1.7",
+    "mutmut>=3.0",
+    "pip-audit>=2.7",
 ]
 bench = [
     "matplotlib>=3.7",
@@ -38,6 +44,11 @@ shardpix = "shardpix.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["shardpix*"]
+
+[tool.mutmut]
+source_paths = ["shardpix/gf256.py", "shardpix/shamir.py", "shardpix/stego.py", "shardpix/vault.py"]
+tests_dir = ["tests/"]
+also_copy = ["shardpix/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
