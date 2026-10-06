@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [1.1.0] — 2026-10-06
+
+Internal security review: see [docs/06-security-review.md](docs/06-security-review.md).
+
+### Security
+
+- **SR-01** Passphrases are hardened with scrypt N = 2^17, r = 8, p = 1, the
+  first OWASP recommendation (was N = 2^15). The cost is stored in each image
+  (**stego format v3**), so it can be raised later without breaking images;
+  costs above 2^18 are refused before any key derivation.
+- **SR-03** Every output file is created exclusively (`O_CREAT | O_EXCL`):
+  no race between checking and writing, and dangling symbolic links are
+  never followed.
+
+### Fixed
+
+- **SR-02** `chi2_sf` no longer crashes on a subnormal statistic (found by
+  fuzzing).
+
+### Added
+
+- Property-based tests and parser fuzzing with Hypothesis
+  (`HYPOTHESIS_PROFILE=fuzz` for 3,000 cases per property).
+- 31 tests closing gaps found by mutation testing, including a known-answer
+  test for embedding without a passphrase.
+- `security` CI job: bandit, semgrep, pip-audit and the fuzzing profile.
+- `audit` extra, mutmut configuration, `SECURITY.md`.
+- A warning when `--method replacement` is used (**SR-05**).
+
+### Changed
+
+- Images made with 1.0.0 cannot be read by 1.1.0 (stego format v3).
+
 ## [1.0.0] — 2026-10-06
 
 ### Added
