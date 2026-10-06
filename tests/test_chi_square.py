@@ -45,9 +45,10 @@ class TestPairTest:
         assert chi_square.pair_test(combed_carrier.samples()).p_value < 0.01
 
     def test_full_lsb_replacement_is_flagged(self, combed_carrier):
-        payload = np.random.default_rng(3).bytes(stego.capacity(combed_carrier.n_samples))
-        full, _ = stego.embed(combed_carrier, payload, None, Method.REPLACEMENT)
-        assert chi_square.pair_test(full.samples()).p_value > 0.9
+        samples = combed_carrier.samples()
+        bits = np.random.default_rng(3).integers(0, 2, samples.size).astype(np.uint8)
+        full, _ = stego.write_bits(samples, np.arange(samples.size), bits, Method.REPLACEMENT)
+        assert chi_square.pair_test(full).p_value > 0.9
 
     def test_flat_image_has_too_few_categories(self):
         result = chi_square.pair_test(np.full(1000, 128, np.uint8))

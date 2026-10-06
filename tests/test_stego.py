@@ -11,9 +11,18 @@ from shardpix.errors import CapacityError, PayloadNotFoundError
 from shardpix.images import from_pil
 from shardpix.stego import Method, SampleOrder
 
-from .conftest import natural_image
+from .conftest import PRODUCTION_SCRYPT, natural_image
 
 PASSPHRASE = "correct horse battery staple"
+
+
+def frame_positions(samples: np.ndarray, passphrase: str | None, count: int) -> np.ndarray:
+    """Where the first ``count`` frame bits of an embedded image live (white-box helper)."""
+    eligible = stego.eligible_mask(samples)
+    salt_positions = stego._salt_positions(samples.size, eligible)
+    salt = np.packbits(stego.read_bits(samples, salt_positions)).tobytes()
+    key = stego.derive_key(passphrase, salt)
+    return stego._keyed_order(key, eligible, salt_positions).first(count)
 
 
 class TestRoundTrip:
@@ -32,7 +41,7 @@ class TestRoundTrip:
         assert stego.extract(stego_carrier, PASSPHRASE) == b""
 
     def test_payload_filling_the_whole_capacity(self, rgb_carrier):
-        payload = np.random.default_rng(1).bytes(stego.capacity(rgb_carrier.n_samples))
+        payload = np.random.default_rng(1).bytes(stego.carrier_capacity(rgb_carrier))
         stego_carrier, report = stego.embed(rgb_carrier, payload, PASSPHRASE)
         assert report.bits_written <= rgb_carrier.n_samples
         assert stego.extract(stego_carrier, PASSPHRASE) == payload
@@ -65,9 +74,8 @@ class TestAuthentication:
 
     def test_a_single_flipped_payload_bit_is_detected(self, rgb_carrier):
         stego_carrier, _ = stego.embed(rgb_carrier, b"integrity matters", PASSPHRASE)
-        key = stego.derive_key(PASSPHRASE, stego_carrier.geometry)
-        positions = SampleOrder(key.order, stego_carrier.n_samples).first(200)
         samples = stego_carrier.samples()
+        positions = frame_positions(samples, PASSPHRASE, 200)
         samples[positions[150]] ^= 1
         with pytest.raises(PayloadNotFoundError):
             stego.extract(stego_carrier.with_samples(samples), PASSPHRASE)
@@ -79,14 +87,15 @@ class TestAuthentication:
 
 
 class TestCapacity:
-    def test_capacity_accounts_for_the_frame_overhead(self):
-        assert stego.capacity(8 * 100) == 100 - stego.FRAME_OVERHEAD
+    def test_capacity_accounts_for_salt_fill_limit_and_overhead(self):
+        eligible = stego.SALT_BITS + stego.MAX_FILL * 8 * 100
+        assert stego.capacity(eligible) == 100 - stego.FRAME_OVERHEAD
 
     def test_capacity_is_never_negative(self):
         assert stego.capacity(10) == 0
 
     def test_oversized_payload_raises(self, rgb_carrier):
-        too_big = bytes(stego.capacity(rgb_carrier.n_samples) + 1)
+        too_big = bytes(stego.carrier_capacity(rgb_carrier) + 1)
         with pytest.raises(CapacityError, match="at most"):
             stego.embed(rgb_carrier, too_big, PASSPHRASE)
 
@@ -109,15 +118,58 @@ class TestDistortion:
     def test_report_rates(self, rgb_carrier):
         _, report = stego.embed(rgb_carrier, bytes(100), PASSPHRASE)
         assert report.frame_bytes == 100 + stego.FRAME_OVERHEAD
-        assert report.bits_written == 8 * report.frame_bytes
+        assert report.bits_written == 8 * (stego.SALT_BYTES + report.frame_bytes)
         assert report.embedding_rate == pytest.approx(report.bits_written / rgb_carrier.n_samples)
 
-    def test_matching_handles_saturated_samples(self):
-        white = from_pil(Image.fromarray(np.full((64, 64, 3), 255, np.uint8)))
-        black = from_pil(Image.fromarray(np.zeros((64, 64, 3), np.uint8)))
-        for carrier in (white, black):
-            stego_carrier, _ = stego.embed(carrier, bytes(range(256)), PASSPHRASE)
-            assert stego.extract(stego_carrier, PASSPHRASE) == bytes(range(256))
+    def test_fully_saturated_images_have_no_capacity(self):
+        for value in (0, 1, 254, 255):
+            carrier = from_pil(Image.fromarray(np.full((64, 64, 3), value, np.uint8)))
+            assert stego.carrier_capacity(carrier) == 0
+            with pytest.raises(CapacityError):
+                stego.embed(carrier, b"x", PASSPHRASE)
+
+
+class TestSaturation:
+    """Near-black and near-white samples are never used, and never created."""
+
+    @pytest.fixture
+    def clipped(self):
+        pixels = natural_image(128, 128, seed=3)
+        rng = np.random.default_rng(4)
+        clip = rng.random(pixels.shape) < 0.3
+        pixels[clip] = rng.choice(np.array([0, 1, 2, 253, 254, 255], np.uint8), clip.sum())
+        return from_pil(Image.fromarray(pixels))
+
+    @pytest.mark.parametrize("method", list(Method))
+    def test_round_trip_on_a_clipped_image(self, clipped, method):
+        payload = bytes(range(256)) * 4
+        stego_carrier, _ = stego.embed(clipped, payload, PASSPHRASE, method)
+        assert stego.extract(stego_carrier, PASSPHRASE) == payload
+
+    @pytest.mark.parametrize("method", list(Method))
+    def test_eligible_set_is_unchanged_by_embedding(self, clipped, method):
+        payload = bytes(stego.carrier_capacity(clipped))
+        stego_carrier, _ = stego.embed(clipped, payload, PASSPHRASE, method)
+        before = stego.eligible_mask(clipped.samples())
+        after = stego.eligible_mask(stego_carrier.samples())
+        assert np.array_equal(before, after)
+
+    def test_saturated_samples_are_never_touched(self, clipped):
+        payload = bytes(stego.carrier_capacity(clipped))
+        stego_carrier, _ = stego.embed(clipped, payload, PASSPHRASE)
+        excluded = ~stego.eligible_mask(clipped.samples())
+        assert np.array_equal(clipped.samples()[excluded], stego_carrier.samples()[excluded])
+
+    def test_capacity_counts_only_eligible_samples(self, clipped):
+        usable = int(stego.eligible_mask(clipped.samples()).sum())
+        assert usable < clipped.n_samples
+        assert stego.carrier_capacity(clipped) == stego.capacity(usable)
+
+    def test_boundary_moves_stay_inside_the_range(self):
+        samples = np.array([2, 2, 253, 253, 0, 255], dtype=np.uint8)
+        bits = np.array([1, 1, 0, 0, 1, 0], dtype=np.uint8)
+        out, _ = stego.write_bits(samples, np.arange(6), bits, Method.MATCHING, low=2, high=253)
+        assert out.tolist() == [3, 3, 252, 252, 1, 254]
 
 
 class TestSampleOrder:
@@ -150,22 +202,68 @@ class TestSampleOrder:
             order.first(11)
         assert order.first(0).size == 0
 
+    def test_eligibility_mask_restricts_and_preserves_order(self):
+        eligible = np.zeros(5000, dtype=bool)
+        eligible[::3] = True
+        full = SampleOrder(b"k" * 32, 5000).first(5000)
+        restricted = SampleOrder(b"k" * 32, 5000, eligible).first(200)
+        assert np.all(eligible[restricted])
+        assert np.array_equal(restricted, full[eligible[full]][:200])
+
+    def test_eligibility_mask_must_match(self):
+        with pytest.raises(ValueError):
+            SampleOrder(b"k" * 32, 10, np.ones(9, dtype=bool))
+
 
 class TestKeyDerivation:
+    SALT = bytes(range(16))
+
     def test_keys_depend_on_the_passphrase(self):
-        a = stego.derive_key("one", (10, 10, 3))
-        b = stego.derive_key("two", (10, 10, 3))
+        a = stego.derive_key("one", self.SALT)
+        b = stego.derive_key("two", self.SALT)
         assert a.order != b.order and a.aead != b.aead
 
-    def test_keys_depend_on_the_geometry(self):
-        a = stego.derive_key(PASSPHRASE, (10, 10, 3))
-        b = stego.derive_key(PASSPHRASE, (10, 11, 3))
-        assert a.order != b.order
+    def test_keys_depend_on_the_salt(self):
+        a = stego.derive_key(PASSPHRASE, self.SALT)
+        b = stego.derive_key(PASSPHRASE, bytes(16))
+        assert a.order != b.order and a.aead != b.aead
 
     def test_subkeys_are_independent(self):
-        key = stego.derive_key(PASSPHRASE, (10, 10, 3))
+        key = stego.derive_key(PASSPHRASE, self.SALT)
         assert key.order != key.aead
         assert key.keyed
 
     def test_public_key_is_flagged(self):
-        assert not stego.derive_key(None, (10, 10, 3)).keyed
+        assert not stego.derive_key(None, self.SALT).keyed
+
+    def test_salt_length_is_checked(self):
+        with pytest.raises(ValueError):
+            stego.derive_key(PASSPHRASE, b"short")
+
+    def test_same_passphrase_scatters_differently_in_every_image(self, large_carrier):
+        """Each embedding draws its own salt, hence its own keys and positions."""
+        first, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE)
+        second, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE)
+        a = frame_positions(first.samples(), PASSPHRASE, 400)
+        b = frame_positions(second.samples(), PASSPHRASE, 400)
+        assert len(np.intersect1d(a, b)) < 40
+
+    def test_production_scrypt_cost(self):
+        """Tests run with a cheaper cost; make sure the shipped one is what the docs claim."""
+        assert PRODUCTION_SCRYPT == (2**15, 8, 1)
+
+
+class TestImageModes:
+    @pytest.mark.parametrize("channels", [1, 2, 3, 4])
+    def test_round_trip_in_every_mode(self, channels):
+        base = natural_image(64, 80, channels=min(channels, 3), seed=5)
+        if channels == 2:
+            base = np.dstack([base[..., 0], np.full((64, 80), 200, np.uint8)])
+        elif channels == 4:
+            base = np.dstack([base, np.full((64, 80), 200, np.uint8)])
+        array = base[..., 0] if channels == 1 else base
+        carrier = from_pil(Image.fromarray(array))
+        stego_carrier, _ = stego.embed(carrier, b"every mode", PASSPHRASE)
+        assert stego.extract(stego_carrier, PASSPHRASE) == b"every mode"
+        if channels in (2, 4):
+            assert np.array_equal(stego_carrier.pixels[..., -1], carrier.pixels[..., -1])

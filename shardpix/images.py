@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .errors import UnsupportedImageError
+from .errors import ShardpixError, UnsupportedImageError
 
 LOSSLESS_SUFFIXES = frozenset({".png"})
 
@@ -28,6 +28,18 @@ class Carrier:
     pixels: np.ndarray
     mode: str
     icc_profile: bytes | None = None
+    source_format: str | None = None
+    """File format the carrier was read from (``"PNG"``, ``"JPEG"``, ...), if known."""
+
+    @property
+    def from_jpeg(self) -> bool:
+        """True when the pixels come from a decoded JPEG.
+
+        Decoded JPEG pixels obey the 8x8 block quantisation of the original
+        file; changing them by +-1 breaks that structure, which "JPEG
+        compatibility" steganalysis can detect at any embedding rate.
+        """
+        return self.source_format in {"JPEG", "MPO"}
 
     @property
     def colour_channels(self) -> int:
@@ -81,11 +93,12 @@ def _normalise_mode(image: Image.Image) -> Image.Image:
 def from_pil(image: Image.Image) -> Carrier:
     """Build a carrier from an already opened Pillow image."""
     icc = image.info.get("icc_profile")
+    source_format = image.format
     image = _normalise_mode(image)
     pixels = np.array(image, dtype=np.uint8)
     if pixels.ndim == 2:
         pixels = pixels[..., np.newaxis]
-    return Carrier(pixels=pixels, mode=image.mode, icc_profile=icc)
+    return Carrier(pixels=pixels, mode=image.mode, icc_profile=icc, source_format=source_format)
 
 
 def load_image(path: str | Path) -> Carrier:
@@ -97,6 +110,8 @@ def load_image(path: str | Path) -> Carrier:
             return from_pil(image)
     except FileNotFoundError as exc:
         raise UnsupportedImageError(f"{path}: no such file") from exc
+    except Image.DecompressionBombError as exc:
+        raise UnsupportedImageError(f"{path}: image is too large ({exc})") from exc
     except (OSError, SyntaxError, ValueError) as exc:
         raise UnsupportedImageError(f"{path}: not a readable image ({exc})") from exc
 
@@ -125,4 +140,7 @@ def save_png(carrier: Carrier, path: str | Path) -> None:
     params: dict[str, object] = {"optimize": True}
     if carrier.icc_profile:
         params["icc_profile"] = carrier.icc_profile
-    to_pil(carrier).save(path, format="PNG", **params)
+    try:
+        to_pil(carrier).save(path, format="PNG", **params)
+    except OSError as exc:
+        raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc

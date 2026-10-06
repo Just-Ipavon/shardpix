@@ -15,7 +15,16 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from shardpix import stego
 from shardpix.images import Carrier, from_pil
+
+PRODUCTION_SCRYPT = (stego.SCRYPT_N, stego.SCRYPT_R, stego.SCRYPT_P)
+
+
+@pytest.fixture(autouse=True)
+def fast_scrypt(monkeypatch):
+    """Use a cheap scrypt cost in tests; the real cost is checked in test_stego."""
+    monkeypatch.setattr(stego, "SCRYPT_N", 2**10)
 
 
 def natural_image(
@@ -52,6 +61,16 @@ def combed_image(height: int = 256, width: int = 256, seed: int = 7) -> np.ndarr
     return (base & 0xFE) | odd
 
 
+def processed_image(height: int = 96, width: int = 128, seed: int = 1) -> np.ndarray:
+    """A synthetic photograph after a contrast stretch, as most real photos have had.
+
+    Neither the chi-square attack nor RS analysis flags it, which makes it a
+    reliable clean cover for end-to-end tests.
+    """
+    base = natural_image(height, width, seed=seed).astype(np.float64)
+    return np.clip(np.round((base - 20) * 1.3), 0, 255).astype(np.uint8)
+
+
 @pytest.fixture
 def rgb_carrier() -> Carrier:
     return from_pil(Image.fromarray(natural_image()))
@@ -70,7 +89,7 @@ def combed_carrier() -> Carrier:
 @pytest.fixture
 def cover_png(tmp_path: Path) -> Path:
     path = tmp_path / "cover.png"
-    Image.fromarray(combed_image(96, 128)).save(path)
+    Image.fromarray(processed_image()).save(path)
     return path
 
 
