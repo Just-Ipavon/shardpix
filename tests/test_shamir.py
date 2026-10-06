@@ -210,13 +210,78 @@ class TestMixedSplits:
         assert recovery.rejected[0].share == stranger
         assert "different split" in recovery.rejected[0].reason
 
-    def test_no_majority_between_two_splits(self, shares):
+    def test_two_incomplete_splits_are_insufficient(self, shares):
         others = shamir.split(os.urandom(32), 3, 5)
-        with pytest.raises(InconsistentSharesError, match="no majority"):
+        with pytest.raises(InsufficientSharesError, match="need 3"):
             shamir.combine([*shares[:2], *others[:2]])
+
+    def test_two_complete_splits_must_be_combined_separately(self, shares):
+        others = shamir.split(os.urandom(32), 3, 5)
+        with pytest.raises(InconsistentSharesError, match="different splits"):
+            shamir.combine([*shares[:3], *others[:4]])
+
+    def test_recover_all_returns_every_split(self, shares):
+        other_secret = os.urandom(32)
+        others = shamir.split(other_secret, 3, 5)
+        recoveries = shamir.recover_all([*shares[:3], *others[:4]])
+        assert [r.secret for r in recoveries] == [other_secret, SECRET]
 
     def test_rejections_are_reported_on_failure(self, shares):
         stranger = shamir.split(os.urandom(32), 3, 5)[0]
         with pytest.raises(InsufficientSharesError) as exc:
             shamir.combine([*shares[:2], stranger])
         assert exc.value.rejected[0].share == stranger
+
+
+def forge_cluster(genuine: list[Share], count: int, threshold: int) -> list[Share]:
+    """Shares that authenticate each other, made by someone who only knows the group id."""
+    fake = shamir.split(
+        os.urandom(genuine[0].secret_length), threshold, count, group_id=genuine[0].group_id
+    )
+    return fake
+
+
+class TestRobustSearch:
+    def test_a_bad_share_listed_first_does_not_exhaust_the_search(self):
+        shares = shamir.split(SECRET, 6, 20)
+        bad = flip_first_value_byte(shares[0])
+        recovery = shamir.combine([bad, *shares[1:]])
+        assert recovery.secret == SECRET
+        assert [r.share for r in recovery.rejected] == [bad]
+
+    @pytest.mark.parametrize("threshold,count", [(5, 30), (4, 45)])
+    def test_large_splits_with_one_bad_share(self, threshold, count):
+        shares = shamir.split(SECRET, threshold, count)
+        assert shamir.combine([flip_first_value_byte(shares[0]), *shares[1:]]).secret == SECRET
+
+    def test_a_flood_of_shares_reusing_one_index(self):
+        shares = shamir.split(SECRET, 8, 10)
+        flood = [tamper(shares[0], value=os.urandom(len(shares[0].value))) for _ in range(40)]
+        recovery = shamir.combine([*flood, *shares])
+        assert recovery.secret == SECRET
+        assert len(recovery.rejected) == 40
+
+    def test_fabricated_set_loses_to_a_larger_genuine_set(self, shares):
+        forged = forge_cluster(shares, 3, 3)
+        recovery = shamir.combine([*forged, *shares])
+        assert recovery.secret == SECRET
+        reasons = {r.reason for r in recovery.rejected}
+        assert reasons == {"authenticates a different secret: one of the two sets is forged"}
+
+    def test_fabricated_set_of_equal_size_is_ambiguous(self, shares):
+        forged = forge_cluster(shares, 3, 3)
+        with pytest.raises(InconsistentSharesError, match="one of the two sets is forged"):
+            shamir.combine([*forged, *shares[:3]])
+
+    def test_recover_all_lists_both_candidates(self, shares):
+        forged = forge_cluster(shares, 3, 3)
+        recoveries = shamir.recover_all([*forged, *shares[:3]])
+        assert len(recoveries) == 2
+        assert SECRET in {r.secret for r in recoveries}
+
+    def test_gives_up_cleanly_when_the_budget_runs_out(self, monkeypatch):
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", 5)
+        shares = shamir.split(SECRET, 3, 12)
+        broken = [flip_first_value_byte(s) for s in shares[:10]] + shares[10:]
+        with pytest.raises(ShareAuthenticationError, match="gave up"):
+            shamir.combine(broken)

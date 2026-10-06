@@ -14,10 +14,14 @@ itself would hand anyone holding a single share an offline oracle for
 guessing low-entropy secrets; sharing the key keeps ``k - 1`` shares
 independent of the secret.
 
-With more than ``k`` shares available, reconstruction tries ``k``-subsets until
-one is confirmed by its own MACs, then checks every other share against the
-recovered key - so corrupted or forged shares are not just detected but
-identified.
+Reconstruction looks for *clusters*: sets of shares that interpolate to a
+secret and MAC key under which every one of them verifies. A share verifies
+under one MAC key only, so clusters never overlap. Genuine shares form one
+cluster; a damaged share forms none; someone who fabricates ``k`` mutually
+consistent shares forms a second, separate cluster. The largest cluster
+wins, a tie is reported as ambiguous, and every other share is identified
+and reported with a reason. A caller holding an independent check - the
+vault's AES-GCM tag - can instead try every cluster in turn.
 
 Binary share format (big-endian)::
 
@@ -43,9 +47,9 @@ import hashlib
 import hmac
 import itertools
 import os
-from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
+from typing import NoReturn
 
 import numpy as np
 
@@ -245,82 +249,169 @@ def _interpolate(shares: tuple[Share, ...]) -> tuple[bytes, bytes]:
     return shared[:length], shared[length:]
 
 
-def _majority(values: Iterable[object], what: str, rejected: list[Rejection]) -> object:
-    counts = Counter(values).most_common()
-    if len(counts) > 1 and counts[0][1] == counts[1][1]:
-        raise InconsistentSharesError(
-            f"shares disagree on their {what} and there is no majority", tuple(rejected)
+def _candidate_subsets(pool: list[Share], k: int) -> Iterator[tuple[Share, ...]]:
+    """Candidate ``k``-subsets with distinct indices, most promising first.
+
+    Disjoint blocks come first: if fewer shares are bad than there are
+    blocks, some block is entirely good, so a 6-of-20 split with one damaged
+    share is recovered at the second subset instead of after thousands. Then
+    every choice of ``k`` indices is tried with every choice of one share per
+    index, so a flood of shares reusing one index costs one extra attempt per
+    impostor rather than an explosion of combinations.
+    """
+    by_index: dict[int, list[Share]] = {}
+    for share in pool:
+        by_index.setdefault(share.index, []).append(share)
+    firsts = [members[0] for members in by_index.values()]
+    blocks = [tuple(firsts[i : i + k]) for i in range(0, len(firsts) - k + 1, k)]
+    yield from blocks
+    tried = set(blocks)
+    for indices in itertools.combinations(by_index, k):
+        for subset in itertools.product(*(by_index[i] for i in indices)):
+            if subset not in tried:
+                yield subset
+
+
+@dataclass
+class _Budget:
+    remaining: int
+    exhausted: bool = False
+
+
+def _find_cluster(
+    pool: list[Share], k: int, budget: _Budget
+) -> tuple[tuple[Share, ...], bytes, bytes] | None:
+    """A ``k``-subset of ``pool`` whose shares all verify under its own MAC key."""
+    if len({s.index for s in pool}) < k:
+        return None
+    for subset in _candidate_subsets(pool, k):
+        if budget.remaining <= 0:
+            budget.exhausted = True
+            return None
+        budget.remaining -= 1
+        secret, mac_key = _interpolate(subset)
+        if all(s.verify(mac_key) for s in subset):
+            return subset, secret, mac_key
+    return None
+
+
+def recover_all(shares: Iterable[Share]) -> list[Recovery]:
+    """Every secret that some ``threshold`` of the shares authenticate, best supported first.
+
+    Shares are grouped by split (group id, threshold and secret length), and
+    clusters are searched for in each group. Each :class:`Recovery` lists the
+    shares of its own cluster as used or confirmed, and every other share as
+    rejected with a reason.
+    """
+    unique: dict[bytes, Share] = {}
+    for share in shares:
+        unique.setdefault(share.to_bytes(), share)
+    if not unique:
+        raise InsufficientSharesError("no shares given")
+
+    groups: dict[tuple[bytes, int, int], list[Share]] = {}
+    for share in unique.values():
+        groups.setdefault((share.group_id, share.threshold, share.secret_length), []).append(share)
+
+    budget = _Budget(MAX_SUBSETS)
+    clusters: list[tuple[tuple[Share, ...], list[Share], bytes]] = []
+    for (_, threshold, _), members in groups.items():
+        pool = list(members)
+        while (found := _find_cluster(pool, threshold, budget)) is not None:
+            subset, secret, mac_key = found
+            cluster = [s for s in pool if s in subset or s.verify(mac_key)]
+            clusters.append((subset, cluster, secret))
+            pool = [s for s in pool if s not in cluster]
+
+    if not clusters:
+        _raise_no_cluster(list(unique.values()), groups, budget)
+
+    clusters.sort(key=lambda c: len(c[1]), reverse=True)
+    recoveries = []
+    for subset, cluster, secret in clusters:
+        rejected = []
+        for share in unique.values():
+            if share in cluster:
+                continue
+            if share.group_id != subset[0].group_id:
+                reason = "belongs to a different split"
+            elif share.threshold != subset[0].threshold:
+                reason = "threshold differs from the other shares"
+            elif share.secret_length != subset[0].secret_length:
+                reason = "secret length differs from the other shares"
+            elif any(share in other for _, other, _ in clusters):
+                reason = "authenticates a different secret: one of the two sets is forged"
+            else:
+                reason = "failed authentication: corrupted or forged"
+            rejected.append(Rejection(share, reason))
+        recoveries.append(
+            Recovery(
+                secret=secret,
+                group_id=subset[0].group_id,
+                threshold=subset[0].threshold,
+                used=subset,
+                confirmed=tuple(s for s in cluster if s not in subset),
+                rejected=tuple(rejected),
+            )
         )
-    return counts[0][0]
+    return recoveries
+
+
+def _raise_no_cluster(
+    shares: list[Share], groups: dict[tuple[bytes, int, int], list[Share]], budget: _Budget
+) -> NoReturn:
+    best = max(groups.values(), key=lambda members: len({s.index for s in members}))
+    threshold = best[0].threshold
+    distinct = len({s.index for s in best})
+    rejected = tuple(
+        Rejection(s, "failed authentication: corrupted or forged")
+        for s in best
+        if distinct >= threshold
+    )
+    if budget.exhausted:
+        raise ShareAuthenticationError(
+            f"gave up after {MAX_SUBSETS} combinations without finding {threshold} shares "
+            "that authenticate each other",
+            rejected,
+        )
+    if distinct < threshold:
+        others = tuple(
+            Rejection(s, "belongs to a different split") for s in shares if s not in best
+        )
+        raise InsufficientSharesError(
+            f"need {threshold} shares with distinct indices, have {distinct}", others
+        )
+    raise ShareAuthenticationError(
+        f"no {threshold} of the {len(best)} shares authenticate each other: "
+        "too many of them are corrupted or forged",
+        rejected,
+    )
 
 
 def combine(shares: Iterable[Share]) -> Recovery:
     """Recover the secret from a collection of shares.
 
-    Shares from a different split, or whose threshold or secret length
-    disagree with the majority, are set aside. The remaining shares are tried
-    ``threshold`` at a time until a subset reconstructs a MAC key that confirms
-    every share in it; all other shares are then verified against that key.
+    Returns the recovery supported by the most shares. If two different
+    secrets are each supported by the same number of shares there is no way
+    to tell the genuine one from a forgery, and
+    :class:`InconsistentSharesError` is raised - as it is when shares of two
+    unrelated splits could each be recovered.
     """
-    unique: dict[bytes, Share] = {}
-    for share in shares:
-        unique.setdefault(share.to_bytes(), share)
-    candidates = list(unique.values())
-    if not candidates:
-        raise InsufficientSharesError("no shares given")
-
-    rejected: list[Rejection] = []
-
-    def keep_majority(attribute: str, what: str, reason: str) -> None:
-        nonlocal candidates
-        winner = _majority((getattr(s, attribute) for s in candidates), what, rejected)
-        rejected.extend(Rejection(s, reason) for s in candidates if getattr(s, attribute) != winner)
-        candidates = [s for s in candidates if getattr(s, attribute) == winner]
-
-    keep_majority("group_id", "group id", "belongs to a different split")
-    keep_majority("threshold", "threshold", "threshold differs from the other shares")
-    keep_majority("secret_length", "secret length", "secret length differs from the other shares")
-
-    threshold = candidates[0].threshold
-    distinct = {s.index for s in candidates}
-    if len(distinct) < threshold:
-        raise InsufficientSharesError(
-            f"need {threshold} shares with distinct indices, have {len(distinct)}",
-            tuple(rejected),
+    recoveries = recover_all(shares)
+    groups = {r.group_id for r in recoveries}
+    if len(groups) > 1:
+        raise InconsistentSharesError(
+            f"the shares come from {len(groups)} different splits that can each be recovered; "
+            "combine them separately",
+            recoveries[0].rejected,
         )
-
-    tried = 0
-    for subset in itertools.combinations(candidates, threshold):
-        if len({s.index for s in subset}) < threshold:
-            continue
-        tried += 1
-        if tried > MAX_SUBSETS:
-            raise ShareAuthenticationError(
-                f"gave up after {MAX_SUBSETS} combinations without finding {threshold} shares "
-                "that authenticate each other",
-                tuple(rejected),
+    if len(recoveries) > 1:
+        first, second = recoveries[0], recoveries[1]
+        support = len(first.used) + len(first.confirmed)
+        if support == len(second.used) + len(second.confirmed):
+            raise InconsistentSharesError(
+                f"two different secrets are each authenticated by {support} shares; "
+                "one of the two sets is forged and there is no way to tell which",
+                first.rejected,
             )
-        secret, mac_key = _interpolate(subset)
-        if not all(s.verify(mac_key) for s in subset):
-            continue
-        others = [s for s in candidates if s not in subset]
-        confirmed = tuple(s for s in others if s.verify(mac_key))
-        rejected.extend(
-            Rejection(s, "failed authentication: corrupted or forged")
-            for s in others
-            if s not in confirmed
-        )
-        return Recovery(
-            secret=secret,
-            group_id=subset[0].group_id,
-            threshold=threshold,
-            used=subset,
-            confirmed=confirmed,
-            rejected=tuple(rejected),
-        )
-
-    raise ShareAuthenticationError(
-        f"no {threshold} of the {len(candidates)} shares authenticate each other: "
-        "too many of them are corrupted or forged",
-        tuple(rejected),
-    )
+    return recoveries[0]
