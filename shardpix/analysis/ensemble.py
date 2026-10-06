@@ -142,13 +142,12 @@ def train(
         # upward from a small subspace and stops when the OOB error rises.
         cap = max(2, min(d, n // 2))
         subspace_dims = tuple(sorted({max(2, min(cap, k)) for k in (50, 100, 200, 400, 800)}))
-    best: tuple[float, int] | None = None
+    best = (float("inf"), min(subspace_dims[0], d))
     for dim in subspace_dims:
         dim = min(dim, d)
         _, oob = _train_learners(x0, x1, dim, max(11, learners // 3), rng)
-        if best is None or oob < best[0]:
+        if oob < best[0]:
             best = (oob, dim)
-    assert best is not None
     trained, oob = _train_learners(x0, x1, best[1], learners, rng)
     return Ensemble(trained, best[1], oob, mean, scale)
 
