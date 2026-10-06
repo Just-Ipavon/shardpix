@@ -38,6 +38,10 @@ bench = [
     "matplotlib>=3.7",
     "scikit-image>=0.22",
 ]
+ml = [
+    "matplotlib>=3.7",
+    "torch>=2.2",
+]
 
 [project.scripts]
 shardpix = "shardpix.cli:main"
