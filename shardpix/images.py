@@ -126,7 +126,7 @@ def to_pil(carrier: Carrier) -> Image.Image:
 
 
 def save_png(carrier: Carrier, path: str | Path) -> None:
-    """Write a carrier as a lossless PNG.
+    """Write a carrier as a lossless PNG (default zlib level; ``optimize`` costs 8x the time).
 
     Any lossy format would re-quantise the samples and destroy the payload,
     so anything but ``.png`` is refused rather than silently converted.
@@ -137,7 +137,7 @@ def save_png(carrier: Carrier, path: str | Path) -> None:
             f"{path.name}: output must be a .png file; lossy formats such as JPEG "
             "re-compress the pixels and destroy the payload"
         )
-    params: dict[str, object] = {"optimize": True}
+    params: dict[str, object] = {}
     if carrier.icc_profile:
         params["icc_profile"] = carrier.icc_profile
     try:
