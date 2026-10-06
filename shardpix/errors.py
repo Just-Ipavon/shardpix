@@ -50,3 +50,15 @@ class InconsistentSharesError(ShareError):
 
 class ShareAuthenticationError(ShareError):
     """No set of shares reconstructs a secret that their MACs confirm."""
+
+
+class VaultError(ShardpixError):
+    """A vault cannot be sealed or opened.
+
+    ``outcomes`` describes what happened to each image, so the caller can
+    report it even when opening fails.
+    """
+
+    def __init__(self, message: str, outcomes: tuple = ()) -> None:
+        super().__init__(message)
+        self.outcomes = outcomes

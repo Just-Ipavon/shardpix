@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 
+import numpy as np
 import pytest
+from PIL import Image
 
-from shardpix import cli
+from shardpix import cli, stego
+from shardpix.images import load_image
 
 
 def run(*argv: str) -> int:
@@ -113,7 +116,24 @@ class TestOtherCommands:
 
     def test_analyze_clean_image(self, cover_png, capsys):
         assert run("analyze", cover_png, "--steps", "20") == 0
-        assert "No sequential LSB replacement detected" in capsys.readouterr().out
+        assert "No LSB replacement detected" in capsys.readouterr().out
+
+    def test_analyze_flags_lsb_replacement(self, cover_png, tmp_path, capsys):
+        carrier = load_image(cover_png)
+        samples = carrier.samples()
+        bits = np.random.default_rng(0).integers(0, 2, samples.size).astype(np.uint8)
+        replaced, _ = stego.write_bits(
+            samples,
+            np.arange(samples.size // 2),
+            bits[: samples.size // 2],
+            stego.Method.REPLACEMENT,
+        )
+        path = tmp_path / "suspicious.png"
+        Image.fromarray(carrier.with_samples(replaced).pixels).save(path)
+        assert run("analyze", path, "--steps", "20") == 0
+        out = capsys.readouterr().out
+        assert "Suspicious" in out
+        assert "RS suggests" in out
 
     def test_missing_image(self, tmp_path, capsys):
         assert run("capacity", tmp_path / "missing.png") == 1
@@ -198,3 +218,142 @@ class TestSplitCombine:
         )
         assert run("split", "-t", "x", "-k", "2", "-n", "2", "-d", directory) == 1
         assert (directory / f"share-{group}-1.txt").read_text() == "existing"
+
+
+class TestVaultCommands:
+    @pytest.fixture
+    def covers(self, tmp_path):
+        from .conftest import processed_image
+
+        paths = []
+        for i in range(4):
+            path = tmp_path / f"photo{i}.png"
+            Image.fromarray(processed_image(64, 80, seed=20 + i)).save(path)
+            paths.append(path)
+        return paths
+
+    def test_seal_and_unseal(self, tmp_path, covers, passphrase_file, capsys, monkeypatch):
+        secret = tmp_path / "notes.txt"
+        secret.write_text("the treasure is under the oak")
+        out = tmp_path / "sealed"
+        assert (
+            run("seal", secret, *covers, "-k", "3", "-d", out, "--passphrase-file", passphrase_file)
+            == 0
+        )
+        assert "any 3 of these 4 images" in capsys.readouterr().out
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "notes.txt").unlink()
+        images = [out / f"photo{i}.png" for i in (0, 2, 3)]
+        assert (
+            run("unseal", out / "notes.txt.spx", *images, "--passphrase-file", passphrase_file) == 0
+        )
+        assert (tmp_path / "notes.txt").read_text() == "the treasure is under the oak"
+        assert "Recovered notes.txt" in capsys.readouterr().out
+
+    def test_unseal_failure_reports_each_image(self, tmp_path, covers, passphrase_file, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        out = tmp_path / "sealed"
+        run("seal", secret, *covers, "-k", "3", "-d", out, "--passphrase-file", passphrase_file)
+        capsys.readouterr()
+        images = [out / "photo0.png", covers[1]]
+        result = run(
+            "unseal",
+            out / "s.txt.spx",
+            *images,
+            "--passphrase-file",
+            passphrase_file,
+            "-o",
+            tmp_path / "r.txt",
+        )
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "no payload" in err
+        assert "need 3 shares" in err
+
+    def test_inspect_shows_the_share(self, tmp_path, covers, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        run("seal", secret, *covers[:2], "-k", "2", "-d", tmp_path / "sealed")
+        capsys.readouterr()
+        assert run("inspect", tmp_path / "sealed" / "photo1.png") == 0
+        out = capsys.readouterr().out
+        assert "shardpix share" in out
+        assert "#2" in out
+
+    def test_inspect_plain_payload(self, cover_png, tmp_path, capsys):
+        stego_path = tmp_path / "s.png"
+        run("embed", cover_png, "-o", stego_path, "-t", "hello")
+        capsys.readouterr()
+        assert run("inspect", stego_path) == 0
+        assert "not a share" in capsys.readouterr().out
+
+    def test_seal_rejects_bad_threshold(self, tmp_path, covers, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        assert run("seal", secret, *covers, "-k", "9", "-d", tmp_path / "o") == 1
+        assert "threshold" in capsys.readouterr().err
+
+
+class TestCleanErrors:
+    """Every expected failure ends with a one-line error and exit code 1, never a traceback."""
+
+    def test_output_in_a_missing_directory(self, cover_png, tmp_path, capsys):
+        assert run("embed", cover_png, "-o", tmp_path / "missing" / "s.png", "-t", "x") == 1
+        assert "error:" in capsys.readouterr().err
+
+    def test_output_is_a_directory(self, cover_png, tmp_path, capsys):
+        assert run("extract", cover_png, "-o", tmp_path) == 1
+        assert "is a directory" in capsys.readouterr().err
+
+    def test_too_many_shares(self, capsys):
+        assert run("split", "-t", "x", "-k", "2", "-n", "300") == 1
+        assert "at most 255" in capsys.readouterr().err
+
+    def test_passphrase_file_not_utf8(self, cover_png, tmp_path, capsys):
+        bad = tmp_path / "bad.txt"
+        bad.write_bytes(b"\xff\xfe\xfa")
+        assert (
+            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "--passphrase-file", bad)
+            == 1
+        )
+        assert "not valid UTF-8" in capsys.readouterr().err
+
+    def test_passphrase_file_with_bom(self, tmp_path):
+        path = tmp_path / "bom.txt"
+        path.write_bytes(b"\xef\xbb\xbfsecret\n")
+        args = argparse.Namespace(passphrase=False, passphrase_file=path)
+        assert cli.read_passphrase(args, confirm=False) == "secret"
+
+    def test_analyze_tiny_image(self, tmp_path, capsys):
+        path = tmp_path / "tiny.png"
+        Image.fromarray(np.full((10, 3, 3), 100, np.uint8)).save(path)
+        assert run("analyze", path) == 0
+        assert "not applicable" in capsys.readouterr().out
+
+    def test_decompression_bomb(self, cover_png, monkeypatch, capsys):
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+        assert run("capacity", cover_png) == 1
+        assert "too large" in capsys.readouterr().err
+
+    def test_combine_never_overwrites_its_input(self, tmp_path, capsys):
+        assert run("split", "-t", "x", "-k", "2", "-n", "2") == 0
+        shares = tmp_path / "all.txt"
+        shares.write_text(capsys.readouterr().out)
+        assert run("combine", shares, "-o", shares, "--force") == 1
+        assert shares.read_text().startswith("spx1-")
+
+    def test_split_into_a_file_path(self, tmp_path, capsys):
+        file = tmp_path / "file"
+        file.write_text("x")
+        assert run("split", "-t", "x", "-k", "2", "-n", "2", "-d", file) == 1
+        assert "error:" in capsys.readouterr().err
+
+    def test_jpeg_cover_warning(self, tmp_path, capsys):
+        from .conftest import processed_image
+
+        jpeg = tmp_path / "photo.jpg"
+        Image.fromarray(processed_image()).save(jpeg, quality=90)
+        assert run("embed", jpeg, "-o", tmp_path / "s.png", "-t", "x") == 0
+        assert "JPEG-compatibility" in capsys.readouterr().out
