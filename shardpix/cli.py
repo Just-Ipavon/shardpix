@@ -15,7 +15,7 @@ from rich.table import Table
 from . import __version__, shamir, stego, vault
 from .analysis import chi_square, rs
 from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
-from .images import load_image, save_png
+from .images import load_image, save_png, write_new
 
 DESCRIPTION = (
     "Encrypt a file and split its key into shares hidden in ordinary-looking images: "
@@ -29,6 +29,11 @@ JPEG_WARNING = (
     "[yellow]warning:[/] {names} decoded from JPEG. Changing a decoded JPEG by +-1 breaks its "
     "8x8 block structure, which JPEG-compatibility steganalysis can detect at any rate; "
     "prefer covers that were never JPEG-compressed (PNG screenshots, RAW exports)."
+)
+
+REPLACEMENT_WARNING = (
+    "[yellow]warning:[/] --method replacement is detectable by chi-square and RS analysis; "
+    "it exists for comparisons, use the default for anything real."
 )
 
 RS_ALERT = 0.10
@@ -214,7 +219,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
     carrier = load_image(args.cover)
     passphrase = read_passphrase(args, confirm=True)
     stego_carrier, report = stego.embed(carrier, payload, passphrase, stego.Method(args.method))
-    save_png(stego_carrier, args.output)
+    save_png(stego_carrier, args.output, overwrite=args.force)
 
     console.print(
         _key_value_table(
@@ -240,6 +245,8 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
         )
     if carrier.from_jpeg:
         console.print(JPEG_WARNING.format(names=f"{escape(str(args.cover))} was"))
+    if args.method == stego.Method.REPLACEMENT.value:
+        console.print(REPLACEMENT_WARNING)
     return 0
 
 
@@ -252,7 +259,7 @@ def cmd_extract(args: argparse.Namespace, console: Console) -> int:
         sys.stdout.buffer.write(payload)
         sys.stdout.buffer.flush()
         return 0
-    args.output.write_bytes(payload)
+    write_new(args.output, payload, overwrite=args.force)
     console.print(f"Extracted {len(payload):,} bytes to [bold]{escape(str(args.output))}[/]")
     return 0
 
@@ -362,6 +369,8 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     if jpegs:
         verb = "was" if len(jpegs) == 1 else "were"
         console.print(JPEG_WARNING.format(names=f"{escape(', '.join(jpegs))} {verb}"))
+    if args.method == stego.Method.REPLACEMENT.value:
+        console.print(REPLACEMENT_WARNING)
     console.print("Keep the vault file anywhere; give each image to a different holder.")
     console.print("Never publish the original covers next to the images.")
     return 0
@@ -376,7 +385,7 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
     console.print(_outcome_table(result.outcomes))
     output = args.output if args.output is not None else Path(result.filename)
     check_output(output, force=args.force, inputs=inputs)
-    output.write_bytes(result.data)
+    write_new(output, result.data, overwrite=args.force)
     console.print(
         f"Recovered [bold]{escape(result.filename)}[/] ({format_bytes(len(result.data))}) "
         f"to [bold]{escape(str(output))}[/]"
@@ -430,7 +439,7 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
     for path in paths:
         check_output(path, force=args.force)
     for share, path in zip(shares, paths, strict=True):
-        path.write_text(share.to_text() + "\n", encoding="utf-8")
+        write_new(path, (share.to_text() + "\n").encode("utf-8"), overwrite=args.force)
 
     console.print(
         f"Split {len(secret):,} bytes into {len(shares)} shares; "
@@ -469,7 +478,7 @@ def cmd_combine(args: argparse.Namespace, console: Console) -> int:
         sys.stdout.buffer.write(recovery.secret)
         sys.stdout.buffer.flush()
     else:
-        args.output.write_bytes(recovery.secret)
+        write_new(args.output, recovery.secret, overwrite=args.force)
         report.print(f"Secret written to [bold]{escape(str(args.output))}[/]")
     return 0
 

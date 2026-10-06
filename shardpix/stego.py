@@ -6,11 +6,12 @@ picked by a keyed pseudo-random walk. Without the passphrase an observer can
 neither tell which samples were used nor distinguish the bits from noise.
 
 **Per-image salt.** Every embedding draws a fresh 128-bit salt and writes it
-first, into samples chosen by a *public* walk (the extractor must read it
-before it has a key). The keys are derived from the passphrase and that salt,
-so two images sealed with the same passphrase use unrelated keys and
-unrelated positions, and scrypt work cannot be precomputed for common image
-sizes.
+first, with the scrypt cost, into samples chosen by a *public* walk (the
+extractor must read them before it has a key). The keys are derived from the
+passphrase and that salt, so two images sealed with the same passphrase use
+unrelated keys and unrelated positions, and scrypt work cannot be
+precomputed for common image sizes. Storing the cost lets it be raised in
+future versions without breaking existing images.
 
 **Eligible samples.** Only samples in the range 2-253 carry data, and
 embedding never moves a sample out of that range. Samples at 0 or 255 can
@@ -27,6 +28,7 @@ time in proportion to the payload, not the image - would slow down sharply.
 Layout, in the order the bits are written::
 
     salt    16 bytes   public walk; random per embedding
+    cost     1 byte    public walk; log2 of the scrypt N parameter
     length   4 bytes   keyed walk from here on: size of nonce + body, XOR-masked
     nonce   12 bytes   AES-256-GCM nonce
     body     n bytes   AES-256-GCM ciphertext followed by its 16-byte tag
@@ -51,19 +53,23 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from .errors import CapacityError, PayloadNotFoundError
 from .images import Carrier
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 SALT_BYTES = 16
-SALT_BITS = SALT_BYTES * 8
+COST_BYTES = 1
+PUBLIC_BYTES = SALT_BYTES + COST_BYTES
+PUBLIC_BITS = PUBLIC_BYTES * 8
 LENGTH_BYTES = 4
 NONCE_BYTES = 12
 TAG_BYTES = 16
 FRAME_OVERHEAD = LENGTH_BYTES + NONCE_BYTES + TAG_BYTES
 """Bytes added to every payload by the keyed frame (the salt is accounted for separately)."""
 
-SCRYPT_N = 2**15
+SCRYPT_LOG_N = 17
+"""log2 of scrypt's N for new embeddings: N = 2^17, r = 8, p = 1 is OWASP's first choice."""
 SCRYPT_R = 8
 SCRYPT_P = 1
-SCRYPT_MAXMEM = 64 * 1024 * 1024
+SCRYPT_LOG_N_ACCEPTED = range(10, 19)
+"""Costs accepted when extracting; the upper bound caps memory at 256 MiB per attempt."""
 
 ELIGIBLE_MIN = 2
 ELIGIBLE_MAX = 253
@@ -72,7 +78,7 @@ ELIGIBLE_MAX = 253
 MAX_FILL = 2
 """Use at most one in ``MAX_FILL`` of the eligible samples."""
 
-_DOMAIN = b"shardpix/stego/v2"
+_DOMAIN = b"shardpix/stego/v3"
 _PUBLIC_WALK_KEY = hashlib.sha256(_DOMAIN + b"|salt-walk").digest()
 
 RandomBytes = Callable[[int], bytes]
@@ -124,7 +130,7 @@ class EmbedReport:
         return self.samples_changed / self.samples if self.samples else 0.0
 
 
-def derive_key(passphrase: str | None, salt: bytes) -> StegoKey:
+def derive_key(passphrase: str | None, salt: bytes, log_n: int | None = None) -> StegoKey:
     """Derive the walk, encryption and masking keys for one embedding.
 
     scrypt makes every passphrase guess expensive, and the per-image salt
@@ -134,15 +140,20 @@ def derive_key(passphrase: str | None, salt: bytes) -> StegoKey:
     """
     if len(salt) != SALT_BYTES:
         raise ValueError(f"salt must be {SALT_BYTES} bytes")
+    if log_n is None:
+        log_n = SCRYPT_LOG_N
+    if log_n not in SCRYPT_LOG_N_ACCEPTED:
+        raise ValueError(f"scrypt cost 2^{log_n} is outside the accepted range")
     if passphrase:
         secret = unicodedata.normalize("NFC", passphrase).encode("utf-8")
+        n = 1 << log_n
         master = hashlib.scrypt(
             secret,
             salt=_DOMAIN + b"|" + salt,
-            n=SCRYPT_N,
+            n=n,
             r=SCRYPT_R,
             p=SCRYPT_P,
-            maxmem=SCRYPT_MAXMEM,
+            maxmem=2 * 128 * SCRYPT_R * n,
             dklen=32,
         )
     else:
@@ -226,7 +237,7 @@ class SampleOrder:
 
 def max_frame_bytes(n_eligible: int) -> int:
     """Largest frame, in bytes, for a carrier with ``n_eligible`` eligible samples."""
-    return max(0, n_eligible - SALT_BITS) // MAX_FILL // 8
+    return max(0, n_eligible - PUBLIC_BITS) // MAX_FILL // 8
 
 
 def capacity(n_eligible: int) -> int:
@@ -298,7 +309,7 @@ def build_frame(payload: bytes, key: StegoKey, random_bytes: RandomBytes = os.ur
 
 
 def _salt_positions(n_samples: int, eligible: np.ndarray) -> np.ndarray:
-    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(SALT_BITS)
+    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(PUBLIC_BITS)
 
 
 def _keyed_order(key: StegoKey, eligible: np.ndarray, salt_positions: np.ndarray) -> SampleOrder:
@@ -326,14 +337,15 @@ def embed(
             f"payload is {len(payload)} bytes but this image holds at most {room} bytes"
         )
     salt = random_bytes(SALT_BYTES)
-    key = derive_key(passphrase, salt)
+    log_n = SCRYPT_LOG_N
+    key = derive_key(passphrase, salt, log_n)
     frame = build_frame(payload, key, random_bytes)
 
     salt_positions = _salt_positions(cover.size, eligible)
     frame_bits = _to_bits(frame)
     frame_positions = _keyed_order(key, eligible, salt_positions).first(frame_bits.size)
     positions = np.concatenate([salt_positions, frame_positions])
-    bits = np.concatenate([_to_bits(salt), frame_bits])
+    bits = np.concatenate([_to_bits(salt + bytes([log_n])), frame_bits])
     samples, changed = write_bits(
         cover, positions, bits, method, random_bytes, low=ELIGIBLE_MIN, high=ELIGIBLE_MAX
     )
@@ -364,8 +376,11 @@ def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
         raise _not_found()
 
     salt_positions = _salt_positions(samples.size, eligible)
-    salt = np.packbits(read_bits(samples, salt_positions)).tobytes()
-    key = derive_key(passphrase, salt)
+    public = np.packbits(read_bits(samples, salt_positions)).tobytes()
+    salt, log_n = public[:SALT_BYTES], public[SALT_BYTES]
+    if log_n not in SCRYPT_LOG_N_ACCEPTED:
+        raise _not_found()
+    key = derive_key(passphrase, salt, log_n)
     order = _keyed_order(key, eligible, salt_positions)
 
     header_bits = LENGTH_BYTES * 8

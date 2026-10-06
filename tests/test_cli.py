@@ -357,3 +357,22 @@ class TestCleanErrors:
         Image.fromarray(processed_image()).save(jpeg, quality=90)
         assert run("embed", jpeg, "-o", tmp_path / "s.png", "-t", "x") == 0
         assert "JPEG-compatibility" in capsys.readouterr().out
+
+
+class TestOutputSafety:
+    def test_dangling_symlink_is_never_followed(self, cover_png, tmp_path, capsys):
+        """A link planted where the output goes must not redirect the write."""
+        target = tmp_path / "elsewhere.txt"
+        link = tmp_path / "out.bin"
+        link.symlink_to(target)
+        stego_path = tmp_path / "s.png"
+        run("embed", cover_png, "-o", stego_path, "-t", "secret")
+        assert run("extract", stego_path, "-o", link) == 1
+        assert not target.exists()
+        assert "already exists" in capsys.readouterr().err
+
+    def test_replacement_mode_warns(self, cover_png, tmp_path, capsys):
+        assert (
+            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "-m", "replacement") == 0
+        )
+        assert "--method replacement is detectable" in capsys.readouterr().out

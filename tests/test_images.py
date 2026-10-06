@@ -92,3 +92,26 @@ class TestSave:
             reloaded = load_image(path)
             assert reloaded.mode == carrier.mode
             assert np.array_equal(reloaded.pixels, carrier.pixels)
+
+
+class TestWriteNew:
+    def test_refuses_existing_files(self, tmp_path):
+        from shardpix.errors import ShardpixError
+        from shardpix.images import write_new
+
+        path = tmp_path / "f"
+        write_new(path, b"one")
+        with pytest.raises(ShardpixError, match="already exists"):
+            write_new(path, b"two")
+        write_new(path, b"three", overwrite=True)
+        assert path.read_bytes() == b"three"
+
+    def test_refuses_dangling_symlinks(self, tmp_path):
+        from shardpix.errors import ShardpixError
+        from shardpix.images import write_new
+
+        link = tmp_path / "link"
+        link.symlink_to(tmp_path / "target")
+        with pytest.raises(ShardpixError):
+            write_new(link, b"x")
+        assert not (tmp_path / "target").exists()

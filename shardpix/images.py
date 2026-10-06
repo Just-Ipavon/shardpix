@@ -7,6 +7,7 @@ easy to inspect visually to be a safe place for data.
 
 from __future__ import annotations
 
+import io
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -125,7 +126,24 @@ def to_pil(carrier: Carrier) -> Image.Image:
     return Image.fromarray(np.ascontiguousarray(pixels))
 
 
-def save_png(carrier: Carrier, path: str | Path) -> None:
+def write_new(path: str | Path, data: bytes, *, overwrite: bool = False) -> None:
+    """Write ``data`` to ``path``, creating it exclusively unless ``overwrite``.
+
+    Exclusive creation (``O_CREAT | O_EXCL``) closes the gap between checking
+    that a file does not exist and writing it, and refuses to follow a symbolic
+    link planted at the destination, even a dangling one.
+    """
+    path = Path(path)
+    try:
+        with open(path, "wb" if overwrite else "xb") as handle:
+            handle.write(data)
+    except FileExistsError as exc:
+        raise ShardpixError(f"{path} already exists; use --force to overwrite it") from exc
+    except OSError as exc:
+        raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+
+
+def save_png(carrier: Carrier, path: str | Path, *, overwrite: bool = False) -> None:
     """Write a carrier as a lossless PNG (default zlib level; ``optimize`` costs 8x the time).
 
     Any lossy format would re-quantise the samples and destroy the payload,
@@ -140,7 +158,6 @@ def save_png(carrier: Carrier, path: str | Path) -> None:
     params: dict[str, object] = {}
     if carrier.icc_profile:
         params["icc_profile"] = carrier.icc_profile
-    try:
-        to_pil(carrier).save(path, format="PNG", **params)
-    except OSError as exc:
-        raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+    buffer = io.BytesIO()
+    to_pil(carrier).save(buffer, format="PNG", **params)
+    write_new(path, buffer.getvalue(), overwrite=overwrite)

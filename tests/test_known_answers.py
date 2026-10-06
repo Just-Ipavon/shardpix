@@ -49,7 +49,7 @@ def sha256(data: bytes) -> str:
 
 @pytest.fixture
 def production_scrypt(monkeypatch):
-    monkeypatch.setattr(stego, "SCRYPT_N", PRODUCTION_SCRYPT[0])
+    monkeypatch.setattr(stego, "SCRYPT_LOG_N", PRODUCTION_SCRYPT[0])
 
 
 def test_sample_order():
@@ -76,7 +76,7 @@ def test_stego_pixels(production_scrypt):
         carrier, b"known answer", "pw", random_bytes=deterministic_random()
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
-        "c7f121d1014ebd729e41918d30e2be60fd2d5e539148f10fe23845d45d00b57b"
+        "2672c59ad37c888ca2217dde3ba79532e5fa2d2856bc8bc32bc6c5703413bb48"
     )
     assert stego.extract(stego_carrier, "pw") == b"known answer"
 
@@ -96,7 +96,18 @@ def test_vault_file_and_image(tmp_path, production_scrypt):
         "d210c0702a3f981197e26dc7873bc312e84c46ad7be66ac4cd6a8aea2ecea969"
     )
     assert sha256(load_image(result.images[0].output).pixels.tobytes()) == (
-        "be007c6d6d80a9598d94e1a6ee9673962a6f58138e1754fa40fc5ae4e07a260f"
+        "4cbba34a7216babc8c12813d5eccebb0006f2e2a6b0e823cbe5b4837d39ce910"
     )
     opened = vault.unseal(result.vault_path, [i.output for i in result.images[1:]], "pw")
     assert opened.data == b"pinned vault content"
+
+
+def test_stego_pixels_without_passphrase():
+    """Public mode has its own key derivation; pin it too (found by mutation testing)."""
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"public payload", None, random_bytes=deterministic_random(b"public")
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "b33b6b23db6d180c7fb3b4a331de776148b30030ec3419dd9b1b6957aac481e1"
+    )

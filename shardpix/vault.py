@@ -43,7 +43,7 @@ from .errors import (
     UnsupportedImageError,
     VaultError,
 )
-from .images import Carrier, load_image, save_png
+from .images import Carrier, load_image, save_png, write_new
 
 MAGIC = b"SPXV"
 VERSION = 1
@@ -67,8 +67,8 @@ _WINDOWS_RESERVED = {
 SHARE_BYTES = shamir.share_size(KEY_BYTES)
 """Size of the share hidden in each image."""
 
-PAYLOAD_FRAME_BYTES = stego.SALT_BYTES + SHARE_BYTES + stego.FRAME_OVERHEAD
-"""Bytes actually written into each image: salt, then the sealed and framed share."""
+PAYLOAD_FRAME_BYTES = stego.PUBLIC_BYTES + SHARE_BYTES + stego.FRAME_OVERHEAD
+"""Bytes actually written into each image: salt and cost, then the sealed and framed share."""
 
 RandomBytes = Callable[[int], bytes]
 
@@ -264,9 +264,9 @@ def seal(
         stego_carrier, report = stego.embed(
             carrier, share.to_bytes(), passphrase, method, random_bytes
         )
-        save_png(stego_carrier, output)
+        save_png(stego_carrier, output, overwrite=force)
         sealed.append(SealedImage(cover, output, share.index, report, carrier.from_jpeg))
-    _write(vault_path, lambda: vault_path.write_bytes(header.to_bytes() + ciphertext))
+    write_new(vault_path, header.to_bytes() + ciphertext, overwrite=force)
 
     return SealResult(vault_path, header, len(data), tuple(sealed))
 

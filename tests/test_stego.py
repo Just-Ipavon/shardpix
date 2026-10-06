@@ -20,8 +20,8 @@ def frame_positions(samples: np.ndarray, passphrase: str | None, count: int) -> 
     """Where the first ``count`` frame bits of an embedded image live (white-box helper)."""
     eligible = stego.eligible_mask(samples)
     salt_positions = stego._salt_positions(samples.size, eligible)
-    salt = np.packbits(stego.read_bits(samples, salt_positions)).tobytes()
-    key = stego.derive_key(passphrase, salt)
+    public = np.packbits(stego.read_bits(samples, salt_positions)).tobytes()
+    key = stego.derive_key(passphrase, public[: stego.SALT_BYTES], public[stego.SALT_BYTES])
     return stego._keyed_order(key, eligible, salt_positions).first(count)
 
 
@@ -88,7 +88,7 @@ class TestAuthentication:
 
 class TestCapacity:
     def test_capacity_accounts_for_salt_fill_limit_and_overhead(self):
-        eligible = stego.SALT_BITS + stego.MAX_FILL * 8 * 100
+        eligible = stego.PUBLIC_BITS + stego.MAX_FILL * 8 * 100
         assert stego.capacity(eligible) == 100 - stego.FRAME_OVERHEAD
 
     def test_capacity_is_never_negative(self):
@@ -118,7 +118,7 @@ class TestDistortion:
     def test_report_rates(self, rgb_carrier):
         _, report = stego.embed(rgb_carrier, bytes(100), PASSPHRASE)
         assert report.frame_bytes == 100 + stego.FRAME_OVERHEAD
-        assert report.bits_written == 8 * (stego.SALT_BYTES + report.frame_bytes)
+        assert report.bits_written == 8 * (stego.PUBLIC_BYTES + report.frame_bytes)
         assert report.embedding_rate == pytest.approx(report.bits_written / rgb_carrier.n_samples)
 
     def test_fully_saturated_images_have_no_capacity(self):
@@ -240,6 +240,29 @@ class TestKeyDerivation:
         with pytest.raises(ValueError):
             stego.derive_key(PASSPHRASE, b"short")
 
+    def test_cost_outside_the_accepted_range_is_refused(self):
+        with pytest.raises(ValueError):
+            stego.derive_key(PASSPHRASE, self.SALT, 30)
+
+    def test_cost_is_read_from_the_image(self, rgb_carrier, monkeypatch):
+        """Images keep opening after the default cost changes."""
+        monkeypatch.setattr(stego, "SCRYPT_LOG_N", 11)
+        stego_carrier, _ = stego.embed(rgb_carrier, b"old cost", PASSPHRASE)
+        monkeypatch.setattr(stego, "SCRYPT_LOG_N", 12)
+        assert stego.extract(stego_carrier, PASSPHRASE) == b"old cost"
+
+    def test_forged_cost_is_rejected_before_any_key_derivation(self, rgb_carrier):
+        """A cost of 2^30 would make scrypt allocate 128 GiB; it must never be attempted."""
+        stego_carrier, _ = stego.embed(rgb_carrier, b"x", PASSPHRASE)
+        samples = stego_carrier.samples()
+        eligible = stego.eligible_mask(samples)
+        cost_positions = stego._salt_positions(samples.size, eligible)[-8:]
+        samples[cost_positions] = (samples[cost_positions] & 0xFE) | np.unpackbits(
+            np.array([30], np.uint8)
+        )
+        with pytest.raises(PayloadNotFoundError):
+            stego.extract(stego_carrier.with_samples(samples), PASSPHRASE)
+
     def test_same_passphrase_scatters_differently_in_every_image(self, large_carrier):
         """Each embedding draws its own salt, hence its own keys and positions."""
         first, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE)
@@ -250,7 +273,7 @@ class TestKeyDerivation:
 
     def test_production_scrypt_cost(self):
         """Tests run with a cheaper cost; make sure the shipped one is what the docs claim."""
-        assert PRODUCTION_SCRYPT == (2**15, 8, 1)
+        assert PRODUCTION_SCRYPT == (17, 8, 1)
 
 
 class TestImageModes:
@@ -267,3 +290,57 @@ class TestImageModes:
         assert stego.extract(stego_carrier, PASSPHRASE) == b"every mode"
         if channels in (2, 4):
             assert np.array_equal(stego_carrier.pixels[..., -1], carrier.pixels[..., -1])
+
+
+class TestNaiveBounds:
+    """The default bounds model naive tools; only 0 and 255 are forced (mutation testing)."""
+
+    def test_only_the_extremes_are_forced(self):
+        samples = np.array([1] * 400 + [254] * 400, dtype=np.uint8)
+        bits = np.array([0] * 400 + [1] * 400, dtype=np.uint8)
+        out, changed = stego.write_bits(samples, np.arange(800), bits, Method.MATCHING)
+        assert changed == 800
+        assert set(out[:400].tolist()) == {0, 2}
+        assert set(out[400:].tolist()) == {253, 255}
+
+    def test_extremes_move_inwards(self):
+        samples = np.array([0, 255], dtype=np.uint8)
+        out, _ = stego.write_bits(
+            samples, np.arange(2), np.array([1, 0], np.uint8), Method.MATCHING
+        )
+        assert out.tolist() == [1, 254]
+
+    def test_output_dtype(self):
+        out, _ = stego.write_bits(
+            np.array([10, 11], np.uint8),
+            np.arange(2),
+            np.array([1, 1], np.uint8),
+            Method.REPLACEMENT,
+        )
+        assert out.dtype == np.uint8
+
+
+class TestBoundaries:
+    """Exact capacity edges (from mutation testing)."""
+
+    @staticmethod
+    def carrier_with_eligible(count: int):
+        pixels = np.zeros(count + 40, dtype=np.uint8)
+        pixels[:count] = 100
+        return from_pil(Image.fromarray(pixels.reshape(1, -1)))
+
+    def test_smallest_usable_image_holds_an_empty_payload(self):
+        smallest = stego.PUBLIC_BITS + stego.MAX_FILL * 8 * stego.FRAME_OVERHEAD
+        carrier = self.carrier_with_eligible(smallest)
+        assert stego.carrier_capacity(carrier) == 0
+        stego_carrier, report = stego.embed(carrier, b"", PASSPHRASE)
+        assert report.eligible_samples == smallest
+        assert stego.extract(stego_carrier, PASSPHRASE) == b""
+
+    def test_one_sample_less_holds_nothing(self):
+        smallest = stego.PUBLIC_BITS + stego.MAX_FILL * 8 * stego.FRAME_OVERHEAD
+        carrier = self.carrier_with_eligible(smallest - stego.MAX_FILL * 8)
+        with pytest.raises(CapacityError, match="too small"):
+            stego.embed(carrier, b"", PASSPHRASE)
+        with pytest.raises(PayloadNotFoundError):
+            stego.extract(carrier, PASSPHRASE)
