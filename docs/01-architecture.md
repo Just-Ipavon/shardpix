@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-01 — Architectural view |
-| System | shardpix 1.0.0 |
+| System | shardpix 1.1.0 |
 | Status | Approved |
 | Last revised | 2026-10-06 |
 
@@ -273,11 +273,12 @@ has already computed, so asking for the first 32 positions and then the first
 Three formats are versioned independently; each carries its own magic and
 version so that a future change can be detected rather than misread.
 
-### 1.5.1 Payload inside an image (stego format v2)
+### 1.5.1 Payload inside an image (stego format v3)
 
 | Field | Size | Written at | Content |
 | --- | --- | --- | --- |
 | salt | 16 B | public walk | Random per embedding |
+| cost | 1 B | public walk | log2 of scrypt's N (17 today; 10–18 accepted when reading) |
 | length | 4 B | keyed walk | Size of nonce + body, XOR-masked with a key-derived mask |
 | nonce | 12 B | keyed walk | AES-256-GCM nonce |
 | body | n + 16 B | keyed walk | AES-256-GCM ciphertext and tag; AAD = domain, format version, length |
@@ -389,7 +390,7 @@ positions given by a public walk; the keyed walk excludes those positions.
 **Consequences.** Two images sealed with one passphrase are unrelated. The
 salt positions are known to everyone, but the salt is random and indistinguishable
 from the cover's own least significant bits, so knowing where it sits reveals
-nothing. Cost: 128 extra changed-or-not samples per image.
+nothing. Cost: 136 extra changed-or-not samples per image (the salt and the scrypt cost, which is stored so it can be raised later without breaking old images).
 
 ### ADR-06 — Skip near-saturated samples
 
@@ -511,5 +512,5 @@ There are no network calls, databases or background services. The optional
 | Every expected failure ends with a one-line error, never a traceback | `ShardpixError` hierarchy, `OSError` caught in `main` | `TestCleanErrors` |
 | No input file is ever overwritten | Path identity checks in CLI and vault, case-folded | `TestOutputCollisions`, `test_refuses_to_overwrite_the_cover` |
 | Memory and time grow with the payload, not the image | Rejection-sampled walk (ADR-04) | 04 §4.9 |
-| The test suite runs offline in seconds | Synthetic covers, reduced scrypt cost in tests | 255 tests, ~4 s |
+| The test suite runs offline in seconds | Synthetic covers, reduced scrypt cost in tests | 310 tests, ~9 s |
 | Portability | Python 3.10–3.13, four dependencies | CI matrix |

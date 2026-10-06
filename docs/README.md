@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| System | shardpix 1.0.0 |
+| System | shardpix 1.1.0 |
 | Document type | Software Design Description (SDD) |
 | Reference structure | ISO/IEC/IEEE 1016 |
 | Diagram notation | UML 2.5, rendered in Mermaid |
@@ -17,6 +17,7 @@
 | [03 — Function reference](03-function-reference.md) | Every module, function, class and constant: behaviour, edge cases, error handling, covering tests | Anyone modifying or extending the code |
 | [04 — Runtime behaviour](04-runtime-behaviour.md) | Sequence diagrams, the share recovery algorithm, error propagation, exit codes, timing profile, verification strategy | Anyone who needs to understand what happens at runtime |
 | [05 — Security analysis](05-security-analysis.md) | Threat model, security properties and their arguments, cryptographic parameters, steganalysis results, known limitations | Anyone who needs to decide whether to trust it |
+| [06 — Security review](06-security-review.md) | Internal review report: method, static analysis, fuzzing, mutation testing, ASVS checklist, findings and fixes, handover for an independent audit | Anyone assessing how the claims were checked |
 
 For installation and day-to-day usage, see the [project README](../README.md).
 

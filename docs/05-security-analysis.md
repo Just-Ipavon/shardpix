@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-05 — Security analysis |
-| System | shardpix 1.0.0 |
+| System | shardpix 1.1.0 |
 | Status | Approved |
 | Last revised | 2026-10-06 |
 
@@ -14,9 +14,10 @@ arguments, and where it stops. It also reports the steganalysis measurements
 that back the claims about detectability.
 
 shardpix is a portfolio and learning project. Its cryptography comes from
-audited libraries (ADR-02), and its own code is tested against independent
-references and was reviewed, but **the system as a whole has not been
-audited**. For secrets whose loss would really hurt, prefer established tools
+audited libraries (ADR-02), its own code is tested against independent
+references, and it has been through the internal review documented in
+[06-security-review.md](06-security-review.md), but **the system as a whole
+has not been audited by an independent third party**. For secrets whose loss would really hurt, prefer established tools
 — for example [age](https://age-encryption.org) for file encryption and
 [SLIP-0039](https://github.com/satoshilabs/slips/blob/master/slip-0039.md)
 implementations for secret sharing — and treat shardpix as a well-documented
@@ -61,7 +62,7 @@ way to understand how such tools are built.
 | SP-04 | Damaged or altered shares are detected and identified | ADV-4 | The checksum catches accidental damage without a key; once k good shares reconstruct the MAC key, every other share is checked and reported. | `TestAuthentication`, `TestRobustSearch` |
 | SP-05 | An image reveals neither its payload nor which samples hold it | ADV-2, ADV-3 | Payload sealed with AES-256-GCM; positions from a ChaCha20 walk keyed by scrypt(passphrase, per-image salt); length masked. Without the passphrase the written bits are indistinguishable from random. | `TestAuthentication`, `TestKeyDerivation` |
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. | `TestForgedSets` |
-| SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^15, r = 8 (≈ 32 MiB, ≈ 0.1 s per guess), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
+| SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
 | SP-09 | Classical steganalysis does not detect a vault share | ADV-3 | LSB matching (ADR-03), no forced moves at 0/255 (ADR-06), and an embedding rate of 0.05–0.5%. Measured in §5.5. | Benchmark |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters and replaces reserved names. | `TestRestoredNames`, `TestSafeFilename` |
@@ -77,7 +78,7 @@ the vault file itself is inconspicuous — it is recognisable ciphertext.
 | --- | --- | --- | --- |
 | File encryption | AES-256-GCM | 256-bit random key, 96-bit random nonce, 35-byte AAD | `cryptography` |
 | Stego payload encryption | AES-256-GCM | 256-bit derived key, 96-bit random nonce, AAD = domain ‖ version ‖ length | `cryptography` |
-| Passphrase hardening | scrypt | N = 2^15, r = 8, p = 1, 128-bit salt per image | `hashlib` |
+| Passphrase hardening | scrypt | N = 2^17, r = 8, p = 1, 128-bit salt per image; cost stored in the image, at most 2^18 accepted | `hashlib` |
 | Key separation | HKDF-SHA256 | Labels `order`, `aead`, `length` | `cryptography` |
 | Sample positions | ChaCha20 keystream | 256-bit key, rejection-sampled modular reduction | `cryptography` |
 | Share authentication | HMAC-SHA256 | 256-bit shared MAC key, tag truncated to 128 bits | `hmac` |
@@ -147,24 +148,24 @@ average over.
 ### 5.5.2 The operating point: one vault share
 
 The figures above go up to 75% to show the shape of each curve. A vault puts
-157 bytes into each image:
+158 bytes into each image:
 
 | Cover | Size | Share embedding rate | RS, clean | RS, with share | Change |
 | --- | --- | ---: | ---: | ---: | ---: |
-| astronaut | 512x512 RGB | 0.160% | +2.45% | +2.43% | -0.02% |
-| chelsea | 451x300 RGB | 0.309% | +0.05% | +0.06% | +0.02% |
-| coffee | 600x400 RGB | 0.174% | +2.12% | +2.12% | +0.01% |
-| rocket | 640x427 RGB | 0.153% | +0.92% | +0.94% | +0.03% |
-| hubble_deep_field | 1000x872 RGB | 0.048% | +8.31% | +8.28% | -0.03% |
-| immunohistochemistry | 512x512 RGB | 0.160% | -2.46% | -2.49% | -0.04% |
-| camera | 512x512 grey | 0.479% | +1.24% | +1.04% | -0.20% |
-| brick | 512x512 grey | 0.479% | +0.29% | +0.15% | -0.14% |
-| grass | 512x512 grey | 0.479% | +0.68% | +0.99% | +0.31% |
-| gravel | 512x512 grey | 0.479% | +6.89% | +8.18% | +1.29% |
+| astronaut | 512x512 RGB | 0.161% | +2.45% | +2.47% | +0.02% |
+| chelsea | 451x300 RGB | 0.311% | +0.05% | +0.01% | -0.04% |
+| coffee | 600x400 RGB | 0.176% | +2.12% | +2.13% | +0.01% |
+| rocket | 640x427 RGB | 0.154% | +0.92% | +0.91% | -0.01% |
+| hubble_deep_field | 1000x872 RGB | 0.048% | +8.31% | +8.30% | -0.02% |
+| immunohistochemistry | 512x512 RGB | 0.161% | -2.46% | -2.35% | +0.11% |
+| camera | 512x512 grey | 0.482% | +1.24% | +1.35% | +0.11% |
+| brick | 512x512 grey | 0.482% | +0.29% | +0.18% | -0.11% |
+| grass | 512x512 grey | 0.482% | +0.68% | -0.02% | -0.70% |
+| gravel | 512x512 grey | 0.482% | +6.89% | +7.01% | +0.12% |
 
-The median change is 0.03 points, against clean photographs that already
-range from −2.5% to +8.3%. The two largest changes are on the greyscale
-textures, inside the scatter described above. At this rate, RS cannot tell a
+The median change is 0.07 points, against clean photographs that already
+range from −2.5% to +8.3%. The largest change, 0.7 points, is on a greyscale
+texture, inside the scatter described above. At this rate, RS cannot tell a
 sealed image from the photo it came from.
 
 ### 5.5.3 Chi-square attack
@@ -198,7 +199,7 @@ samples out of 262,144 and is invisible.
 
 ## 5.6 Known limitations
 
-**Not audited.** See §5.1.
+**Not independently audited.** See §5.1 and 06.
 
 **Only classical steganalysis was evaluated.** Chi-square and RS target LSB
 replacement. LSB matching has dedicated detectors — histogram characteristic
@@ -250,8 +251,10 @@ error. They cannot turn it into a wrong answer.
 direction when they carry a mismatching bit. They are far rarer than clipped
 samples and did not register in the benchmark.
 
-**Format v2.** The stego format changed before 1.0 (ADR-04, ADR-05); images
-produced by the 0.x pre-releases cannot be read by 1.0.
+**Format v3.** The stego format changed twice (ADR-04, ADR-05, and the scrypt
+cost raised in 1.1, see 06); images produced by 0.x or 1.0 cannot be read by
+1.1. Because the cost is now stored in each image, future increases will not
+break compatibility.
 
 ## 5.7 References
 

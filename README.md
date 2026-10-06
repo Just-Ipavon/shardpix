@@ -12,11 +12,13 @@ reveal nothing. The images carry no visible change and pass classical
 steganalysis — and the attacks that check it, chi-square and RS analysis,
 are built in.
 
-> **Learning project, not audited.** The cryptography comes from the
-> `cryptography` library; secret sharing, the embedding and the steganalysis
-> are implemented here and thoroughly tested, but nobody has audited the
-> whole. For secrets you cannot afford to lose, use established tools such as
-> [age](https://age-encryption.org).
+> **Learning project: internally reviewed, not independently audited.** The
+> cryptography comes from the `cryptography` library; secret sharing, the
+> embedding and the steganalysis are implemented here. The code has been
+> through static analysis, fuzzing, mutation testing and a manual review
+> against OWASP ASVS — see the [security review](docs/06-security-review.md) —
+> but no third party has audited it. For secrets you cannot afford to lose,
+> use established tools such as [age](https://age-encryption.org).
 
 ![shardpix sealing a file behind 3 of 5 photos, opening it with three of them, and analysing one image](assets/demo.svg)
 
@@ -122,7 +124,7 @@ Recovered minutes.pdf (47.1 KiB) to minutes.pdf
 
 RS analysis measures classic LSB replacement almost exactly and does not see
 shardpix at any rate. At the rate a vault actually uses — 0.05% to 0.5% of the
-samples — the median change in the RS estimate over ten photographs is 0.03
+samples — the median change in the RS estimate over ten photographs is 0.07
 points. The least significant bit plane tells the same story to the naked eye:
 
 ![Least significant bit plane: clean photo, a naive tool after embedding 50% sequentially, and shardpix after embedding a vault share](assets/lsb-planes.png)
@@ -183,8 +185,9 @@ shardpix/
 
 Full technical documentation lives in [docs/](docs/README.md): architecture
 and design decisions, use case specifications, a function-by-function
-reference, the runtime behaviour and a security analysis — with UML diagrams
-throughout.
+reference, the runtime behaviour, a security analysis and an internal
+security review — with UML diagrams throughout. To report a vulnerability,
+see [SECURITY.md](SECURITY.md).
 
 | Document | Contents |
 | --- | --- |
@@ -193,6 +196,7 @@ throughout.
 | [03 — Function reference](docs/03-function-reference.md) | Every function: behaviour, edge cases, errors, covering tests |
 | [04 — Runtime behaviour](docs/04-runtime-behaviour.md) | Sequence diagrams, the share recovery algorithm, exit codes, timing |
 | [05 — Security analysis](docs/05-security-analysis.md) | Threat model, security properties, steganalysis results, limitations |
+| [06 — Security review](docs/06-security-review.md) | Static analysis, fuzzing, mutation testing, ASVS checklist, findings and fixes |
 
 ## License
 

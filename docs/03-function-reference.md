@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-03 — Detailed component specification |
-| System | shardpix 1.0.0 |
+| System | shardpix 1.1.0 |
 | Status | Approved |
 | Last revised | 2026-10-06 |
 
@@ -51,14 +51,14 @@ graph LR
 
 Embedding, sharing and both attacks operate on arrays and bytes, never on
 paths: the file system is touched only by `images`, `vault`, `cli` and the
-benchmark. That is what lets most of the 255 tests run without creating a
+benchmark. That is what lets most of the 310 tests run without creating a
 single file.
 
 ---
 
 ## 3.3 `shardpix/__init__.py` and `__main__.py`
 
-`__init__` exposes only `__version__` (`"1.0.0"`) and imports no submodule, so
+`__init__` exposes only `__version__` (`"1.1.0"`) and imports no submodule, so
 `import shardpix` is fast and free of side effects. `__main__` delegates to
 `cli.main` so the tool runs as `python -m shardpix` without installation.
 
@@ -127,12 +127,21 @@ for a missing file, a decompression bomb, or anything Pillow cannot decode.
 
 Converts back to Pillow, letting it infer the mode from the array shape.
 
-### `save_png(carrier, path) -> None`
+### `write_new(path, data, *, overwrite=False) -> None`
 
-Writes a lossless PNG at the default compression level, preserving the ICC profile. Raises
-`UnsupportedImageError` for any extension but `.png` — JPEG would re-quantise
-the pixels and destroy the payload — and `ShardpixError` if the file cannot be
-written. Test: `TestSave`.
+Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`) unless
+`overwrite`: checking and creating are one atomic step, and an existing name
+— including a dangling symbolic link — is refused rather than followed
+(06 SR-03). Raises `ShardpixError`. Every output of the CLI and of `seal` goes
+through it. Test: `TestWriteNew`.
+
+### `save_png(carrier, path, *, overwrite=False) -> None`
+
+Encodes a lossless PNG at the default compression level, preserving the ICC
+profile, and writes it with `write_new`. Raises `UnsupportedImageError` for
+any extension but `.png` — JPEG would re-quantise the pixels and destroy the
+payload — and `ShardpixError` if the file exists (without `overwrite`) or
+cannot be written. Test: `TestSave`.
 
 ---
 
@@ -142,14 +151,15 @@ written. Test: `TestSave`.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `FORMAT_VERSION` | `2` | Part of the AES-GCM associated data; bumped when the layout changes. |
-| `SALT_BYTES` / `SALT_BITS` | `16` / `128` | Per-image salt (ADR-05). |
+| `FORMAT_VERSION` | `3` | Part of the AES-GCM associated data; bumped when the layout changes. |
+| `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Per-image salt and scrypt cost, written along the public walk (ADR-05). |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Frame fields. |
 | `FRAME_OVERHEAD` | `32` | Bytes the keyed frame adds to every payload. |
-| `SCRYPT_N`, `SCRYPT_R`, `SCRYPT_P` | `2**15`, `8`, `1` | Passphrase hardening: about 32 MiB and 0.1 s per guess. |
+| `SCRYPT_LOG_N`, `SCRYPT_R`, `SCRYPT_P` | `17`, `8`, `1` | Passphrase hardening for new embeddings: N = 2^17, about 128 MiB and 0.4 s per guess (OWASP's first recommendation). |
+| `SCRYPT_LOG_N_ACCEPTED` | `range(10, 19)` | Costs accepted when extracting; the cap keeps a forged image from demanding gigabytes. |
 | `ELIGIBLE_MIN`, `ELIGIBLE_MAX` | `2`, `253` | Samples outside this range are never used nor produced (ADR-06). |
 | `MAX_FILL` | `2` | At most one eligible sample in two is used (ADR-11). |
-| `_DOMAIN` | `b"shardpix/stego/v2"` | Domain separation for every derivation. |
+| `_DOMAIN` | `b"shardpix/stego/v3"` | Domain separation for every derivation. |
 | `_PUBLIC_WALK_KEY` | SHA-256 of the domain and a label | Key of the public walk that places the salt. |
 
 ### `class Method(str, Enum)`
@@ -168,14 +178,14 @@ Payload, frame and capacity sizes, total and eligible samples, bits written
 (salt included) and samples changed; `embedding_rate` and `change_rate` are
 both relative to all colour samples.
 
-### `derive_key(passphrase, salt) -> StegoKey`
+### `derive_key(passphrase, salt, log_n=None) -> StegoKey`
 
 With a passphrase: NFC-normalise it, run scrypt with salt
 `_DOMAIN ‖ "|" ‖ salt`, then expand three subkeys with HKDF-SHA256 under
 distinct labels. Without one: hash the domain and salt instead — the payload
 is still scattered and encrypted, but anyone can read it. NFC normalisation
 makes "caffè" typed with a combining accent equal to the precomposed form.
-Raises `ValueError` if the salt is not 16 bytes. Test: `TestKeyDerivation`.
+`log_n` defaults to `SCRYPT_LOG_N`. Raises `ValueError` if the salt is not 16 bytes or the cost is outside `SCRYPT_LOG_N_ACCEPTED`. Test: `TestKeyDerivation`.
 
 ### `eligible_mask(samples) -> ndarray`
 
@@ -209,7 +219,7 @@ The first `count` positions of the walk; computed lazily and cached. Raises
 
 ### `max_frame_bytes(n_eligible)`, `capacity(n_eligible)`, `carrier_capacity(carrier)`
 
-`max_frame_bytes` = `(n_eligible − 128) // 2 // 8`; `capacity` subtracts the
+`max_frame_bytes` = `(n_eligible − 136) // 2 // 8`; `capacity` subtracts the
 32-byte frame overhead and never returns a negative number;
 `carrier_capacity` counts the eligible samples of a carrier first. Test:
 `TestCapacity`.
@@ -235,7 +245,7 @@ replayed as another, and the length cannot be altered without detection.
 
 ### `_salt_positions(n_samples, eligible)`, `_keyed_order(key, eligible, salt_positions)` *(private)*
 
-The first 128 positions of the public walk, and the keyed walk over the
+The first 136 positions of the public walk, and the keyed walk over the
 eligible samples minus those positions.
 
 ### `embed(carrier, payload, passphrase=None, method=MATCHING, random_bytes=os.urandom)`
@@ -246,7 +256,7 @@ Tests: `TestRoundTrip`, `TestDistortion`, `TestSaturation`, `TestImageModes`.
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Recomputes the eligible set, reads the salt, derives the keys, reads and
+Recomputes the eligible set, reads the salt and the cost (refusing a cost outside the accepted range before any key derivation), derives the keys, reads and
 unmasks the length, checks it against the largest possible frame, reads the
 frame and decrypts it. Raises `PayloadNotFoundError` with the same message for
 a wrong passphrase, a clean image and a modified one: telling them apart
@@ -388,7 +398,7 @@ Tests: `TestAuthentication`, `TestRobustSearch`.
 | `MAX_NAME_BYTES` | 255 | Longest stored file name. |
 | `MAX_FILE_BYTES` | 2 GiB minus framing | Limit of one AES-GCM call in `cryptography`. |
 | `SHARE_BYTES` | 109 | One share of the vault key. |
-| `PAYLOAD_FRAME_BYTES` | 157 | Bytes written into each image: salt + sealed share. |
+| `PAYLOAD_FRAME_BYTES` | 158 | Bytes written into each image: salt and cost + sealed share. |
 | `FALLBACK_NAME` | `unsealed.bin` | Name used when the stored one is unusable. |
 
 ### `class VaultHeader` *(frozen)*
@@ -515,6 +525,7 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | `CHI_SQUARE_ALERT` | 0.10: detected prefix at which `analyze` reports the chi-square signature. |
 | `RS_ALERT` | 0.10: RS estimate at which `analyze` reports LSB replacement. Clean photographs measured −2.5% to +8.3% in the benchmark. |
 | `JPEG_WARNING` | Text shown when a cover was decoded from JPEG. |
+| `REPLACEMENT_WARNING` | Text shown when `--method replacement` is used for `embed` or `seal` (06 SR-05). |
 
 ### Helpers
 

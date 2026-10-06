@@ -12,11 +12,14 @@ aprano il file e un numero minore non riveli nulla. Le immagini non hanno
 modifiche visibili e superano la steganalisi classica; gli attacchi che lo
 verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 
-> **Progetto didattico, non sottoposto ad audit.** La crittografia viene dalla
-> libreria `cryptography`; la condivisione del segreto, l'inserimento nelle
-> immagini e la steganalisi sono implementati qui e testati a fondo, ma
-> nessuno ha fatto un audit dell'insieme. Per segreti che non puoi permetterti
-> di perdere usa strumenti consolidati come [age](https://age-encryption.org).
+> **Progetto didattico: revisione di sicurezza interna, nessun audit
+> indipendente.** La crittografia viene dalla libreria `cryptography`; la
+> condivisione del segreto, l'inserimento nelle immagini e la steganalisi sono
+> implementati qui. Il codice è passato per analisi statica, fuzzing,
+> mutation testing e una revisione manuale secondo OWASP ASVS — vedi la
+> [revisione di sicurezza](docs/06-security-review.md) — ma nessuna terza
+> parte ne ha fatto un audit. Per segreti che non puoi permetterti di perdere
+> usa strumenti consolidati come [age](https://age-encryption.org).
 
 ![shardpix che sigilla un file dietro 3 foto su 5, lo riapre con tre di esse e analizza un'immagine](assets/demo.svg)
 
@@ -126,7 +129,7 @@ Recovered minutes.pdf (47.1 KiB) to minutes.pdf
 L'analisi RS misura quasi esattamente la classica LSB replacement e non vede
 shardpix a nessun tasso di inserimento. Al tasso che un vault usa davvero, tra
 lo 0,05% e lo 0,5% dei campioni, la variazione mediana della stima RS su dieci
-fotografie è di 0,03 punti. Il piano dei bit meno significativi racconta la
+fotografie è di 0,07 punti. Il piano dei bit meno significativi racconta la
 stessa cosa a occhio nudo:
 
 ![Piano dei bit meno significativi: foto originale, un tool ingenuo dopo aver inserito dati nel 50% dell'immagine in sequenza, e shardpix dopo aver inserito una quota](assets/lsb-planes.png)
@@ -193,8 +196,9 @@ shardpix/
 
 La documentazione tecnica completa, in inglese, si trova in
 [docs/](docs/README.md): architettura e decisioni di progetto, casi d'uso, un
-riferimento funzione per funzione, il comportamento a runtime e un'analisi di
-sicurezza, con diagrammi UML.
+riferimento funzione per funzione, il comportamento a runtime, un'analisi di
+sicurezza e una revisione di sicurezza interna, con diagrammi UML. Per
+segnalare una vulnerabilità vedi [SECURITY.md](SECURITY.md).
 
 | Documento | Contenuto |
 | --- | --- |
@@ -203,6 +207,7 @@ sicurezza, con diagrammi UML.
 | [03 — Riferimento delle funzioni](docs/03-function-reference.md) | Ogni funzione: comportamento, casi limite, errori, test che la coprono |
 | [04 — Comportamento a runtime](docs/04-runtime-behaviour.md) | Diagrammi di sequenza, algoritmo di recupero delle quote, codici di uscita, tempi |
 | [05 — Analisi di sicurezza](docs/05-security-analysis.md) | Modello delle minacce, proprietà di sicurezza, risultati della steganalisi, limiti |
+| [06 — Revisione di sicurezza](docs/06-security-review.md) | Analisi statica, fuzzing, mutation testing, checklist ASVS, problemi trovati e correzioni |
 
 ## Licenza
 

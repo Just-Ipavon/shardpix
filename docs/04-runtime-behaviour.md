@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-04 — Dynamic view |
-| System | shardpix 1.0.0 |
+| System | shardpix 1.1.0 |
 | Status | Approved |
 | Last revised | 2026-10-06 |
 
@@ -118,13 +118,13 @@ sequenceDiagram
 
     C->>E: embed(carrier, payload, passphrase)
     E->>E: samples, eligible = 2..253, capacity check
-    E->>E: salt = 16 random bytes
+    E->>E: salt = 16 random bytes, cost = 17
     E->>K: derive_key(passphrase, salt)
-    K->>K: scrypt(N=2^15, r=8, p=1) then HKDF x3
+    K->>K: scrypt(N=2^17, r=8, p=1) then HKDF x3
     K-->>E: order, aead, length_mask
     E->>E: frame = masked length + nonce + AES-GCM(payload)
     E->>W: public walk over eligible samples
-    W-->>E: 128 salt positions
+    W-->>E: 136 positions for salt and cost
     E->>W: keyed walk over eligible minus salt positions
     W-->>E: 8 x len(frame) positions
     E->>E: write_bits(salt + frame) by LSB matching
@@ -149,8 +149,8 @@ sequenceDiagram
     C->>X: extract(carrier, passphrase)
     X->>X: eligible = 2..253 (same set as before embedding)
     X->>W: public walk
-    W-->>X: 128 positions
-    X->>X: salt = their LSBs, derive keys
+    W-->>X: 136 positions
+    X->>X: salt and cost = their LSBs,<br/>refuse costs above 2^18, derive keys
     X->>W: keyed walk: first(32)
     W-->>X: length positions
     X->>X: unmask length, check bounds
@@ -265,15 +265,15 @@ Measured on a cloud VM (Python 3.13, one core), as an order of magnitude.
 
 | Operation | Duration |
 | --- | --- |
-| Key derivation (scrypt, N = 2^15) | ~0.11 s per image |
-| `embed` / `extract`, 512 × 512 RGB, vault-share payload | ~0.10 s each, mostly scrypt |
-| `embed`, 1920 × 1080 RGB, vault-share payload | ~0.14 s |
-| `seal`, 1 MB file, 5 covers of 512 × 512 | ~0.9 s |
-| `seal`, 1 MB or 50 MB file, 5 covers of 1920 × 1080 | ~4 s, dominated by PNG compression |
-| `unseal`, 3 images of 1920 × 1080 | ~0.5 s |
+| Key derivation (scrypt, N = 2^17) | ~0.42 s per image |
+| `embed` / `extract`, 512 × 512 RGB, vault-share payload | ~0.45 s each, mostly scrypt |
+| `embed`, 1920 × 1080 RGB, vault-share payload | ~0.5 s |
+| `seal`, 1 MB file, 5 covers of 512 × 512 | ~2.4 s |
+| `seal`, 1 MB file, 5 covers of 1920 × 1080 | ~5.3 s: PNG compression and scrypt |
+| `unseal`, 3 images of 512 × 512 or 1920 × 1080 | ~1.3 s, mostly scrypt |
 | `analyze`, 1920 × 1080 RGB | ~1.2 s (RS 0.3 s, sequential chi-square 0.9 s) |
 | Full benchmark (10 covers, 4 strategies, 11 rates) | ~40 s |
-| Test suite (255 tests) | ~4 s |
+| Test suite (310 tests) | ~9 s |
 
 The cost of placing a payload does not depend on the image size (ADR-04);
 what grows with the image is decoding, the eligibility mask and PNG encoding.
@@ -283,7 +283,7 @@ The file size barely matters: AES-GCM runs at memory speed.
 
 ```mermaid
 graph LR
-    subgraph offline["Automated suite: 255 tests, ~4 s, no network"]
+    subgraph offline["Automated suite: 310 tests, ~9 s, no network"]
         U1["Arithmetic<br/>GF(256) vs reference,<br/>chi2 vs SciPy"]
         U2["Formats<br/>known-answer tests"]
         U3["Security behaviour<br/>tampering, forgery,<br/>wrong passphrase"]
@@ -305,14 +305,15 @@ graph LR
 | Test file | Tests | Focus |
 | --- | --- | --- |
 | `test_gf256.py` | 18 | All 65,536 products against shift-and-add; FIPS-197 examples; field axioms |
-| `test_shamir.py` | 50 | Every k-subset; information-theoretic secrecy by enumeration; tampering; forged clusters; search robustness |
-| `test_stego.py` | 46 | Round trips in every mode; authentication; distortion bounds; saturation invariance; walk properties; key derivation |
-| `test_images.py` | 17 | Mode conversion, alpha preservation, lossless output |
-| `test_chi_square.py` | 16 | Survival function vs SciPy; detection on combed histograms |
+| `test_shamir.py` | 62 | Every k-subset; information-theoretic secrecy by enumeration; tampering; forged clusters; search robustness |
+| `test_stego.py` | 54 | Round trips in every mode; authentication; distortion bounds; saturation invariance; walk properties; key derivation |
+| `test_images.py` | 19 | Mode conversion, alpha preservation, lossless output, exclusive file creation |
+| `test_chi_square.py` | 17 | Survival function vs SciPy; detection on combed histograms |
 | `test_rs.py` | 13 | Flip operations; estimates track replacement; naive vs saturation-aware matching |
-| `test_vault.py` | 46 | Every subset opens; failures; forged sets; collisions; restored names |
-| `test_cli.py` | 45 | Every command end to end; clean errors |
-| `test_known_answers.py` | 4 | Walk positions, share bytes, stego pixels and vault bytes pinned |
+| `test_vault.py` | 59 | Every subset opens; failures; forged sets; collisions; restored names |
+| `test_cli.py` | 47 | Every command end to end; clean errors |
+| `test_known_answers.py` | 5 | Walk positions, share bytes, stego pixels (with and without passphrase) and vault bytes pinned |
+| `test_properties.py` | 16 | Property-based tests and parser fuzzing (Hypothesis); `HYPOTHESIS_PROFILE=fuzz` for 3,000 cases each |
 
 Two choices keep the suite fast and deterministic. Covers are synthesised
 from smooth functions plus mild noise rather than loaded from disk, and
