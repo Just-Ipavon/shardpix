@@ -28,6 +28,10 @@ dev = [
     "ruff>=0.5",
     "scipy>=1.10",
 ]
+bench = [
+    "matplotlib>=3.7",
+    "scikit-image>=0.22",
+]
 
 [project.scripts]
 shardpix = "shardpix.cli:main"
