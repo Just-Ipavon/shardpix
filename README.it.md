@@ -134,17 +134,33 @@ stessa cosa a occhio nudo:
 
 ![Piano dei bit meno significativi: foto originale, un tool ingenuo dopo aver inserito dati nel 50% dell'immagine in sequenza, e shardpix dopo aver inserito una quota](assets/lsb-planes.png)
 
-I risultati completi, l'attacco del chi-quadro e i limiti noti sono in
-[docs/05-security-analysis.md](docs/05-security-analysis.md) (in inglese).
-Per riprodurli: `pip install -e ".[bench]"` e poi
-`python -m shardpix.analysis.benchmark`.
+I rilevatori addestrati sono più forti. Su BOSSbase, 10.000 fotografie mai
+compresse, un classificatore basato sui rich model, addestrato nelle
+condizioni più favorevoli per chi attacca, sbaglia nel 42,5% dei casi su una
+quota nascosta in una foto in scala di grigi 512x512, contro il 50% di chi
+tira a caso: un segnale debole, ma non nullo. Il segnale cala con la radice
+quadrata della dimensione dell'immagine, e al tasso più basso misurato i
+rilevatori erano al livello del caso. **Usa foto a colori di almeno 2
+megapixel**, che portano una quota sotto quel punto.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">
+  <img alt="Errore dei rilevatori addestrati SPAM e SRM-lite rispetto al tasso di inserimento: 4-8% al 40%, 42-45% con una quota in una foto 512x512, 48-49% allo 0,1%" src="assets/ml-detection-512-light.png">
+</picture>
+
+I risultati completi, l'attacco del chi-quadro, i rilevatori addestrati e i
+limiti noti sono in [docs/05-security-analysis.md](docs/05-security-analysis.md)
+(in inglese). Per riprodurli: `pip install -e ".[bench]"` e poi
+`python -m shardpix.analysis.benchmark`; per i rilevatori addestrati
+`pip install -e ".[bench,ml]"` e `python -m shardpix.analysis.ml_benchmark`
+su una copia di BOSSbase.
 
 ## Scelte progettuali
 
 **Si divide la chiave, non il file.** Viene condivisa solo la chiave da 32
 byte, quindi ogni immagine contiene circa 160 byte qualunque sia la
 dimensione del file. È proprio un carico così piccolo a rendere le immagini
-statisticamente indistinguibili dagli originali.
+difficili da distinguere dagli originali.
 
 **Le quote si verificano a vicenda senza rivelare nulla.** Lo schema di
 Shamir puro restituisce in silenzio un risultato sbagliato se una quota è
@@ -189,7 +205,11 @@ shardpix/
 └── analysis/
     ├── chi_square.py   attacco del chi-quadro di Westfeld–Pfitzmann
     ├── rs.py           analisi RS di Fridrich–Goljan–Du
-    └── benchmark.py    esperimenti di rilevabilità e grafici
+    ├── benchmark.py    esperimenti di rilevabilità e grafici
+    ├── features.py     caratteristiche SPAM e SRM-lite per la steganalisi
+    ├── ensemble.py     classificatore a ensemble di Kodovský–Fridrich–Holub
+    ├── cnn.py          rete convoluzionale per la steganalisi (PyTorch)
+    └── ml_benchmark.py esperimenti con rilevatori addestrati su BOSSbase
 ```
 
 ## Documentazione

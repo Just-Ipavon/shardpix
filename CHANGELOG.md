@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Trained steganalysis (`python -m shardpix.analysis.ml_benchmark`, extra
+  `ml`): SPAM and SRM-lite features with the Kodovský–Fridrich–Holub
+  ensemble classifier, and a small CNN of the Xu-Net / Yedroudj-Net family,
+  evaluated on BOSSbase 1.01 (docs/05 §5.5.5).
+
+### Documentation
+
+- docs/05 §5.5.5 reports the measurement and §5.6 replaces the expectation
+  that trained detectors would not see a share: in a 512x512 greyscale photo
+  they do, weakly (42.5% error against 50% for guessing). Covers should be
+  colour photos of at least 2 megapixels.
+
 ## [1.1.0] — 2026-10-06
 
 Internal security review: see [docs/06-security-review.md](docs/06-security-review.md).

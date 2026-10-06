@@ -64,13 +64,14 @@ way to understand how such tools are built.
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. | `TestForgedSets` |
 | SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
-| SP-09 | Classical steganalysis does not detect a vault share | ADV-3 | LSB matching (ADR-03), no forced moves at 0/255 (ADR-06), and an embedding rate of 0.05–0.5%. Measured in §5.5. | Benchmark |
+| SP-09 | Classical steganalysis does not detect a vault share; trained steganalysis detects it only weakly, and not at all in large enough covers | ADV-3 | LSB matching (ADR-03), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits whose detectability falls with the square root of the cover size. Measured in §5.5. | Benchmarks (§5.5.1–5.5.5) |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters and replaces reserved names. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | No input is ever overwritten | User error | Case-folded path identity checks in the CLI and in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
 
-What shardpix deliberately does **not** claim: that a determined adversary
-with modern machine-learning steganalysis cannot detect it (§5.6), or that
-the vault file itself is inconspicuous — it is recognisable ciphertext.
+What shardpix deliberately does **not** claim: that a share in a small cover
+is invisible to trained steganalysis — in a 512x512 greyscale photo a
+detector trained under ideal conditions beats chance (§5.5.5) — or that the
+vault file itself is inconspicuous — it is recognisable ciphertext.
 
 ## 5.4 Cryptographic parameters
 
@@ -97,7 +98,8 @@ The benchmark embeds random bits — what an encrypted payload looks like — in
 ten public-domain photographs from scikit-image (six RGB, four greyscale) at
 eleven rates from 0 to 75% of the samples, with four strategies, and runs the
 two classical attacks. Run it with `python -m shardpix.analysis.benchmark`;
-the raw numbers are in [data/benchmark.json](data/benchmark.json).
+the raw numbers are in [data/benchmark.json](data/benchmark.json). §5.5.5
+adds trained detectors on a standard dataset of 10,000 photographs.
 
 ### 5.5.1 RS analysis
 
@@ -197,18 +199,126 @@ A naive tool replacing the first half of the image erases that structure, and
 the boundary is visible to the eye. A vault share changes a few hundred
 samples out of 262,144 and is invisible.
 
+### 5.5.5 Trained detectors
+
+Chi-square and RS need no training. Modern steganalysis does: a detector
+learns the difference between covers and stego images from thousands of
+examples. This section runs three such detectors against shardpix:
+
+| Detector | Features | Classifier |
+| --- | --- | --- |
+| SPAM | 686 Markov transition probabilities of pixel differences, designed against LSB matching (Pevný, Bas and Fridrich) | Ensemble of Fisher linear discriminants on random subspaces (Kodovský, Fridrich and Holub) |
+| SRM-lite | 3,125 co-occurrences of five rich-model residuals (Fridrich and Kodovský); the full SRM has 34,671 | The same ensemble |
+| CNN | Learnt, after a fixed bank of 14 SRM high-pass filters and a truncation unit | Five convolutional blocks of the Xu-Net / Yedroudj-Net family, trained with curriculum from high to low rates |
+
+**Data.** BOSSbase 1.01, the reference set for spatial-domain steganalysis:
+10,000 greyscale 512x512 photographs converted from RAW, never
+JPEG-compressed. Every cover is embedded with shardpix's own strategy
+(LSB matching on samples 2–253, keyed positions, random bits) at each rate.
+Half of the images train the detector, the other half test it; a cover and
+its stego image are always on the same side.
+
+**The attacker is given every advantage.** The detector is trained at the
+exact rate it is tested on and on images from the same source as the test
+images. In the field a steganalyst knows neither the rate nor the camera and
+processing that produced the covers, and *cover-source mismatch* is known to
+cost trained detectors a large part of their accuracy. The numbers below are
+therefore an upper bound on what these detectors achieve, not an estimate of
+what they would achieve on a real holder's photo.
+
+**Metric.** P_E = (false alarms + missed detections) / 2 on the 5,000 test
+pairs, at the detector's own decision threshold: 50% is guessing, 0% is
+never wrong. The interval is the 95% binomial interval (about ±1 point).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/ml-detection-512-dark.png">
+  <img alt="Detection error of SPAM and SRM-lite against embedding rate on BOSSbase 512x512: from 4-8% at 40% embedding up to 42-45% at one vault share and 48-49% at 0.1%" src="../assets/ml-detection-512-light.png">
+</picture>
+
+BOSSbase at its native 512x512 (raw numbers in
+[data/ml_benchmark_512.json](data/ml_benchmark_512.json)):
+
+| Samples carrying bits | Bits | M/√N | SPAM | SRM-lite |
+| ---: | ---: | ---: | ---: | ---: |
+| 40% | 104,858 | 205 | 8.1% | 4.0% |
+| 10% | 26,214 | 51 | 19.0% | 12.1% |
+| 2% | 5,243 | 10 | 34.2% | 28.4% |
+| 1% | 2,621 | 5.1 | 40.0% | 35.8% |
+| **0.48% (one share)** | **1,264** | **2.5** | **45.0%** [44.0, 46.0] | **42.5%** [41.5, 43.5] |
+| 0.25% | 655 | 1.3 | 47.1% [46.1, 48.1] | 45.6% [44.6, 46.6] |
+| 0.1% | 262 | 0.5 | 49.0% [48.0, 50.0] | 48.5% [47.6, 49.5] |
+
+Resized to 256x256, the size most deep-learning steganalysis is evaluated
+at, a share is 1.93% of the samples (raw numbers in
+[data/ml_benchmark_256.json](data/ml_benchmark_256.json)):
+
+| Samples carrying bits | Bits | M/√N | SPAM | SRM-lite |
+| ---: | ---: | ---: | ---: | ---: |
+| 40% | 26,214 | 102 | 6.9% | 4.7% |
+| 20% | 13,107 | 51 | 13.0% | 8.1% |
+| 10% | 6,554 | 26 | 18.9% | 12.7% |
+| 5% | 3,277 | 13 | 26.2% | 19.0% |
+| 2% | 1,311 | 5.1 | 36.1% | 28.7% |
+| **1.93% (one share)** | **1,264** | **4.9** | **35.9%** [34.9, 36.8] | **29.6%** [28.7, 30.5] |
+| 1% | 655 | 2.6 | 42.2% | 37.1% |
+| 0.5% | 328 | 1.3 | 46.0% | 42.9% |
+
+What this shows:
+
+1. **The detectors work.** At 40% embedding the rich model is wrong 4% of
+   the time.
+2. **One share in a 512x512 greyscale photo is detectable, weakly.** P_E is
+   42.5% (AUC 0.61) for SRM-lite: well above chance with these sample sizes,
+   but a detector that is wrong on 42 of every 100 decisions. At a realistic
+   base rate - few of the photos a steganalyst inspects carry anything -
+   almost every alarm it raises would be false. The expectation stated
+   before this measurement, that trained detectors would not see a share at
+   all, was wrong for covers this small.
+3. **Smaller covers are worse.** At 256x256 the same 158 bytes are 1.93% of
+   the samples and SRM-lite drops to 29.6%.
+4. **What matters is the payload against the square root of the cover.**
+   The *square-root law* of steganographic capacity (Ker et al.) says a fixed
+   payload of M bits in a cover of N samples becomes harder to detect as
+   M/√N decreases, not merely as M/N does. The share is fixed at 1,264 bits,
+   so the cover size alone decides. At M/√N ≈ 0.5 both detectors are at
+   chance within the interval. The two image sizes agree with the law only
+   roughly (at M/√N = 1.3, SRM-lite reads 45.6% at 512 and 42.9% at 256),
+   because resizing changes the noise the detectors rely on.
+
+What it means for a real cover: a share in a 512x512 greyscale image has
+M/√N ≈ 2.5; in a 1-megapixel colour photo (3 million samples) ≈ 0.7; in a
+2-megapixel colour photo ≈ 0.5; in a 12-megapixel phone photo ≈ 0.2, more
+than twice below the lowest point measured. **Use colour photos of at least
+2 megapixels.** That threshold is an extrapolation along the square-root law
+from greyscale 512x512 images, not a measurement on large photos, which
+BOSSbase does not contain.
+
+Reproduce (about one hour for the feature-based detectors at each size on
+four CPU cores; the CNN about two more):
+
+```bash
+pip install -e ".[bench,ml]"
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --detectors spam,srm_lite
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --detectors spam,srm_lite --rates 0.0025,0.001
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.02,0.01,0.005 --detectors spam,srm_lite
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.01 --detectors cnn --fine-epochs 5
+```
+
 ## 5.6 Known limitations
 
 **Not independently audited.** See §5.1 and 06.
 
-**Only classical steganalysis was evaluated.** Chi-square and RS target LSB
-replacement. LSB matching has dedicated detectors — histogram characteristic
-function methods (Harmsen and Pearlman; Ker) — and modern steganalysis uses
-rich models with ensemble classifiers (Fridrich and Kodovský) or deep
-networks such as SRNet. These are trained detectors and were not run here.
-At 0.05–0.5% of the samples a vault share sits far below the rates at which
-such detectors are usually reported to work well, but that is an expectation,
-not a measurement.
+**Trained steganalysis sees shares in small covers.** Measured in §5.5.5:
+in a 512x512 greyscale photo a share brings a rich-model detector to 42.5%
+error, against 50% for guessing; at 256x256 to 29.6%. In colour photos of
+2 megapixels or more the share falls below the lowest rate measured, where
+the detectors were at chance — but that is an extrapolation along the
+square-root law, not a measurement on large photos. The detectors used are
+SPAM, a 3,125-feature subset of the spatial rich model and a small CNN
+trained on a CPU; the full SRM (34,671 features) and larger networks such as
+SRNet, trained on a GPU, would likely do better. Shares are not adaptive:
+they do not prefer textured regions as HUGO, WOW or S-UNIWARD do, which
+would lower detectability further at the same payload.
 
 **JPEG covers.** Pixels decoded from a JPEG obey the block quantisation of
 the original file. Changing any of them by ±1 breaks that structure, which
@@ -280,3 +390,17 @@ break compatibility.
 10. NIST SP 800-38D, *Recommendation for Block Cipher Modes of Operation:
     Galois/Counter Mode (GCM) and GMAC*, 2007.
 11. SatoshiLabs, *SLIP-0039: Shamir's Secret-Sharing for Mnemonic Codes*.
+12. T. Pevný, P. Bas and J. Fridrich, "Steganalysis by subtractive pixel
+    adjacency matrix" (SPAM), *IEEE Transactions on Information Forensics and
+    Security*, 2010.
+13. J. Kodovský, J. Fridrich and V. Holub, "Ensemble classifiers for
+    steganalysis of digital media", *IEEE Transactions on Information
+    Forensics and Security*, 2012.
+14. P. Bas, T. Filler and T. Pevný, "Break our steganographic system: the ins
+    and outs of organizing BOSS", *Information Hiding*, 2011 (BOSSbase).
+15. G. Xu, H.-Z. Wu and Y.-Q. Shi, "Structural design of convolutional neural
+    networks for steganalysis", *IEEE Signal Processing Letters*, 2016.
+16. M. Yedroudj, F. Comby and M. Chaumont, "Yedroudj-Net: an efficient CNN
+    for spatial steganalysis", *IEEE ICASSP*, 2018.
+17. A. Ker, T. Pevný, J. Kodovský and J. Fridrich, "The square root law of
+    steganographic capacity", *ACM Workshop on Multimedia and Security*, 2008.
