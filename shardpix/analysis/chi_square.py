@@ -74,10 +74,10 @@ def chi2_sf(statistic: float, dof: int) -> float:
     """
     if dof <= 0:
         raise ValueError("degrees of freedom must be positive")
-    if statistic <= 0:
-        return 1.0
     a = dof / 2.0
     x = statistic / 2.0
+    if x <= 0.0:  # also catches subnormal statistics that underflow when halved
+        return 1.0
     q = 1.0 - _lower_series(a, x) if x < a + 1.0 else _upper_fraction(a, x)
     return min(1.0, max(0.0, q))
 

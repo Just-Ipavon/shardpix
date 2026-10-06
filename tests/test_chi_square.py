@@ -35,6 +35,10 @@ class TestChi2Sf:
     def test_zero_statistic_is_certain(self):
         assert chi_square.chi2_sf(0.0, 5) == 1.0
 
+    def test_subnormal_statistic_does_not_crash(self):
+        """Found by fuzzing: 5e-324 / 2 underflows to 0 and log(0) raised."""
+        assert chi_square.chi2_sf(5e-324, 1) == 1.0
+
     def test_rejects_non_positive_dof(self):
         with pytest.raises(ValueError):
             chi_square.chi2_sf(1.0, 0)
