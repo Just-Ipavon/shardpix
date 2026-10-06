@@ -1,0 +1,4 @@
+cryptography>=42
+numpy>=1.24
+pillow>=10.0
+rich>=13.7

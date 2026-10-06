@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shardpix"
+version = "0.1.0"
+description = "Hide authenticated, encrypted payloads in ordinary-looking PNG images."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Pasquale Ruotolo" }]
+dependencies = [
+    "cryptography>=42",
+    "numpy>=1.24",
+    "pillow>=10.0",
+    "rich>=13.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/Just-Ipavon/shardpix"
+Documentation = "https://github.com/Just-Ipavon/shardpix/tree/main/docs"
+Issues = "https://github.com/Just-Ipavon/shardpix/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "scipy>=1.10",
+]
+
+[project.scripts]
+shardpix = "shardpix.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["shardpix*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
