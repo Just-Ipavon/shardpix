@@ -285,3 +285,115 @@ class TestRobustSearch:
         broken = [flip_first_value_byte(s) for s in shares[:10]] + shares[10:]
         with pytest.raises(ShareAuthenticationError, match="gave up"):
             shamir.combine(broken)
+
+
+class TestSearchBudgetAndReports:
+    """Pin the search strategy and the details carried by errors (from mutation testing)."""
+
+    def test_disjoint_blocks_find_a_clean_block_within_two_attempts(self, monkeypatch):
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", 2)
+        shares = shamir.split(SECRET, 6, 20)
+        assert shamir.combine([flip_first_value_byte(shares[0]), *shares[1:]]).secret == SECRET
+
+    def test_budget_is_exact(self, monkeypatch):
+        shares = shamir.split(SECRET, 3, 5)
+        pool = [flip_first_value_byte(shares[0]), *shares[1:]]
+        # First block (bad, 1, 2) fails; the second candidate is the first combination
+        # not already tried that avoids the bad share only after a few attempts.
+        attempts = 0
+        for subset in shamir._candidate_subsets(pool, 3):
+            attempts += 1
+            if pool[0] not in subset:
+                break
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", attempts)
+        assert shamir.combine(pool).secret == SECRET
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", attempts - 1)
+        with pytest.raises(ShareAuthenticationError, match="gave up"):
+            shamir.combine(pool)
+
+    def test_each_cluster_is_reported_once(self, shares):
+        recoveries = shamir.recover_all(shares)
+        assert len(recoveries) == 1
+
+    def test_authentication_failure_lists_the_shares(self, shares):
+        bad = [flip_first_value_byte(s) for s in shares[:3]]
+        with pytest.raises(ShareAuthenticationError) as exc:
+            shamir.combine(bad)
+        assert {r.share for r in exc.value.rejected} == set(bad)
+        assert all("failed authentication" in r.reason for r in exc.value.rejected)
+
+    def test_ambiguity_errors_carry_the_rejections(self, shares):
+        forged = forge_cluster(shares, 3, 3)
+        with pytest.raises(InconsistentSharesError) as exc:
+            shamir.combine([*forged, *shares[:3]])
+        assert len(exc.value.rejected) == 3
+        others = shamir.split(os.urandom(32), 3, 3)
+        with pytest.raises(InconsistentSharesError) as exc:
+            shamir.combine([*shares[:3], *others])
+        assert len(exc.value.rejected) == 3
+
+    def test_insufficient_shares_name_the_strangers(self, shares):
+        stranger = shamir.split(os.urandom(32), 3, 5)[0]
+        with pytest.raises(InsufficientSharesError) as exc:
+            shamir.combine([*shares[:2], stranger])
+        assert [(r.share, r.reason) for r in exc.value.rejected] == [
+            (stranger, "belongs to a different split")
+        ]
+
+    def test_rejection_reasons_and_recovery_fields(self, shares):
+        odd_length = shamir.split(os.urandom(16), 3, 5, group_id=shares[0].group_id)[0]
+        recovery = shamir.combine([*shares[:3], odd_length])
+        assert recovery.group_id == shares[0].group_id
+        assert recovery.threshold == 3
+        assert recovery.rejected[0].reason == "secret length differs from the other shares"
+
+
+class TestBlockOrder:
+    """Pin which disjoint blocks are tried first (from mutation testing)."""
+
+    def test_the_first_block_starts_at_the_first_share(self, monkeypatch):
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", 1)
+        shares = shamir.split(SECRET, 6, 20)
+        pool = list(shares)
+        pool[6], pool[12] = flip_first_value_byte(pool[6]), flip_first_value_byte(pool[12])
+        assert shamir.combine(pool).secret == SECRET
+
+    def test_the_last_whole_block_is_tried(self, monkeypatch):
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", 3)
+        shares = shamir.split(SECRET, 6, 18)
+        pool = list(shares)
+        pool[0], pool[6] = flip_first_value_byte(pool[0]), flip_first_value_byte(pool[6])
+        assert shamir.combine(pool).secret == SECRET
+
+    def test_blocks_do_not_overlap(self, monkeypatch):
+        monkeypatch.setattr(shamir, "MAX_SUBSETS", 2)
+        shares = shamir.split(SECRET, 6, 20)
+        pool = list(shares)
+        pool[1] = flip_first_value_byte(pool[1])
+        assert shamir.combine(pool).secret == SECRET
+        pool[7] = flip_first_value_byte(pool[7])
+        with pytest.raises(ShareAuthenticationError, match="gave up") as exc:
+            shamir.combine(pool)
+        assert exc.value.rejected
+
+    def test_multi_split_error_names_the_other_split(self, shares):
+        others = shamir.split(os.urandom(32), 3, 3)
+        with pytest.raises(InconsistentSharesError) as exc:
+            shamir.combine([*shares[:3], *others])
+        assert {r.share for r in exc.value.rejected} == set(others)
+
+
+def test_text_round_trip_when_the_encoding_ends_in_x():
+    """Found by mutation testing: random inputs rarely produce a final 'x'.
+
+    Shares whose length is a multiple of 5 bytes have no base32 padding, so the
+    last character can be any letter; a bug stripping trailing characters other
+    than '=' would only show then.
+    """
+    for _ in range(2000):
+        share = shamir.split(os.urandom(3), 2, 2)[0]  # 77 + 3 = 80 bytes, no padding
+        if share.to_text().endswith("x"):
+            break
+    else:  # pragma: no cover - probability (31/32)^2000
+        pytest.fail("no share ending in 'x' generated")
+    assert shamir.Share.from_text(share.to_text()) == share
