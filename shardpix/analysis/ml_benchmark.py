@@ -127,7 +127,8 @@ _COVERS: np.ndarray | None = None
 
 def _features_worker(args: tuple[int, float, int]) -> np.ndarray:
     index, rate, seed = args
-    assert _COVERS is not None
+    if _COVERS is None:
+        raise RuntimeError("feature workers started without covers")
     image = _COVERS[index] if rate == 0 else stego_image(_COVERS, index, rate, seed)
     return np.concatenate([features.extract(image, name) for name in FEATURE_DETECTORS])
 
