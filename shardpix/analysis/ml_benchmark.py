@@ -216,8 +216,14 @@ def run_cnn(
     first_epochs: int,
     fine_epochs: int,
     crop: int,
+    checkpoint: Path | None = None,
 ) -> list[dict]:
-    """Curriculum training from the highest rate down, testing at every rate."""
+    """Curriculum training from the highest rate down, testing at every rate.
+
+    With ``checkpoint``, the model and the results are saved after every rate
+    (``<checkpoint>.pt`` and ``<checkpoint>.json``), and a run with the same
+    settings resumes after the last rate completed.
+    """
     import torch
 
     from . import cnn
@@ -228,9 +234,30 @@ def run_cnn(
     valid_idx, fit_idx = train_idx[:n_valid], train_idx[n_valid:]
     test_covers = covers[test_idx]
 
+    schedule = sorted(rates, reverse=True)
+    settings = {
+        "rates": schedule,
+        "seed": seed,
+        "first_epochs": first_epochs,
+        "fine_epochs": fine_epochs,
+        "crop": crop,
+        "images": len(covers),
+        "size": int(covers.shape[1]),
+    }
     model = None
-    results = []
-    for step, rate in enumerate(sorted(rates, reverse=True)):
+    results: list[dict] = []
+    if checkpoint is not None:
+        weights, saved = checkpoint.with_suffix(".pt"), checkpoint.with_suffix(".json")
+        if weights.exists() and saved.exists():
+            state = json.loads(saved.read_text("utf-8"))
+            if state.get("settings") == settings:
+                results = state["results"]
+                model = cnn.StegoNet()
+                model.load_state_dict(torch.load(weights, weights_only=True))
+                print(f"  cnn: resuming after {len(results)} of {len(schedule)} rates")
+    for step, rate in enumerate(schedule):
+        if step < len(results):
+            continue
         print(f"  cnn: training at rate {rate:.3%}")
         start = time.time()
 
@@ -259,6 +286,12 @@ def run_cnn(
             "minutes": (time.time() - start) / 60,
         }
         results.append(row)
+        if checkpoint is not None:
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(model.state_dict(), checkpoint.with_suffix(".pt"))
+            checkpoint.with_suffix(".json").write_text(
+                json.dumps({"settings": settings, "results": results}), encoding="utf-8"
+            )
         print(
             f"  cnn       rate {rate:7.3%}: P_E {row['p_e']:.3f} "
             f"[{row['p_e_low']:.3f}, {row['p_e_high']:.3f}], AUC {row['auc']:.3f} "
@@ -385,6 +418,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--first-epochs", type=int, default=20)
     parser.add_argument("--fine-epochs", type=int, default=6)
     parser.add_argument("--crop", type=int, default=128, help="CNN training window")
+    parser.add_argument(
+        "--checkpoint", type=Path, default=None, help="CNN: save after each rate, resume"
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("assets"))
     parser.add_argument(
@@ -431,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                 first_epochs=args.first_epochs,
                 fine_epochs=args.fine_epochs,
                 crop=args.crop,
+                checkpoint=args.checkpoint,
             )
             results["cnn_training"] = {
                 "first_epochs": args.first_epochs,
