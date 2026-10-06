@@ -29,3 +29,30 @@ jobs:
 
       - name: Test
         run: pytest -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,audit]" semgrep
+
+      - name: Static analysis (bandit)
+        run: bandit -q -r shardpix
+
+      - name: Static analysis (semgrep)
+        run: semgrep scan --config p/python --error --metrics=off shardpix
+
+      - name: Known vulnerabilities in dependencies (pip-audit)
+        run: pip-audit -r requirements.txt
+
+      - name: Property-based tests, fuzzing profile
+        run: pytest -q tests/test_properties.py
+        env:
+          HYPOTHESIS_PROFILE: fuzz
