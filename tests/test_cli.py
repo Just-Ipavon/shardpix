@@ -137,3 +137,64 @@ class TestFormatBytes:
     )
     def test_formats(self, size, expected):
         assert cli.format_bytes(size) == expected
+
+
+class TestSplitCombine:
+    def test_round_trip_through_stdout(self, tmp_path, capsysbinary):
+        assert run("split", "-t", "the vault code is 4-8-15", "-k", "2", "-n", "3") == 0
+        lines = capsysbinary.readouterr().out.decode().splitlines()
+        assert len(lines) == 3 and all(line.startswith("spx1-") for line in lines)
+        shares = tmp_path / "shares.txt"
+        shares.write_text("\n".join(lines[1:]) + "\n")
+        assert run("combine", shares) == 0
+        assert capsysbinary.readouterr().out == b"the vault code is 4-8-15"
+
+    def test_round_trip_through_files(self, tmp_path):
+        secret = tmp_path / "key.bin"
+        secret.write_bytes(bytes(range(64)))
+        directory = tmp_path / "shares"
+        assert run("split", "-i", secret, "-k", "3", "-n", "5", "-d", directory) == 0
+        files = sorted(directory.iterdir())
+        assert len(files) == 5
+        recovered = tmp_path / "recovered.bin"
+        assert run("combine", files[0], files[2], files[4], "-o", recovered) == 0
+        assert recovered.read_bytes() == secret.read_bytes()
+
+    def test_malformed_lines_are_skipped_not_fatal(self, tmp_path, capsys):
+        assert run("split", "-t", "secret", "-k", "2", "-n", "3") == 0
+        lines = capsys.readouterr().out.splitlines()
+        shares = tmp_path / "shares.txt"
+        shares.write_text("# my shares\n\nspx1-garbage\n" + "\n".join(lines) + "\n")
+        out = tmp_path / "out.bin"
+        assert run("combine", shares, "-o", out) == 0
+        assert out.read_bytes() == b"secret"
+        assert "skipped" in capsys.readouterr().out
+
+    def test_not_enough_shares(self, tmp_path, capsys):
+        assert run("split", "-t", "secret", "-k", "3", "-n", "3") == 0
+        lines = capsys.readouterr().out.splitlines()
+        shares = tmp_path / "shares.txt"
+        shares.write_text(lines[0] + "\n")
+        assert run("combine", shares) == 1
+        assert "need 3 shares" in capsys.readouterr().err
+
+    def test_threshold_larger_than_shares(self, capsys):
+        assert run("split", "-t", "secret", "-k", "4", "-n", "3") == 1
+        assert "threshold" in capsys.readouterr().err
+
+    def test_secret_too_large_points_to_seal(self, tmp_path, capsys):
+        big = tmp_path / "big.bin"
+        big.write_bytes(bytes(70_000))
+        assert run("split", "-i", big, "-k", "2", "-n", "3") == 1
+        assert "seal" in capsys.readouterr().err
+
+    def test_split_refuses_to_overwrite_share_files(self, tmp_path, monkeypatch):
+        directory = tmp_path / "shares"
+        directory.mkdir()
+        group = "deadbeef"
+        (directory / f"share-{group}-1.txt").write_text("existing")
+        monkeypatch.setattr(
+            "shardpix.shamir.Share.group", property(lambda self: group), raising=True
+        )
+        assert run("split", "-t", "x", "-k", "2", "-n", "2", "-d", directory) == 1
+        assert (directory / f"share-{group}-1.txt").read_text() == "existing"

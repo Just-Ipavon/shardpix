@@ -7,8 +7,8 @@
 Hide authenticated, encrypted payloads in ordinary-looking PNG images — and
 measure how detectable they are.
 
-> **Work in progress.** This release covers the steganography layer and the
-> chi-square attack. Secret sharing and the full pipeline are coming next.
+> **Work in progress.** This release covers the steganography layer, the
+> chi-square attack and Shamir secret sharing. The full pipeline is next.
 
 ## Install
 
@@ -33,6 +33,12 @@ shardpix extract holiday.png -p
 
 # Look for the statistical fingerprint of LSB replacement
 shardpix analyze holiday.png
+
+# Split a secret into 5 shares, any 3 of which recover it
+shardpix split -t "safe code 4815" -k 3 -n 5 -d shares/
+
+# Recover it from any 3 share files
+shardpix combine shares/share-*-1.txt shares/share-*-3.txt shares/share-*-4.txt
 ```
 
 ## License
