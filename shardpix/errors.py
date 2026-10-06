@@ -22,3 +22,31 @@ class CapacityError(ShardpixError):
 
 class PayloadNotFoundError(ShardpixError):
     """No authentic payload could be read: wrong passphrase, or a modified image."""
+
+
+class ShareError(ShardpixError):
+    """A problem with secret shares.
+
+    ``rejected`` lists ``(share, reason)`` pairs for shares that were set aside
+    before the failure, so the caller can explain what went wrong.
+    """
+
+    def __init__(self, message: str, rejected: tuple = ()) -> None:
+        super().__init__(message)
+        self.rejected = rejected
+
+
+class ShareFormatError(ShareError):
+    """A share is malformed or corrupted (bad encoding, checksum or field)."""
+
+
+class InsufficientSharesError(ShareError):
+    """Fewer usable shares than the threshold."""
+
+
+class InconsistentSharesError(ShareError):
+    """The shares do not belong to a single split."""
+
+
+class ShareAuthenticationError(ShareError):
+    """No set of shares reconstructs a secret that their MACs confirm."""
