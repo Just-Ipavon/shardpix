@@ -129,15 +129,31 @@ points. The least significant bit plane tells the same story to the naked eye:
 
 ![Least significant bit plane: clean photo, a naive tool after embedding 50% sequentially, and shardpix after embedding a vault share](assets/lsb-planes.png)
 
-The full results, the chi-square attack and the known limitations are in
-[docs/05-security-analysis.md](docs/05-security-analysis.md). Reproduce them
-with `pip install -e ".[bench]"` and `python -m shardpix.analysis.benchmark`.
+Trained detectors are stronger. On BOSSbase, 10,000 never-compressed
+photographs, a rich-model classifier trained under ideal conditions for the
+attacker brings a share in a 512x512 greyscale photo to 42.5% detection
+error, against 50% for guessing: weak, but not zero. The signal shrinks with
+the square root of the cover size, and at the lowest rate measured the
+detectors were at chance. **Use colour photos of at least 2 megapixels**,
+which puts a share below that point.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">
+  <img alt="Detection error of trained SPAM and SRM-lite detectors against embedding rate: 4-8% at 40% embedding, 42-45% at one vault share in a 512x512 photo, 48-49% at 0.1%" src="assets/ml-detection-512-light.png">
+</picture>
+
+The full results, the chi-square attack, the trained detectors and the known
+limitations are in [docs/05-security-analysis.md](docs/05-security-analysis.md).
+Reproduce them with `pip install -e ".[bench]"` and
+`python -m shardpix.analysis.benchmark`, and for the trained detectors
+`pip install -e ".[bench,ml]"` and `python -m shardpix.analysis.ml_benchmark`
+on a copy of BOSSbase.
 
 ## Design notes
 
 **Split the key, not the file.** Only the 32-byte key is shared, so every
 image carries about 160 bytes however large the file is. A small payload is
-what keeps the images statistically indistinguishable from the originals.
+what keeps the images hard to tell from the originals.
 
 **Shares check each other without leaking anything.** Plain Shamir silently
 returns garbage if one share is damaged. Each share here carries a MAC, but the
@@ -178,7 +194,11 @@ shardpix/
 └── analysis/
     ├── chi_square.py   Westfeld–Pfitzmann chi-square attack
     ├── rs.py           Fridrich–Goljan–Du RS analysis
-    └── benchmark.py    detectability experiments and charts
+    ├── benchmark.py    detectability experiments and charts
+    ├── features.py     SPAM and SRM-lite steganalysis features
+    ├── ensemble.py     Kodovský–Fridrich–Holub ensemble classifier
+    ├── cnn.py          convolutional steganalysis network (PyTorch)
+    └── ml_benchmark.py trained-detector experiments on BOSSbase
 ```
 
 ## Documentation

@@ -320,7 +320,9 @@ Examples of mutants that survive because they are equivalent:
 ## 6.10 Accepted risks
 
 Beyond SR-06 to SR-08, the limitations listed in 05 §5.6 remain accepted:
-no evaluation against trained steganalysis, JPEG covers, cover availability,
+weak detectability of shares in small covers by trained steganalysis
+(measured in 05 §5.5.5; mitigated by using colour covers of at least
+2 megapixels), JPEG covers, cover availability,
 transport re-compression, visible vault metadata, one passphrase per vault,
 non-constant-time arithmetic and memory that cannot be wiped, and the search
 budget as a denial-of-service limit.
@@ -350,8 +352,11 @@ could only argue:
    a proof sketch reviewed by someone else would close it.
 2. **The cluster search** (`shamir.recover_all`) under adversarial share
    sets, including the budget and the reasons reported.
-3. **Detectability** against trained steganalysis (rich models, SRNet) at the
-   operating point of 0.05–0.5% of the samples.
+3. **Detectability** against stronger trained steganalysis than 05 §5.5.5
+   could run on a CPU — the full SRM, SRNet — and on large colour photos,
+   where the 2-megapixel threshold is extrapolated, not measured. Testing
+   under cover-source mismatch would show how much of the measured advantage
+   survives outside the laboratory.
 4. **The public walk** and whether its positions plus the cost byte leak
    anything across many images.
 5. **Side channels** in extraction, if shardpix were ever used outside a

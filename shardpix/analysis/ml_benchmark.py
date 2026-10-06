@@ -271,6 +271,7 @@ def run_cnn(
 
 def plot(results: dict, out: Path, mode: str) -> Path:
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import NullLocator
 
     theme = THEMES[mode]
     colours = {
@@ -284,7 +285,6 @@ def plot(results: dict, out: Path, mode: str) -> Path:
     ax.set_xscale("log")
     share = results["share_rate"]
     ax.axhline(50, color=theme["axis"], linewidth=1, linestyle="--", zorder=1)
-    ax.text(0.42, 51.5, "guessing", color=theme["muted"], fontsize=8.5)
     ax.axvline(share * 100, color=theme["axis"], linewidth=1, zorder=1)
     ax.text(
         share * 100 * 1.06,
@@ -315,11 +315,15 @@ def plot(results: dict, out: Path, mode: str) -> Path:
             label=LABELS[key],
             zorder=3,
         )
-    ax.set_xlim(0.4, 45)
+    measured = [r["rate"] * 100 for rows in results["detectors"].values() for r in rows]
+    left = min([*measured, share * 100]) * 0.8
+    ax.set_xlim(left, 45)
     ax.set_ylim(0, 56)
-    ticks = [0.5, 1, 2, 5, 10, 20, 40]
+    ticks = [t for t in (0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 40) if t >= left]
     ax.set_xticks(ticks)
     ax.set_xticklabels([f"{t:g}%" for t in ticks])
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.text(left * 1.06, 51.5, "guessing", color=theme["muted"], fontsize=8.5)
     ax.set_xlabel(
         "Samples carrying payload bits (log scale)", color=theme["secondary"], fontsize=9.5
     )
@@ -331,11 +335,11 @@ def plot(results: dict, out: Path, mode: str) -> Path:
         fig,
         ax,
         theme,
-        "Trained detectors find heavy embedding, not a vault share",
+        "Trained detectors: strong on heavy embedding, weak on a vault share",
         f"{results['dataset']}: {results['images']} images at {results['size']}x"
         f"{results['size']}, half for training, half for testing. Shaded: 95% interval.",
         path,
-        legend_at="lower right",
+        legend_at="upper right",
     )
     plt.close(fig)
     return path
@@ -348,7 +352,7 @@ def markdown_table(results: dict) -> str:
     header = "| Embedding rate | " + " | ".join(LABELS[k] for k in detectors) + " |"
     rows = [header, "| ---: |" + " ---: |" * len(detectors)]
     for rate in rates:
-        name = f"**{rate:.2%} (one share)**" if abs(rate - share) < 1e-9 else f"{rate:.0%}"
+        name = f"**{rate:.2%} (one share)**" if abs(rate - share) < 1e-9 else f"{rate * 100:g}%"
         cells = []
         for k in detectors:
             row = next((r for r in results["detectors"][k] if abs(r["rate"] - rate) < 1e-9), None)
