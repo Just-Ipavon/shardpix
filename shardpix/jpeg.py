@@ -124,7 +124,26 @@ def embed(
     random_bytes: stego.RandomBytes = os.urandom,
 ) -> tuple[bytes, stego.EmbedReport]:
     """Hide ``payload`` in ``cover``; return the stego JPEG file and a report."""
-    coefficients = cover.coefficients()
+    coefficients, report = embed_coefficients(
+        cover.coefficients(), cover.blocks.shape, cover.quant, payload, passphrase, random_bytes
+    )
+    return _encode(cover, coefficients), report
+
+
+def embed_coefficients(
+    coefficients: np.ndarray,
+    shape: tuple[int, ...],
+    quant: np.ndarray,
+    payload: bytes,
+    passphrase: str | None = None,
+    random_bytes: stego.RandomBytes = os.urandom,
+) -> tuple[np.ndarray, stego.EmbedReport]:
+    """The core of :func:`embed`, on a flat array of luminance coefficients.
+
+    ``shape`` is the ``Hb x Wb x 8 x 8`` shape the coefficients come from and
+    ``quant`` the luminance quantisation table. Benchmarks use it directly,
+    without writing files.
+    """
     eligible = eligible_mask(coefficients)
     n_eligible = int(np.count_nonzero(eligible))
     room = stego.max_frame_bytes(n_eligible) - stego.FRAME_OVERHEAD
@@ -150,7 +169,7 @@ def embed(
         raise CapacityError("this JPEG is too small for this payload")
     width = stego.code_width(free, body.size)
     keyed = order.first(stego.LENGTH_BITS * hw + width * body.size)
-    rho = costs.uerd(cover.blocks, cover.quant).reshape(-1)
+    rho = costs.uerd(coefficients.reshape(shape), quant).reshape(-1)
 
     out, changed = coefficients, 0
     for positions, part, seed in (
@@ -171,7 +190,7 @@ def embed(
         bits_written=int(stego.PUBLIC_BITS + frame_bits.size),
         samples_changed=changed,
     )
-    return _encode(cover, out), report
+    return out, report
 
 
 def _encode(cover: JpegCover, coefficients: np.ndarray) -> bytes:
