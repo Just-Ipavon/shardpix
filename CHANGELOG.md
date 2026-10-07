@@ -27,6 +27,10 @@ All notable changes to this project are documented here. The format follows
 - docs/07: PNG and JPEG, the embedding methods, and how to get good covers
   from a phone.
 - `ml_benchmark --strategy adaptive`.
+- Pooled steganalysis (`python -m shardpix.analysis.pooled`, docs/05
+  §5.5.7): an adversary holding several images of one vault. Format 3
+  falls from 42.6% detection error on one image to 25.7% on ten and 7.4%
+  on fifty; format 4 stays at 50% up to fifty. New adversary ADV-5.
 
 - Trained steganalysis (`python -m shardpix.analysis.ml_benchmark`, extra
   `ml`): SPAM and SRM-lite features with the Kodovský–Fridrich–Holub

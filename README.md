@@ -231,7 +231,8 @@ shardpix/
     ├── features.py     SPAM and SRM-lite steganalysis features
     ├── ensemble.py     Kodovský–Fridrich–Holub ensemble classifier
     ├── cnn.py          convolutional steganalysis network (PyTorch)
-    └── ml_benchmark.py trained-detector experiments on BOSSbase
+    ├── ml_benchmark.py trained-detector experiments on BOSSbase
+    └── pooled.py       an adversary holding several images of one vault
 ```
 
 ## Documentation
