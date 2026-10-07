@@ -213,27 +213,68 @@ def run(sources: dict[str, Path], rate: float, groups=GROUP_SIZES, seed: int = 0
     return results
 
 
-LABELS = {"shardpix": "format 3 (matching)", "adaptive": "format 4 (adaptive)"}
+def run_jpeg(path: Path, groups=GROUP_SIZES, seed: int = 0) -> dict:
+    """The same for JPEG covers, from the DCTR scores of :mod:`.jpeg_benchmark`."""
+    data = np.load(path)
+    results: dict = {"payload": "share", "groups": list(groups), "strategies": {}}
+    for strategy in ("naive", "jpeg"):
+        key = f"dctr@{strategy}@share"
+        if key not in data:
+            raise SystemExit(f"{path} has no scores for {key}: run jpeg_benchmark first")
+        covers, stegos = data[key]
+        rows = []
+        for method in ("mean", "llr"):
+            for g in groups:
+                r = pooled(covers, stegos, g, method, seed=seed)
+                rows.append(asdict(r))
+                print(
+                    f"  {strategy:6s} dctr {method:4s} g={g:3d}: "
+                    f"P_E {r.p_e:.3f} [{r.p_e_low:.3f}, {r.p_e_high:.3f}] AUC {r.auc:.3f}"
+                )
+        results["strategies"][strategy] = {"dctr": rows}
+    return results
 
 
-def plot(results: dict, out: Path, mode: str, size: int) -> Path:
+LABELS = {
+    "shardpix": "format 3 (matching)",
+    "adaptive": "format 4 (adaptive)",
+    "naive": "one bit per coefficient",
+    "jpeg": "format 5 (adaptive)",
+}
+SERIES = {
+    "shardpix": "replacement",
+    "adaptive": "shardpix",
+    "naive": "replacement",
+    "jpeg": "shardpix",
+}
+
+
+def plot(
+    results: dict,
+    out: Path,
+    mode: str,
+    size: int,
+    detector: str = "srm_lite",
+    name: str | None = None,
+    title: str = "One vault, many images: format 3 falls, format 4 holds",
+    subtitle: str | None = None,
+) -> Path:
     import matplotlib.pyplot as plt
     from matplotlib.ticker import NullLocator
 
     theme = THEMES[mode]
-    colours = {"shardpix": theme["series"]["replacement"], "adaptive": theme["series"]["shardpix"]}
     fig, ax = plt.subplots(figsize=(8, 5))
     fig.subplots_adjust(left=0.1, right=0.95, top=0.8, bottom=0.13)
     _style_axes(ax, theme)
     ax.set_xscale("log")
     ax.axhline(50, color=theme["axis"], linewidth=1, linestyle="--", zorder=1)
     for strategy, per_detector in results["strategies"].items():
-        rows = [r for r in per_detector["srm_lite"] if r["method"] == "llr"]
+        rows = [r for r in per_detector[detector] if r["method"] == "llr"]
         g = np.array([r["group"] for r in rows])
         p_e = np.array([r["p_e"] for r in rows]) * 100
         low = np.array([r["p_e_low"] for r in rows]) * 100
         high = np.array([r["p_e_high"] for r in rows]) * 100
-        colour = colours[strategy]
+        colour = theme["series"][SERIES[strategy]]
         ax.fill_between(g, low, high, color=colour, alpha=0.15, linewidth=0, zorder=2)
         ax.plot(
             g,
@@ -257,14 +298,18 @@ def plot(results: dict, out: Path, mode: str, size: int) -> Path:
         fontsize=9.5,
     )
     ax.set_ylabel("Detection error P_E (%)", color=theme["secondary"], fontsize=9.5)
-    path = out / f"pooled-{size}-{mode}.png"
+    path = out / f"{name or f'pooled-{size}'}-{mode}.png"
+    if subtitle is None:
+        subtitle = (
+            f"SRM-lite, scores pooled by likelihood ratio, one share per image, BOSSbase "
+            f"{size}x{size}.\nShaded: 2.5-97.5% over 40 splits."
+        )
     _finish(
         fig,
         ax,
         theme,
-        "One vault, many images: format 3 falls, format 4 holds",
-        f"SRM-lite, scores pooled by likelihood ratio, one share per image, BOSSbase "
-        f"{size}x{size}.\nShaded: 2.5-97.5% over 40 splits.",
+        title,
+        subtitle,
         path,
         legend_at="lower left",
     )
@@ -301,7 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data", type=Path, default=Path("docs/data"))
     parser.add_argument("--out", type=Path, default=Path("assets"))
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--jpeg", type=int, default=None, help="pool JPEG scores at this quality")
     args = parser.parse_args(argv)
+    if args.jpeg is not None:
+        return _main_jpeg(args)
 
     sources = {
         "shardpix": args.data / f"ml_benchmark_{args.size}.scores.npz",
@@ -327,6 +375,37 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  wrote {plot(results, args.out, mode, args.size)}")
     print()
     print(markdown_table(results))
+    return 0
+
+
+def _main_jpeg(args: argparse.Namespace) -> int:
+    source = args.data / f"jpeg_benchmark_q{args.jpeg}.scores.npz"
+    if not source.exists():
+        raise SystemExit(f"{source} not found: run jpeg_benchmark first")
+    results = run_jpeg(source, seed=args.seed)
+    results["quality"] = args.jpeg
+    path = args.data / f"pooled_jpeg_q{args.jpeg}.json"
+    path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    print(f"  wrote {path}")
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    for mode in THEMES:
+        chart = plot(
+            results,
+            args.out,
+            mode,
+            512,
+            detector="dctr",
+            name=f"pooled-jpeg-q{args.jpeg}",
+            title="One vault, many JPEG photos",
+            subtitle=(
+                f"DCTR, scores pooled by likelihood ratio, one share per image, BOSSbase "
+                f"512x512 at JPEG quality {args.jpeg}.\nShaded: 2.5-97.5% over 40 splits."
+            ),
+        )
+        print(f"  wrote {chart}")
     return 0
 
 
