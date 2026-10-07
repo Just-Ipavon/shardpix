@@ -90,9 +90,11 @@ def _worker(args: tuple[int, str, str, int]) -> np.ndarray:
     return features.dctr(blocks, quant, _STEP).astype(np.float32)
 
 
-def feature_matrix(strategy: str, payload: str, seed: int, cache: Path | None) -> np.ndarray:
+def feature_matrix(
+    strategy: str, payload: str, seed: int, cache: Path | None, quality: int
+) -> np.ndarray:
     name = "clean" if payload == "clean" else f"{strategy}-{payload}"
-    path = None if cache is None else cache / f"dctr-{name}-{len(_PATHS)}-seed{seed}.npy"
+    path = None if cache is None else cache / f"dctr-q{quality}-{name}-{len(_PATHS)}-seed{seed}.npy"
     if path is not None and path.exists():
         return np.load(path)
     if path is not None:
@@ -160,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     train_idx, test_idx = split(len(_PATHS), args.seed)
 
     start = time.time()
-    clean = feature_matrix(args.strategy, "clean", args.seed, args.cache)
+    clean = feature_matrix(args.strategy, "clean", args.seed, args.cache, args.quality)
     print(
         f"{len(_PATHS)} covers at quality {args.quality}; cover DCTR in {time.time() - start:.0f} s"
     )
@@ -171,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {args.strategy:6s} {payload:6s}: already measured, skipped", flush=True)
             continue
         start = time.time()
-        dirty = feature_matrix(args.strategy, payload, args.seed, args.cache)
+        dirty = feature_matrix(args.strategy, payload, args.seed, args.cache, args.quality)
         model = ensemble.train(clean[train_idx], dirty[train_idx], seed=args.seed)
         v0, v1 = model.votes(clean[test_idx]), model.votes(dirty[test_idx])
         row = {"strategy": args.strategy, "payload": payload, **_summary(v0, v1, 0.5)}
