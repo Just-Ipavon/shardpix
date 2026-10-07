@@ -50,7 +50,13 @@ shardpix è costruito attorno a quella domanda e ne misura la risposta:
 - **Foto vere, non foto di laboratorio.** Le foto del telefono sono JPEG,
   quindi shardpix nasconde la quota direttamente nei coefficienti del JPEG
   (formato 5) e restituisce un JPEG con le stesse impostazioni di qualità e
-  gli stessi metadati, senza conversioni che tradirebbero l'immagine.
+  gli stessi metadati, senza conversioni che tradirebbero l'immagine. Sui
+  JPEG a qualità 95, come quelli del telefono, il formato 5 resta al livello
+  del caso da 1 a 50 immagini aggregate; a qualità 75, tipica delle foto
+  ricompresse dalle app di messaggistica, scende al 7,8% con cinquanta, la
+  stessa trappola del formato 3
+  ([docs_it/05 §5.5.8](docs_it/05-security-analysis.md#558-immagini-di-copertura-jpeg-formato-5)).
+  Usa i file originali della fotocamera.
 - **Tutto è riproducibile.** Rilevatori, dataset, controlli positivi e
   intervalli di confidenza sono nel repository; ogni numero di questo README
   si può rigenerare.

@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   file's first bytes.
 - The CLI no longer has `--method`: format 3 (matching, replacement) stays
   in the library as a benchmark baseline only.
+- **JPEG results (docs/05 §5.5.8).** On 10,000 BOSSbase images with DCTR,
+  one share in format 5 is at chance at quality 95 (49.6%; 50.0% with fifty
+  images pooled) against 18.6% for the non-adaptive baseline. At quality 75
+  it is weakly detectable on one image (42.5%) and clearly once pooled
+  (7.8% with fifty): covers should be original camera files, not photos
+  recompressed by chat apps.
 - **Progress bar.** `seal`, `unseal`, `embed` and `extract` show a bar
   with the current step (deriving the key, measuring the texture, choosing
   the changes, writing the image) on a terminal; nothing changes when the

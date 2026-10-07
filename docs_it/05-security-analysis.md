@@ -476,18 +476,62 @@ per coefficiente AC diverso da zero (`python -m shardpix.analysis.jpeg_benchmark
 Il riferimento è l'equivalente non adattivo del formato 3: un bit per
 coefficiente in posizioni AC non nulle casuali, ±1 lontano da zero.
 
-**Stato: misura in corso sulle 10.000 immagini.** Una prova preliminare su
-200 immagini a qualità 95 (100 coppie di test, intervalli di circa ±7 punti)
-ha dato:
+Due delle 10.000 fotografie a qualità 75 sono troppo piatte per contenere
+qualsiasi dato (shardpix le rifiuta come copertine) e restano invariate; altre
+otto contengono meno di una quota e portano quello che possono. A qualità 95
+tutte le fotografie contengono una quota.
 
-| 200 immagini, qualità 95 | Una quota | 0,4 bit per coefficiente AC non nullo (controllo) |
-| --- | ---: | ---: |
-| Riferimento non adattivo | 43,0% | 0,0% |
-| Formato 5 | 49,0% | 15,5% |
+**Una sola immagine.**
 
-Mostra soltanto che l'esperimento funziona (il controllo viene rilevato) e in
-che direzione va; i risultati completi e l'analisi aggregata sostituiranno
-questa tabella quando saranno pronti.
+| Carico | Qualità 95, riferimento | Qualità 95, formato 5 | Qualità 75, riferimento | Qualità 75, formato 5 |
+| --- | ---: | ---: | ---: | ---: |
+| Una quota | 18,6% [17,9, 19,4] | **49,6%** [48,6, 50,5] | 2,4% [2,1, 2,7] | **42,5%** [41,6, 43,5] |
+| 0,1 bit per coefficiente AC non nullo (controllo) | 0,1% | 38,0% | 0,1% | 27,3% |
+
+AUC con una quota: 0,90 e 0,51 a qualità 95, 1,00 e 0,62 a qualità 75. I
+controlli mostrano che il rilevatore vede il formato 5 quando il carico è
+grande.
+
+**Più immagini della stessa cassaforte** (aggregate come nel §5.5.7, rapporto
+di verosimiglianza, 40 suddivisioni; dati grezzi in
+[data/pooled_jpeg_q95.json](../docs/data/pooled_jpeg_q95.json) e
+[data/pooled_jpeg_q75.json](../docs/data/pooled_jpeg_q75.json)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-q75-dark.png">
+  <img alt="Errore di rilevazione in funzione del numero di immagini JPEG della stessa cassaforte a qualità 75: il formato 5 scende dal 43% con un'immagine all'8% con cinquanta; il riferimento è vicino a 0 fin dall'inizio" src="../assets/pooled-jpeg-q75-light.png">
+</picture>
+
+| Immagini della stessa cassaforte | Qualità 95, riferimento | Qualità 95, formato 5 | Qualità 75, riferimento | Qualità 75, formato 5 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 18,6% | 49,8% | 2,5% | 42,9% |
+| 2 | 10,1% | 49,8% | 0,3% | 38,5% |
+| 5 | 2,1% | **49,6%** [47,1, 51,5] | 0,0% | **31,8%** [29,4, 35,2] |
+| 10 | 0,2% | **50,0%** [46,4, 54,6] | 0,0% | **24,8%** [21,9, 27,4] |
+| 20 | 0,0% | 48,8% | 0,0% | 16,9% |
+| 50 | 0,0% | **50,0%** [42,5, 62,9] | 0,0% | **7,8%** [4,8, 11,4] |
+
+Cosa mostra:
+
+1. **A qualità 95 il formato 5 è al livello del caso**, con un'immagine e con
+   cinquanta, mentre il riferimento non adattivo viene scoperto l'81% delle
+   volte su un'immagine e sempre su dieci. È il caso delle foto del telefono
+   usate così come sono state scattate.
+2. **A qualità 75 il formato 5 ripete ciò che il formato 3 faceva nei pixel**
+   (§5.5.7): un segnale debole sulla singola immagine (42,9%) che
+   l'aggregazione rende forte (7,8% con cinquanta immagini, 24,8% con dieci).
+   Una quantizzazione grossolana lascia coefficienti non nulli più rari e più
+   grandi, quindi ogni modifica pesa di più.
+3. **La qualità della copertina conta più del metodo.** Lo stesso codice è
+   sicuro su un JPEG di alta qualità e rilevabile su uno molto compresso. Le
+   copertine devono essere i file originali della fotocamera; una foto salvata
+   da un'app di messaggistica o da un social è di solito ricompressa a qualità
+   70-85.
+
+Avvertenze: le copertine sono immagini di BOSSbase compresse da Pillow, non
+file di fotocamere di telefoni; un solo rilevatore (DCTR); rilevatore
+addestrato al carico esatto. Rilevatori JPEG più potenti (GFR, SRNet) non
+sono stati provati.
 
 ## 5.6 Limiti noti
 
