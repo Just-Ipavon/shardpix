@@ -18,6 +18,7 @@
 | [04 — Runtime behaviour](04-runtime-behaviour.md) | Sequence diagrams, the share recovery algorithm, error propagation, exit codes, timing profile, verification strategy | Anyone who needs to understand what happens at runtime |
 | [05 — Security analysis](05-security-analysis.md) | Threat model, security properties and their arguments, cryptographic parameters, steganalysis results, known limitations | Anyone who needs to decide whether to trust it |
 | [06 — Security review](06-security-review.md) | Internal review report: method, static analysis, fuzzing, mutation testing, ASVS checklist, findings and fixes, handover for an independent audit | Anyone assessing how the claims were checked |
+| [07 — Covers and formats](07-covers-and-formats.md) | PNG and JPEG, the embedding methods, what happens to each kind of input, phone photos step by step | Anyone choosing the photos to use |
 
 For installation and day-to-day usage, see the [project README](../README.md).
 

@@ -27,15 +27,16 @@ are built in.
 ```text
 notes.pdf ──AES-256-GCM, random key K──────────►  notes.pdf.spx      store it anywhere
 K ─────────Shamir over GF(256), 3 of 5─────────►  5 authenticated shares
-share i ───keyed LSB matching, ~0.2% of pixels─►  photo_i.png        one per holder
+share i ───adaptive ±1, ~0.08% of pixels──────►  photo_i.png        one per holder
 ```
 
 - **The vault file** is ciphertext. It can sit on a shared drive or in an
   e-mail: without the key it is useless.
 - **The key** exists only as shares. Any 3 of the 5 rebuild it; 2 say nothing
   about it, not even with unlimited computing power.
-- **Each share** is hidden in a photo, scattered over positions only the
-  passphrase can find, and encrypted so the hidden bits look like noise.
+- **Each share** is hidden in a photo, among candidate positions only the
+  passphrase can find, with its few changes placed where the photo is
+  textured, and encrypted so the hidden bits look like noise.
 
 ## Features
 
@@ -149,6 +150,24 @@ Reproduce them with `pip install -e ".[bench]"` and
 `pip install -e ".[bench,ml]"` and `python -m shardpix.analysis.ml_benchmark`
 on a copy of BOSSbase.
 
+## Choosing covers: PNG, JPEG and phone photos
+
+PNG stores every pixel exactly; JPEG stores rounded frequency coefficients
+in 8x8 blocks. shardpix hides data in pixels, so:
+
+| Cover | Result |
+| --- | --- |
+| PNG or TIFF photo, 8-bit, never JPEG-compressed (e.g. a RAW export) | Best cover |
+| Phone RAW (iPhone ProRAW, Android DNG) | Best cover, after exporting an 8-bit PNG/TIFF |
+| Phone JPEG | Works, with a warning: a ±1 change to a decoded JPEG is detectable at any rate |
+| iPhone HEIC | Not read; converting it gives the same problem as JPEG |
+
+Use colour photos of at least 2 megapixels with texture, never images from
+the web, and send the results as files, not as "photos" in a messaging app.
+Embedding directly in JPEG coefficients, which would make phone JPEGs safe
+covers, is planned. Details, methods and step-by-step phone instructions:
+[docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
+
 ## Design notes
 
 **Split the key, not the file.** Only the 32-byte key is shared, so every
@@ -171,6 +190,13 @@ benchmark showed RS reading 22% on a photo with large black areas: a sample at
 0 can only move up, and a one-way move looks exactly like LSB replacement.
 Samples outside 2–253 are now never used, and the reading dropped to 4.5%.
 
+**Changes go where the photo is already noisy.** Since format 4 the
+payload is written as a syndrome-trellis code over keyed candidate samples:
+the encoder may pick which samples to change and picks those with the lowest
+HiLL cost, in foliage and grain rather than in the sky. A share changes
+about a third as many samples as before (208 against 633 in a 512x512
+photo), and the extractor never needs to know where they are.
+
 **Positions cost what the payload costs.** Positions come from a
 rejection-sampled ChaCha20 walk keyed by the passphrase and a per-image salt.
 Placing a share in a 48-megapixel photo takes as long as in a thumbnail, and
@@ -186,7 +212,9 @@ would make existing images unreadable fails the build first.
 shardpix/
 ├── cli.py              commands, passphrase input, overwrite protection, exit codes
 ├── vault.py            seal and unseal: AES-256-GCM + Shamir + steganography
-├── stego.py            key derivation, keyed walk, LSB matching, framing
+├── stego.py            key derivation, keyed walk, formats v4 (adaptive) and v3, framing
+├── stc.py              syndrome-trellis codes (Viterbi)
+├── costs.py            HiLL embedding costs
 ├── shamir.py           secret sharing, share format, MACs, robust recovery
 ├── gf256.py            GF(2^8) arithmetic and Lagrange interpolation
 ├── images.py           any image in, lossless PNG out
@@ -217,6 +245,7 @@ see [SECURITY.md](SECURITY.md).
 | [04 — Runtime behaviour](docs/04-runtime-behaviour.md) | Sequence diagrams, the share recovery algorithm, exit codes, timing |
 | [05 — Security analysis](docs/05-security-analysis.md) | Threat model, security properties, steganalysis results, limitations |
 | [06 — Security review](docs/06-security-review.md) | Static analysis, fuzzing, mutation testing, ASVS checklist, findings and fixes |
+| [07 — Covers and formats](docs/07-covers-and-formats.md) | PNG and JPEG, embedding methods, phone photos |
 
 ## License
 

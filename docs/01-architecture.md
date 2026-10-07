@@ -58,7 +58,9 @@ graph TD
     end
 
     subgraph core["Core layer"]
-        STEGO["stego.py<br/><i>keyed LSB embedding</i>"]
+        STEGO["stego.py<br/><i>keyed and adaptive embedding</i>"]
+        STC["stc.py<br/><i>syndrome-trellis codes</i>"]
+        COSTS["costs.py<br/><i>HiLL embedding costs</i>"]
         SHAMIR["shamir.py<br/><i>authenticated secret sharing</i>"]
         GF["gf256.py<br/><i>finite field arithmetic</i>"]
         IMG["images.py<br/><i>carriers, PNG I/O</i>"]
@@ -68,6 +70,7 @@ graph TD
         CHI["analysis/chi_square.py"]
         RS["analysis/rs.py"]
         BENCH["analysis/benchmark.py"]
+        ML["analysis/ml_benchmark.py<br/><i>features, ensemble, cnn</i>"]
     end
 
     subgraph foundation["Foundation layer"]
@@ -84,12 +87,16 @@ graph TD
     VAULT --> SHAMIR
     VAULT --> IMG
     STEGO --> IMG
+    STEGO --> STC
+    STEGO --> COSTS
     SHAMIR --> GF
     BENCH --> STEGO
     BENCH --> VAULT
     BENCH --> CHI
     BENCH --> RS
     BENCH --> IMG
+    ML --> STEGO
+    ML --> BENCH
     STEGO --> ERR
     SHAMIR --> ERR
     VAULT --> ERR
@@ -121,7 +128,9 @@ vault's share size) to produce its experiments.
 | [`shardpix/__main__.py`](../shardpix/__main__.py) | Entry point for `python -m shardpix` | `cli` |
 | [`shardpix/cli.py`](../shardpix/cli.py) | Argument parsing, passphrase input, overwrite protection, terminal output, exit codes | `vault`, `stego`, `shamir`, `images`, `analysis` |
 | [`shardpix/vault.py`](../shardpix/vault.py) | Encrypts a file, splits its key, distributes the shares over images, and reverses it | `stego`, `shamir`, `images` |
-| [`shardpix/stego.py`](../shardpix/stego.py) | Key derivation, keyed walk, framing, LSB matching/replacement, extraction | `images` |
+| [`shardpix/stego.py`](../shardpix/stego.py) | Key derivation, keyed walk, framing, adaptive (format 4) and LSB matching/replacement (format 3) embedding, extraction of both formats | `images`, `stc`, `costs` |
+| [`shardpix/stc.py`](../shardpix/stc.py) | Syndrome-trellis codes: least-cost embedding with the Viterbi algorithm, syndrome extraction | — |
+| [`shardpix/costs.py`](../shardpix/costs.py) | HiLL cost of a ±1 change at every sample | — |
 | [`shardpix/shamir.py`](../shardpix/shamir.py) | Shamir splitting, share format, MACs, robust recovery | `gf256` |
 | [`shardpix/gf256.py`](../shardpix/gf256.py) | GF(2^8) arithmetic, polynomial evaluation, Lagrange interpolation | — |
 | [`shardpix/images.py`](../shardpix/images.py) | Loading any image as an 8-bit carrier, writing lossless PNG | — |
@@ -129,6 +138,10 @@ vault's share size) to produce its experiments.
 | [`shardpix/analysis/chi_square.py`](../shardpix/analysis/chi_square.py) | Westfeld–Pfitzmann chi-square attack, chi-square survival function | — |
 | [`shardpix/analysis/rs.py`](../shardpix/analysis/rs.py) | Fridrich–Goljan–Du RS analysis | — |
 | [`shardpix/analysis/benchmark.py`](../shardpix/analysis/benchmark.py) | Detectability experiments, charts and tables for 05 | `stego`, `vault`, `chi_square`, `rs` |
+| [`shardpix/analysis/features.py`](../shardpix/analysis/features.py) | SPAM and SRM-lite steganalysis features | — |
+| [`shardpix/analysis/ensemble.py`](../shardpix/analysis/ensemble.py) | Kodovský–Fridrich–Holub ensemble classifier, detection metrics | — |
+| [`shardpix/analysis/cnn.py`](../shardpix/analysis/cnn.py) | Convolutional steganalysis network (optional, PyTorch) | `features` |
+| [`shardpix/analysis/ml_benchmark.py`](../shardpix/analysis/ml_benchmark.py) | Trained-detector experiments on BOSSbase, charts and tables for 05 §5.5.5–5.5.6 | `stego`, `vault`, `benchmark`, `features`, `ensemble`, `cnn` |
 
 ## 1.4 Data model
 
@@ -273,18 +286,40 @@ has already computed, so asking for the first 32 positions and then the first
 Three formats are versioned independently; each carries its own magic and
 version so that a future change can be detected rather than misread.
 
-### 1.5.1 Payload inside an image (stego format v3)
+### 1.5.1 Payload inside an image (stego formats v4 and v3)
 
-| Field | Size | Written at | Content |
+Both formats carry the same fields; they differ in how the bits reach the
+samples. shardpix writes format 4 by default and reads both.
+
+| Field | Size | Content |
+| --- | --- | --- |
+| salt | 16 B | Random per embedding |
+| cost | 1 B | log2 of scrypt's N (17 today; 10–18 accepted when reading); bit 7 set in format 4 |
+| length | 4 B | Size of nonce + body, XOR-masked with a key-derived mask |
+| nonce | 12 B | AES-256-GCM nonce |
+| body | n + 16 B | AES-256-GCM ciphertext and tag; AAD = domain, format version, length |
+
+**Format 4 (adaptive, ADR-12).** Each part is the syndrome of the LSBs of a
+block of candidate samples under a syndrome-trellis code of height 10
+(`stc.py`):
+
+| Part | Candidates | Code width | Code matrix |
 | --- | --- | --- | --- |
-| salt | 16 B | public walk | Random per embedding |
-| cost | 1 B | public walk | log2 of scrypt's N (17 today; 10–18 accepted when reading) |
-| length | 4 B | keyed walk | Size of nonce + body, XOR-masked with a key-derived mask |
-| nonce | 12 B | keyed walk | AES-256-GCM nonce |
-| body | n + 16 B | keyed walk | AES-256-GCM ciphertext and tag; AAD = domain, format version, length |
+| salt + cost (136 bits) | First 136 × w₀ samples of the public walk | w₀ = min(64, eligible / 1344) | Public: SHAKE-256 of a fixed label |
+| length (32 bits) | First 32 × w₀ samples of the keyed walk | w₀ | SHAKE-256 of a key-derived seed |
+| nonce + body (8·length bits) | The next w × 8·length samples of the keyed walk | w = min(128, free / bits, 2^20 / bits) | SHAKE-256 of a second key-derived seed |
 
-Bits are written most significant first. Only samples with values 2–253 are
-used (ADR-06); the public walk and the keyed walk never share a sample.
+Payloads over 8,192 bits are coded in consecutive trellises of that size.
+Keys come from the domain `shardpix/stego/v4`, so formats 3 and 4 never
+share a key. The extractor tries format 4 first, then format 3; a cost
+byte that does not match the format being tried ends that attempt.
+
+**Format 3 (matching, replacement).** One bit per sample, salt and cost on
+the public walk, the rest on the keyed walk; domain `shardpix/stego/v3`.
+
+In both formats bits are written most significant first, only samples with
+values 2–253 are used (ADR-06), and the public and keyed walks never share
+a sample.
 
 ### 1.5.2 Share (share format v1)
 
@@ -359,7 +394,9 @@ measure.
 the benchmark can show the difference.
 
 **Consequences.** Both classical attacks lose their signal (05 §5.5). The
-distortion per changed sample is the same (±1).
+distortion per changed sample is the same (±1). Trained detectors still see
+it in small covers (05 §5.5.5), which led to ADR-12; matching remains the
+way format 3 is written.
 
 ### ADR-04 — Positions from a rejection-sampled ChaCha20 walk
 
@@ -477,6 +514,28 @@ prey for steganalysis anyway.
 **Consequences.** Embedding stays fast at any size the CLI accepts. A 512 × 512
 RGB photo still holds about 40 KiB, far more than the 160 bytes a vault share
 needs.
+
+### ADR-12 — Adaptive embedding with syndrome-trellis codes (format 4)
+
+**Context.** LSB matching at random positions makes every change at a random
+place: one change per two payload bits, as many in a clear sky as in
+foliage. Trained detectors measured on BOSSbase found a share in a 512x512
+photo with 42.5% error (05 §5.5.5).
+
+**Decision.** Format 4 writes every part of the frame as a syndrome-trellis
+code (Filler, Judas and Fridrich) over keyed candidate samples, choosing the
+changes with the Viterbi algorithm to minimise the total HiLL cost (Li et
+al.). Code matrices are derived from SHAKE-256, not from a NumPy generator,
+so images do not depend on the NumPy version. The width is capped at 128
+candidates per bit and the trellis at 2^20 samples per payload, which keeps
+embedding under a few seconds for a share; payloads are coded in trellises
+of 8,192 bits to bound memory.
+
+**Consequences.** One share changes about a third as many samples as
+format 3 (208 against 633 on BOSSbase), placed in texture. The receiver
+needs no cost map. Embedding is slower (about one second per share, pure
+numpy) and format-4 images cannot be read by shardpix 1.1. The measured
+effect on detectability is in 05 §5.5.6.
 
 ## 1.7 Deployment view
 

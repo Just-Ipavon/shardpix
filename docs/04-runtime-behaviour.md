@@ -116,24 +116,40 @@ sequenceDiagram
     participant W as SampleOrder
     participant K as derive_key
 
+    participant T as stc / costs
+
     C->>E: embed(carrier, payload, passphrase)
     E->>E: samples, eligible = 2..253, capacity check
-    E->>E: salt = 16 random bytes, cost = 17
-    E->>K: derive_key(passphrase, salt)
-    K->>K: scrypt(N=2^17, r=8, p=1) then HKDF x3
-    K-->>E: order, aead, length_mask
+    E->>E: salt = 16 random bytes, cost = 17 | 0x80
+    E->>K: derive_key(passphrase, salt, version 4)
+    K->>K: scrypt(N=2^17, r=8, p=1) then HKDF x4
+    K-->>E: order, aead, length_mask, code
     E->>E: frame = masked length + nonce + AES-GCM(payload)
+    E->>T: HiLL costs of every sample
     E->>W: public walk over eligible samples
-    W-->>E: 136 positions for salt and cost
-    E->>W: keyed walk over eligible minus salt positions
-    W-->>E: 8 x len(frame) positions
-    E->>E: write_bits(salt + frame) by LSB matching
+    W-->>E: 136 x w0 candidates for salt and cost
+    E->>W: keyed walk over eligible minus those
+    W-->>E: 32 x w0 candidates for the length,<br/>then w x 8 x (len(frame) - 4) for the body
+    loop salt + cost, length, body
+        E->>T: Viterbi: least-cost LSBs with the right syndrome
+        T-->>E: samples to flip
+        E->>E: flip each by +-1 (up at 2, down at 253)
+    end
     E-->>C: stego carrier, EmbedReport
 ```
 
+With `--method matching` or `replacement` (format 3) there are no costs and
+no codes: the salt and the frame are written one bit per sample at the
+first 136 public and 8 × len(frame) keyed positions.
+
 ## 4.5 Extracting a payload
 
-Extraction mirrors embedding, with one subtlety: the walk is read twice. The
+Extraction mirrors embedding. It first tries format 4 and, if that finds
+nothing, format 3; a cost byte belonging to the other format, or a cost
+out of range, ends an attempt before any key derivation, so reading a
+format-3 image almost never costs a second scrypt. In format 4 every read
+below is a syndrome over `w0` or `w` candidates per bit instead of a single
+LSB; the diagram shows format 3. In both, the walk is read twice. The
 extractor first needs 32 positions to read the length, and only then knows
 how many more to read. `SampleOrder.first` caches what it has computed, so the
 second call extends the first instead of starting over, and because every
@@ -262,21 +278,28 @@ before a single file is written.
 ## 4.9 Indicative timing profile
 
 Measured on a cloud VM (Python 3.13, one core), as an order of magnitude.
+The format-4 rows were measured while another job shared the CPU, so they
+are upper bounds.
 
 | Operation | Duration |
 | --- | --- |
 | Key derivation (scrypt, N = 2^17) | ~0.42 s per image |
-| `embed` / `extract`, 512 × 512 RGB, vault-share payload | ~0.45 s each, mostly scrypt |
-| `embed`, 1920 × 1080 RGB, vault-share payload | ~0.5 s |
+| `embed` / `extract`, 512 × 512 RGB, vault-share payload, format 3 | ~0.45 s each, mostly scrypt |
+| `embed`, 1920 × 1080 RGB, vault-share payload, format 3 | ~0.5 s |
+| `embed`, vault-share payload, format 4: 512 × 512 / 1920 × 1080 / 12 MP RGB | ~1.7 s / ~2.3 s / ~8.4 s: scrypt, HiLL over the whole image, Viterbi |
+| `extract`, vault-share payload, format 4, any of the sizes above | ~0.5 s, mostly scrypt |
 | `seal`, 1 MB file, 5 covers of 512 × 512 | ~2.4 s |
 | `seal`, 1 MB file, 5 covers of 1920 × 1080 | ~5.3 s: PNG compression and scrypt |
 | `unseal`, 3 images of 512 × 512 or 1920 × 1080 | ~1.3 s, mostly scrypt |
 | `analyze`, 1920 × 1080 RGB | ~1.2 s (RS 0.3 s, sequential chi-square 0.9 s) |
 | Full benchmark (10 covers, 4 strategies, 11 rates) | ~40 s |
-| Test suite (310 tests) | ~9 s |
+| Test suite (369 tests) | ~60 s with the trained-detector and adaptive tests |
 
-The cost of placing a payload does not depend on the image size (ADR-04);
-what grows with the image is decoding, the eligibility mask and PNG encoding.
+In format 3 the cost of placing a payload does not depend on the image size
+(ADR-04); what grows with the image is decoding, the eligibility mask and
+PNG encoding. Format 4 adds the HiLL cost map, which is computed over the
+whole image and dominates for large photos, and a Viterbi pass whose length
+depends on the payload only.
 The file size barely matters: AES-GCM runs at memory speed.
 
 ## 4.10 Verification strategy

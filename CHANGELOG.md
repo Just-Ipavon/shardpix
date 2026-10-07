@@ -6,7 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Stego format v4, adaptive embedding, is the default** for `seal`,
+  `embed` and the library (`Method.ADAPTIVE`). The salt, the length and the
+  sealed body are written as syndrome-trellis codes (Filler, Judas and
+  Fridrich) whose changes follow HiLL costs: one share changes about a third
+  as many samples as before (208 against 633 on BOSSbase 512x512), in
+  texture rather than in smooth areas. Format 3 images are still read;
+  `--method matching` still writes format 3. shardpix 1.1 cannot read
+  format 4.
+
 ### Added
+
+- `shardpix/stc.py` (syndrome-trellis codes) and `shardpix/costs.py`
+  (HiLL costs).
+- docs/07: PNG and JPEG, the embedding methods, and how to get good covers
+  from a phone.
+- `ml_benchmark --strategy adaptive`.
 
 - Trained steganalysis (`python -m shardpix.analysis.ml_benchmark`, extra
   `ml`): SPAM and SRM-lite features with the Kodovský–Fridrich–Holub

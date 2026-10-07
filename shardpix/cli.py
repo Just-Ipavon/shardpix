@@ -28,7 +28,7 @@ CHI_SQUARE_ALERT = 0.10
 JPEG_WARNING = (
     "[yellow]warning:[/] {names} decoded from JPEG. Changing a decoded JPEG by +-1 breaks its "
     "8x8 block structure, which JPEG-compatibility steganalysis can detect at any rate; "
-    "prefer covers that were never JPEG-compressed (PNG screenshots, RAW exports)."
+    "prefer photos that were never JPEG-compressed, such as RAW exports (docs/07)."
 )
 
 REPLACEMENT_WARNING = (
