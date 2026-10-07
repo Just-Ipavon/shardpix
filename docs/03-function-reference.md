@@ -657,6 +657,7 @@ smooth areas. Test: `TestHiLL::test_texture_is_cheaper_than_smooth_regions`.
 | `features.py` | `spam`, `srm_lite`, `extract` | SPAM (686) and SRM-lite (3,125) features of a greyscale channel; colour images average their channels. |
 | `ensemble.py` | `train`, `Ensemble.votes`, `decision_error`, `detection_error`, `auc` | Ensemble of Fisher linear discriminants on random subspaces, subspace size chosen by out-of-bag error; detection metrics. |
 | `cnn.py` | `StegoNet`, `train`, `scores` | Small CNN with a fixed SRM high-pass layer, trained on cover/stego pairs (optional, PyTorch). |
-| `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`) | Paired train/test experiments on BOSSbase; results in `docs/data/ml_benchmark_*.json`. |
+| `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`, `--cache`, `--rerun`) | Paired train/test experiments on BOSSbase; results in `docs/data/ml_benchmark_*.json`, per-image test scores in `*.scores.npz`. |
+| `pooled.py` | `pooled`, `run`, `main` | An adversary holding g images of one vault: pooled scores (mean or fitted likelihood ratio), calibration and evaluation on disjoint halves over 40 splits (05 §5.5.7). |
 
 Tests: `test_ml.py`.

@@ -46,6 +46,7 @@ documentato per capire come sono costruiti strumenti di questo tipo.
 | ADV-2 | Scopritore passivo | Ha alcune immagini (un telefono rubato, un album condiviso), non la passphrase. |
 | ADV-3 | Steganalista | Vuole distinguere le immagini stego dalle foto ordinarie; dispone dello strumento e del suo codice sorgente. |
 | ADV-4 | Falsificatore attivo | Può modificare immagini, fabbricare quote (conosce l'id pubblico del gruppo) e modificare il file del vault. |
+| ADV-5 | Steganalista che raccoglie | Come ADV-3, ma ha in mano più immagini della stessa cassaforte (i telefoni di più custodi, un album condiviso) e combina gli indizi. |
 
 ### 5.2.3 Ipotesi
 
@@ -72,7 +73,7 @@ documentato per capire come sono costruiti strumenti di questo tipo.
 | SP-06 | Un insieme di quote fabbricato non viene mai accettato come chiave del vault | ADV-4 | I cluster sono disgiunti; ogni chiave candidata viene verificata con il tag GCM del vault, che un falsificatore non può soddisfare senza la chiave vera. | `TestForgedSets` |
 | SP-07 | Indovinare la passphrase è costoso e va fatto immagine per immagine | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0,4 s per tentativo, la prima raccomandazione di OWASP), con sale per immagine, quindi non si può precalcolare alcuna tabella per una dimensione d'immagine e nessun tentativo si riutilizza su un'altra immagine. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | Un unico messaggio di errore per ogni fallimento dell'estrazione | ADV-3, ADV-4 | Passphrase errata, immagine pulita e immagine modificata sollevano tutte lo stesso `PayloadNotFoundError`, quindi lo strumento non fa da oracolo per "c'è qualcosa qui?". | `TestAuthentication` |
-| SP-09 | Né la steganalisi classica né quella addestrata (SPAM, SRM-lite) rilevano una quota del vault nel formato 4 | ADV-3 | Inserimento adattivo ±1 con codici a traliccio di sindrome (STC) e costi HiLL (ADR-12), nessuno spostamento forzato a 0/255 (ADR-06) e un carico fisso di 1.264 bit. Al livello del caso su BOSSbase 512x512 (§5.5.6); il formato 3 era debolmente rilevabile (§5.5.5). | Benchmark (§5.5.1–5.5.6) |
+| SP-09 | Né la steganalisi classica né quella addestrata (SPAM, SRM-lite) rilevano una quota del vault nel formato 4 | ADV-3, ADV-5 | Inserimento adattivo ±1 con codici a traliccio di sindrome (STC) e costi HiLL (ADR-12), nessuno spostamento forzato a 0/255 (ADR-06) e un carico fisso di 1.264 bit. Al livello del caso su BOSSbase 512x512 (§5.5.6), anche combinando fino a cinquanta immagini della stessa cassaforte (§5.5.7); il formato 3 era debolmente rilevabile, e fortemente una volta aggregato (§5.5.5, §5.5.7). | Benchmark (§5.5.1–5.5.7) |
 | SP-10 | Il ripristino di un file non può uscire dalla directory di output né abusare del terminale | ADV-4 | `safe_filename` conserva il nome base, rimuove i caratteri di controllo e di formato e sostituisce i nomi riservati. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | Nessun input viene mai sovrascritto | Errore dell'utente | Controlli di identità dei percorsi, senza distinzione tra maiuscole e minuscole, nella CLI e in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
 
@@ -405,6 +406,63 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy ad
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy adaptive --detectors spam,srm_lite --rates 0.1,0.05,0.02,0.01
 ```
 
+
+### 5.5.7 Più immagini della stessa cassaforte (steganalisi aggregata)
+
+Di solito la steganalisi si valuta un'immagine alla volta, come in
+§5.5.5–5.5.6. Una cassaforte però non è un'immagine sola: le sue n quote
+stanno in n fotografie, e ADV-5 può averne in mano diverse e combinare gli
+indizi (*pooled steganalysis*, Ker). Il problema è specifico degli schemi a
+soglia, e i risultati per singola immagine non rispondono a questa domanda.
+
+**Metodo** (`python -m shardpix.analysis.pooled`, dati grezzi in
+[data/pooled_512.json](../docs/data/pooled_512.json)). I rilevatori di
+§5.5.5–5.5.6 assegnano un punteggio a ciascuna delle 5.000 immagini di test
+e alla sua versione stego. L'avversario riceve g fotografie diverse e deve
+decidere se sono una cassaforte (ognuna porta una quota) o g foto innocenti.
+I punteggi vengono combinati con un rapporto di verosimiglianza stimato su
+immagini di calibrazione (una regressione logistica sul punteggio e sul suo
+quadrato), che approssima il test più potente per immagini indipendenti; la
+semplice media dà lo stesso quadro. Le soglie si calibrano su metà delle
+immagini di test e si valutano sull'altra metà, e l'intera procedura si
+ripete su 40 suddivisioni casuali: la tabella riporta la mediana e
+l'intervallo 2,5–97,5%.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-512-dark.png">
+  <img alt="Errore di rilevamento rispetto al numero di immagini della stessa cassaforte: il formato 3 scende dal 43% con un'immagine al 7% con cinquanta, il formato 4 resta al 50% in ogni caso" src="../assets/pooled-512-light.png">
+</picture>
+
+| Immagini della stessa cassaforte | Formato 3, SPAM | Formato 3, SRM-lite | Formato 4, SPAM | Formato 4, SRM-lite |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 45,7% | 42,6% | 49,8% | 50,0% |
+| 2 | 43,0% | 38,3% | 49,9% | 49,9% |
+| 3 | 42,2% | 36,8% | 49,9% | 50,1% |
+| 5 | 40,0% | **32,2%** [28,5–34,9] | 49,9% | **49,8%** [46,8–52,3] |
+| 10 | 35,0% | **25,7%** [22,4–29,0] | 49,4% | **50,0%** [45,8–54,1] |
+| 20 | 30,6% | 17,8% | 50,0% | 49,9% |
+| 50 | 20,5% | **7,4%** [4,5–11,5] | 50,0% | **50,0%** [40,3–56,7] |
+
+Cosa mostra:
+
+1. **L'aggregazione fa cadere il formato 3.** Un segnale debole per
+   immagine (42,6%) si somma: con le cinque immagini di una cassaforte
+   tipica l'avversario ha ragione due volte su tre, con dieci tre volte su
+   quattro. Una debolezza che sembrava marginale su una foto diventa seria
+   proprio perché una cassaforte distribuisce più immagini.
+2. **Il formato 4 regge.** Con qualunque numero di immagini fino a
+   cinquanta l'errore resta al 50%: l'inserimento adattivo chiude anche
+   l'attacco aggregato, oltre a quello sulla singola immagine.
+3. **Il margine si allarga con il gruppo.** Al crescere di g nelle 2.500
+   immagini di valutazione entrano meno gruppi indipendenti, quindi
+   l'intervallo si allarga: con dieci immagini è 46–54%, con cinquanta
+   40–57%. L'esperimento quindi non esclude un segnale per immagine troppo
+   piccolo da vedere che, sommato su decine di immagini, dia un vantaggio
+   modesto; fino a dieci immagini, oltre qualunque cassaforte realistica,
+   non ne mostra.
+
+Valgono le stesse cautele di §5.5.5–5.5.6: due rilevatori, una sola
+sorgente di immagini, rilevatore addestrato al tasso esatto.
 
 ## 5.6 Limiti noti
 

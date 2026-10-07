@@ -42,6 +42,7 @@ way to understand how such tools are built.
 | ADV-2 | Passive finder | Has some images (a stolen phone, a shared album), not the passphrase. |
 | ADV-3 | Steganalyst | Wants to tell stego images from ordinary photos; has the tool and its source. |
 | ADV-4 | Active forger | Can modify images, fabricate shares (knows the public group id) and modify the vault file. |
+| ADV-5 | Collecting steganalyst | Like ADV-3, but holds several images of the same vault (several holders' phones, a shared album) and combines the evidence. |
 
 ### 5.2.3 Assumptions
 
@@ -64,7 +65,7 @@ way to understand how such tools are built.
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. | `TestForgedSets` |
 | SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
-| SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 4 | ADV-3 | Adaptive ±1 embedding with syndrome-trellis codes and HiLL costs (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits. At chance on BOSSbase 512x512 (§5.5.6); format 3 was weakly detectable (§5.5.5). | Benchmarks (§5.5.1–5.5.6) |
+| SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 4 | ADV-3, ADV-5 | Adaptive ±1 embedding with syndrome-trellis codes and HiLL costs (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits. At chance on BOSSbase 512x512 (§5.5.6), also when up to fifty images of one vault are pooled (§5.5.7); format 3 was weakly detectable, and strongly so once pooled (§5.5.5, §5.5.7). | Benchmarks (§5.5.1–5.5.7) |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters and replaces reserved names. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | No input is ever overwritten | User error | Case-folded path identity checks in the CLI and in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
 
@@ -373,6 +374,60 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy ad
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy adaptive --detectors spam,srm_lite --rates 0.1,0.05,0.02,0.01
 ```
 
+
+### 5.5.7 Several images of one vault (pooled steganalysis)
+
+Steganalysis is usually evaluated one image at a time, as in §5.5.5–5.5.6.
+A vault is not one image: its n shares sit in n photographs, and ADV-5 can
+hold several of them and combine the evidence (*pooled steganalysis*, Ker).
+This is specific to threshold schemes, and the per-image results above do
+not answer it.
+
+**Method** (`python -m shardpix.analysis.pooled`, raw numbers in
+[data/pooled_512.json](data/pooled_512.json)). The detectors of §5.5.5–5.5.6
+score each of the 5,000 test images and its stego version. The adversary
+receives g different photographs and must decide whether they are a vault
+(each carries a share) or g innocent photos. Scores are pooled by a
+likelihood ratio fitted on calibration images (a logistic regression on the
+score and its square), which approximates the most powerful test for
+independent images; the plain mean gives the same picture. Thresholds are
+calibrated on half of the test images and evaluated on the other half, and
+the whole procedure is repeated over 40 random splits: the table gives the
+median and the 2.5–97.5% range.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-512-dark.png">
+  <img alt="Detection error against the number of images of one vault: format 3 falls from 43% with one image to 7% with fifty, format 4 stays at 50% throughout" src="../assets/pooled-512-light.png">
+</picture>
+
+| Images of one vault | Format 3, SPAM | Format 3, SRM-lite | Format 4, SPAM | Format 4, SRM-lite |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 45.7% | 42.6% | 49.8% | 50.0% |
+| 2 | 43.0% | 38.3% | 49.9% | 49.9% |
+| 3 | 42.2% | 36.8% | 49.9% | 50.1% |
+| 5 | 40.0% | **32.2%** [28.5, 34.9] | 49.9% | **49.8%** [46.8, 52.3] |
+| 10 | 35.0% | **25.7%** [22.4, 29.0] | 49.4% | **50.0%** [45.8, 54.1] |
+| 20 | 30.6% | 17.8% | 50.0% | 49.9% |
+| 50 | 20.5% | **7.4%** [4.5, 11.5] | 50.0% | **50.0%** [40.3, 56.7] |
+
+What this shows:
+
+1. **Pooling breaks format 3.** A weak per-image signal (42.6%) adds up:
+   with the five images of a typical vault the adversary is right two times
+   in three, with ten three times in four. A weakness that looked marginal
+   on one photo is serious precisely because a vault distributes several.
+2. **Format 4 holds.** At every group size up to fifty the error stays at
+   50%: adaptive embedding closes the pooled attack as well as the
+   single-image one.
+3. **The bound widens with the group.** Fewer independent groups fit in the
+   2,500 evaluation images as g grows, so the interval widens: at ten images
+   it is 46–54%, at fifty 40–57%. The experiment therefore cannot exclude a
+   per-image signal too small to see that pools into a modest advantage over
+   dozens of images; up to ten images, beyond any realistic vault, it shows
+   none.
+
+The same caveats as §5.5.5–5.5.6 apply: two detectors, one image source, the
+detector trained at the exact rate.
 
 ## 5.6 Known limitations
 

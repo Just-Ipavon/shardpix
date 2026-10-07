@@ -142,6 +142,7 @@ vault's share size) to produce its experiments.
 | [`shardpix/analysis/ensemble.py`](../shardpix/analysis/ensemble.py) | Kodovský–Fridrich–Holub ensemble classifier, detection metrics | — |
 | [`shardpix/analysis/cnn.py`](../shardpix/analysis/cnn.py) | Convolutional steganalysis network (optional, PyTorch) | `features` |
 | [`shardpix/analysis/ml_benchmark.py`](../shardpix/analysis/ml_benchmark.py) | Trained-detector experiments on BOSSbase, charts and tables for 05 §5.5.5–5.5.6 | `stego`, `vault`, `benchmark`, `features`, `ensemble`, `cnn` |
+| [`shardpix/analysis/pooled.py`](../shardpix/analysis/pooled.py) | Pooled steganalysis over several images of one vault (05 §5.5.7) | `ensemble`, `benchmark` |
 
 ## 1.4 Data model
 
