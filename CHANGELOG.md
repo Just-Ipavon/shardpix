@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-10-07
+
+Major version: the CLI no longer has `--method`, and new images are written
+in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
+
 ### Changed
 
 - **Phone photos are used as taken.** A JPEG cover is embedded in its own

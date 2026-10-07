@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-05 — Analisi di sicurezza |
-| Sistema | shardpix 1.1.0 |
+| Sistema | shardpix 2.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-06 |
+| Ultima revisione | 2026-10-07 |
 | Lingua | Italiano (traduzione di [docs/05-security-analysis.md](../docs/05-security-analysis.md); in caso di differenze fa fede l'inglese) |
 
 ## 5.1 Scopo e ambito
@@ -393,10 +393,9 @@ Che cosa mostra tutto questo:
 4. **Che cosa non mostra.** Rilevatori più potenti (l'SRM completo con i suoi
    residui min-max, SRNet addestrato su una GPU) sono progettati per
    l'inserimento adattivo e potrebbero comunque trovare qualcosa con una
-   quota. I tassi intermedi (5%, 2%, 1%) sono in corso di misura con la
-   stessa configurazione e verranno aggiunti al file dei dati; una prima
-   esecuzione, interrotta prima di essere salvata, ha dato 49,7% (SPAM) e
-   50,3% (SRM-lite) all'1%.
+   quota. I tassi intermedi (5%, 2%, 1%) non sono stati misurati per intero:
+   una prima esecuzione all'1%, interrotta prima di essere salvata, ha dato
+   49,7% (SPAM) e 50,3% (SRM-lite) e non fa parte del file dei dati.
 
 Per riprodurre (circa 1,5 ore per tasso su quattro core CPU, dato che il
 codificatore a traliccio di sindrome è scritto in puro numpy):

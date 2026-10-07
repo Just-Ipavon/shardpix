@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-05 — Security analysis |
-| System | shardpix 1.1.0 |
+| System | shardpix 2.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-06 |
+| Last revised | 2026-10-07 |
 
 ## 5.1 Purpose and scope
 
@@ -362,9 +362,9 @@ What this shows:
 4. **What it does not show.** Stronger detectors (the full SRM with its
    min-max residuals, SRNet trained on a GPU) are designed for adaptive
    embedding and could still find something at one share. The intermediate
-   rates (5%, 2%, 1%) are being measured with the same setup and will be
-   added to the data file; a first run, interrupted before it was saved,
-   gave 49.7% (SPAM) and 50.3% (SRM-lite) at 1%.
+   rates (5%, 2%, 1%) were not measured in full: a first run at 1%,
+   interrupted before it was saved, gave 49.7% (SPAM) and 50.3% (SRM-lite),
+   and is not part of the data file.
 
 Reproduce (about 1.5 hours per rate on four CPU cores, the
 syndrome-trellis coder being pure numpy):

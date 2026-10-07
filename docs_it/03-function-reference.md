@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-03 — Specifica dettagliata dei componenti |
-| Sistema | shardpix 1.1.0 |
+| Sistema | shardpix 2.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-06 |
+| Ultima revisione | 2026-10-07 |
 | Lingua | Italiano (traduzione di [docs/03-function-reference.md](../docs/03-function-reference.md); in caso di differenze fa fede l'inglese) |
 
 ## 3.1 Scopo e convenzioni
@@ -61,7 +61,7 @@ essere eseguita senza creare un solo file.
 
 ## 3.3 `shardpix/__init__.py` e `__main__.py`
 
-`__init__` espone solo `__version__` (`"1.1.0"`) e non importa alcun
+`__init__` espone solo `__version__` (`"2.0.0"`) e non importa alcun
 sottomodulo, così `import shardpix` è rapido e privo di effetti collaterali.
 `__main__` delega a `cli.main`, così lo strumento si esegue come
 `python -m shardpix` senza installazione.

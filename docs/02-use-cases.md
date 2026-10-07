@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-02 — Use case specification |
-| System | shardpix 1.1.0 |
+| System | shardpix 2.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-06 |
+| Last revised | 2026-10-07 |
 
 ## 2.1 Actors
 
