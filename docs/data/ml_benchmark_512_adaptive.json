@@ -1,0 +1,35 @@
+{
+  "dataset": "BOSSbase 1.01",
+  "images": 10000,
+  "size": 512,
+  "preprocessing": "resize",
+  "share_rate": 0.00482177734375,
+  "seed": 0,
+  "strategy": "adaptive: format 4: HiLL costs and syndrome-trellis codes, via stego.embed",
+  "detectors": {
+    "spam": [
+      {
+        "rate": 0.00482177734375,
+        "p_e": 0.4991,
+        "p_e_low": 0.48930001587601285,
+        "p_e_high": 0.5088999841239872,
+        "auc": 0.50085046,
+        "test_pairs": 5000,
+        "oob_error": 0.4998,
+        "subspace_dim": 100
+      }
+    ],
+    "srm_lite": [
+      {
+        "rate": 0.00482177734375,
+        "p_e": 0.49870000000000003,
+        "p_e_low": 0.488900033124056,
+        "p_e_high": 0.508499966875944,
+        "auc": 0.5010261,
+        "test_pairs": 5000,
+        "oob_error": 0.4999,
+        "subspace_dim": 200
+      }
+    ]
+  }
+}
