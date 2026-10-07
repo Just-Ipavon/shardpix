@@ -44,6 +44,8 @@ STRATEGIES = {
 
 _PATHS: list[Path] = []
 _STEP = 4.0
+CHUNK = 1000
+"""Images per checkpoint of a feature matrix."""
 
 
 def _load(path: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -93,14 +95,30 @@ def feature_matrix(strategy: str, payload: str, seed: int, cache: Path | None) -
     path = None if cache is None else cache / f"dctr-{name}-{len(_PATHS)}-seed{seed}.npy"
     if path is not None and path.exists():
         return np.load(path)
-    with mp.get_context("fork").Pool() as pool:
-        rows = pool.map(
-            _worker, [(i, strategy, payload, seed) for i in range(len(_PATHS))], chunksize=16
-        )
-    matrix = np.stack(rows)
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
+    parts = []
+    with mp.get_context("fork").Pool() as pool:
+        for start in range(0, len(_PATHS), CHUNK):
+            # Each chunk is saved as it completes, so a run killed halfway
+            # resumes from the last chunk instead of from the first image.
+            part = None if path is None else path.with_name(f"{path.stem}.part{start}.npy")
+            if part is not None and part.exists():
+                parts.append(np.load(part))
+                continue
+            stop = min(start + CHUNK, len(_PATHS))
+            rows = pool.map(
+                _worker, [(i, strategy, payload, seed) for i in range(start, stop)], chunksize=16
+            )
+            parts.append(np.stack(rows))
+            if part is not None:
+                np.save(part, parts[-1])
+            print(f"    {name}: {stop}/{len(_PATHS)} images", flush=True)
+    matrix = np.concatenate(parts)
+    if path is not None:
         np.save(path, matrix)
+        for part in path.parent.glob(f"{path.stem}.part*.npy"):
+            part.unlink()
     return matrix
 
 
@@ -114,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache", type=Path, default=None)
     parser.add_argument("--data", type=Path, default=Path("docs/data"))
+    parser.add_argument("--rerun", action="store_true", help="measure again what is stored")
     args = parser.parse_args(argv)
 
     global _PATHS, _STEP
@@ -146,6 +165,11 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(_PATHS)} covers at quality {args.quality}; cover DCTR in {time.time() - start:.0f} s"
     )
     for payload in [p.strip() for p in args.payloads.split(",") if p.strip()]:
+        key = f"dctr@{args.strategy}@{payload}"
+        done = [r for r in rows if (r["strategy"], r["payload"]) == (args.strategy, payload)]
+        if done and key in scores and not args.rerun:
+            print(f"  {args.strategy:6s} {payload:6s}: already measured, skipped", flush=True)
+            continue
         start = time.time()
         dirty = feature_matrix(args.strategy, payload, args.seed, args.cache)
         model = ensemble.train(clean[train_idx], dirty[train_idx], seed=args.seed)
@@ -154,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         rows[:] = [r for r in rows if (r["strategy"], r["payload"]) != (args.strategy, payload)]
         rows.append(row)
         scores["test_index"] = test_idx
-        scores[f"dctr@{args.strategy}@{payload}"] = np.stack([v0, v1]).astype(np.float32)
+        scores[key] = np.stack([v0, v1]).astype(np.float32)
         data_path.parent.mkdir(parents=True, exist_ok=True)
         data_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
         np.savez_compressed(scores_path, **scores)
