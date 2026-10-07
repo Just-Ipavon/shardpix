@@ -22,6 +22,48 @@ DESCRIPTION = (
     "any k of n images open it."
 )
 
+OVERVIEW = """\
+Encrypt a file and split its key into shares hidden in ordinary-looking
+images: any k of n images open it, fewer reveal nothing.
+
+  file  --AES-256-GCM, random key K------->  file.spx   (store it anywhere)
+  K     --Shamir, k of n------------------>  n shares
+  share --adaptive +-1 changes------------>  one image per holder
+
+Covers are embedded the way their file is stored: phone JPEGs stay JPEG
+(format 5, same quality and metadata), PNG/TIFF/BMP become PNG (format 4).
+Run 'shardpix COMMAND -h' for the details and examples of each command."""
+
+EPILOG = """\
+quick start:
+  shardpix seal notes.pdf a.jpg b.jpg c.jpg d.jpg e.jpg -k 3 -p
+      encrypt notes.pdf, hide one share in each photo; any 3 open it
+  shardpix unseal sealed/notes.pdf.spx sealed/a.jpg sealed/c.jpg sealed/e.jpg -p
+      open the vault with three of its images
+  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p
+      hide a short message in one image
+  shardpix analyze suspicious.png
+      look for the fingerprints of naive LSB embedding
+
+good covers:
+  Your own phone photos, as taken: colour, 2 megapixels or more, textured
+  (trees, streets, fabric), never shared online. Send the results as files,
+  not as photos in a messaging app, which recompresses them. HEIC is not
+  supported: set the iPhone camera to 'Most Compatible' (JPEG).
+
+passphrases:
+  -p prompts for one, --passphrase-file reads it from a file. Passphrases are
+  never accepted on the command line, where the shell history would keep
+  them. Without one, anyone running shardpix can find and read a payload.
+
+documentation: https://github.com/Just-Ipavon/shardpix#readme"""
+
+PASSPHRASE_NOTE = """\
+passphrase:
+  The passphrase picks the hidden positions and encrypts the payload; the
+  same one is needed to read it back. Without -p or --passphrase-file the
+  payload is still encrypted, but anyone running shardpix can read it."""
+
 CHI_SQUARE_ALERT = 0.10
 """Detected prefix (fraction of the image) above which the chi-square attack is reported."""
 
@@ -486,16 +528,53 @@ def cmd_combine(args: argparse.Namespace, console: Console) -> int:
 # --------------------------------------------------------------------------- parser
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="shardpix", description=DESCRIPTION)
-    parser.add_argument("--version", action="version", version=f"shardpix {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
+def _command(
+    sub: argparse._SubParsersAction, name: str, summary: str, details: str, examples: str
+) -> argparse.ArgumentParser:
+    """A subcommand whose -h shows ``details`` and ``examples`` as written."""
+    return sub.add_parser(
+        name,
+        help=summary,
+        description=f"{summary[0].upper()}{summary[1:]}.\n\n{details}",
+        epilog=f"examples:\n{examples}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
-    p = sub.add_parser("capacity", help="show how many bytes an image can hide")
-    p.add_argument("image", type=Path)
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="shardpix",
+        description=OVERVIEW,
+        epilog=EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--version", action="version", version=f"shardpix {__version__}")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND", title="commands")
+
+    p = _command(
+        sub,
+        "capacity",
+        "show how many bytes an image can hide",
+        "Reports the format the image would be embedded with and the largest\n"
+        "payload it holds. A vault share needs about 110 bytes, so any photo of a\n"
+        "useful size has room to spare; capacity matters for 'embed'.",
+        "  shardpix capacity photo.jpg",
+    )
+    p.add_argument("image", type=Path, help="image to measure (JPEG, PNG, TIFF, BMP, ...)")
     p.set_defaults(handler=cmd_capacity)
 
-    p = sub.add_parser("embed", help="hide a message or a file in an image")
+    p = _command(
+        sub,
+        "embed",
+        "hide a message or a file in an image",
+        "Hides one payload, encrypted and authenticated, in a single image. A JPEG\n"
+        "cover gives a JPEG (format 5: same quantisation tables and metadata);\n"
+        "anything else gives a PNG (format 4). The changes are placed where the\n"
+        "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
+        "much fits. The cover itself is never modified.\n\n" + PASSPHRASE_NOTE,
+        '  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p\n'
+        "  shardpix embed scan.png -o out.png -i contract.pdf --passphrase-file pw.txt",
+    )
     p.add_argument("cover", type=Path, help="cover image (JPEG from a phone, PNG, TIFF, ...)")
     p.add_argument(
         "-o",
@@ -511,14 +590,38 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
     p.set_defaults(handler=cmd_embed)
 
-    p = sub.add_parser("extract", help="recover a message or a file from an image")
-    p.add_argument("image", type=Path)
+    p = _command(
+        sub,
+        "extract",
+        "recover a message or a file from an image",
+        "Reads back what 'embed' hid. Without -o the payload is written to\n"
+        "standard output as it is. Fails with 'no shardpix payload found' if the\n"
+        "passphrase is wrong, the image holds nothing, or it was edited or\n"
+        "recompressed after embedding.\n\n" + PASSPHRASE_NOTE,
+        "  shardpix extract out.jpg -p\n"
+        "  shardpix extract out.png -o contract.pdf --passphrase-file pw.txt",
+    )
+    p.add_argument("image", type=Path, help="image written by 'embed'")
     p.add_argument("-o", "--output", type=Path, help="write the payload here instead of stdout")
     _add_passphrase_options(p)
     p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
     p.set_defaults(handler=cmd_extract)
 
-    p = sub.add_parser("seal", help="encrypt a file and hide its key shares in images (k of n)")
+    p = _command(
+        sub,
+        "seal",
+        "encrypt a file and hide its key shares in images (k of n)",
+        "Encrypts FILE with a random key into a vault file (.spx), splits the key\n"
+        "with Shamir's scheme into one share per cover, and hides each share in\n"
+        "its cover. n is the number of covers (at least 2) and 2 <= k <= n; any k\n"
+        "images open the vault, k-1 reveal nothing about the key. Outputs go to\n"
+        "the directory given by -d: the vault plus one image per cover, keeping\n"
+        "its name and kind (.jpg stays .jpg, anything else becomes .png).\n\n"
+        "Give each image to a different holder, keep the vault anywhere, and never\n"
+        "publish the original covers.\n\n" + PASSPHRASE_NOTE,
+        "  shardpix seal notes.pdf a.jpg b.jpg c.jpg d.jpg e.jpg -k 3 -p\n"
+        "  shardpix seal keys.txt photos/*.jpg -k 2 -d out --name keys.spx -p",
+    )
     p.add_argument("file", type=Path, help="file to seal")
     p.add_argument(
         "covers", type=Path, nargs="+", metavar="COVER", help="cover images, one per share"
@@ -538,7 +641,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--force", action="store_true", help="overwrite existing outputs")
     p.set_defaults(handler=cmd_seal)
 
-    p = sub.add_parser("unseal", help="open a vault with k of its images")
+    p = _command(
+        sub,
+        "unseal",
+        "open a vault with k of its images",
+        "Reads the share in each image, checks it against the vault, and rebuilds\n"
+        "the key once k valid shares are found. Extra, damaged or foreign images\n"
+        "are fine: a table reports what happened to every image (used, no\n"
+        "payload, other vault, rejected, ...), so a failed recovery still tells\n"
+        "you which holder to call. The file is written under its original name\n"
+        "unless -o is given.\n\n" + PASSPHRASE_NOTE,
+        "  shardpix unseal notes.pdf.spx a.jpg c.jpg e.jpg -p\n"
+        "  shardpix unseal vault.spx received/*.jpg -o notes.pdf -p",
+    )
     p.add_argument("vault", type=Path, help="vault file (.spx)")
     p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images holding shares")
     p.add_argument(
@@ -548,19 +663,48 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
     p.set_defaults(handler=cmd_unseal)
 
-    p = sub.add_parser("inspect", help="show what an image holds")
-    p.add_argument("image", type=Path)
+    p = _command(
+        sub,
+        "inspect",
+        "show what an image holds",
+        "Reads the payload of an image and tells whether it is a vault share and,\n"
+        "if so, which vault it belongs to, its share number and how many shares\n"
+        "the vault needs; for any other payload, its size. Nothing is written.\n\n"
+        + PASSPHRASE_NOTE,
+        "  shardpix inspect sealed/a.jpg -p",
+    )
+    p.add_argument("image", type=Path, help="image to inspect")
     _add_passphrase_options(p)
     p.set_defaults(handler=cmd_inspect)
 
-    p = sub.add_parser("analyze", help="run steganalysis attacks against an image")
-    p.add_argument("image", type=Path)
+    p = _command(
+        sub,
+        "analyze",
+        "run steganalysis attacks against an image",
+        "Runs two classical attacks that detect naive LSB embedding: the\n"
+        "chi-square attack (Westfeld-Pfitzmann), which finds data written\n"
+        "sequentially, and RS analysis (Fridrich), which estimates the fraction of\n"
+        "pixels carrying LSB replacement. Useful to check suspicious images and to\n"
+        "see that shardpix outputs do not trigger them. Modern trained detectors\n"
+        "are stronger; their results are in docs/05.",
+        "  shardpix analyze suspicious.png\n  shardpix analyze photo.png --steps 200",
+    )
+    p.add_argument("image", type=Path, help="image to analyse")
     p.add_argument(
         "--steps", type=positive_int, default=100, help="prefixes tested by the sequential attack"
     )
     p.set_defaults(handler=cmd_analyze)
 
-    p = sub.add_parser("split", help="split a secret into shares (Shamir, k of n)")
+    p = _command(
+        sub,
+        "split",
+        "split a secret into shares (Shamir, k of n)",
+        "Plain Shamir secret sharing, without images: prints n printable,\n"
+        "authenticated shares, one per line, or writes one file per share with\n"
+        "-d. Any k recover the secret with 'combine'; k-1 reveal nothing.",
+        '  shardpix split -t "correct horse battery staple" -k 2 -n 3\n'
+        "  shardpix split -i seed.txt -k 3 -n 5 -d shares/",
+    )
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument("-t", "--text", help="text secret to split")
     source.add_argument("-i", "--input", type=Path, metavar="FILE", help="file to split")
@@ -574,7 +718,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-f", "--force", action="store_true", help="overwrite existing share files")
     p.set_defaults(handler=cmd_split)
 
-    p = sub.add_parser("combine", help="recover a secret from its shares")
+    p = _command(
+        sub,
+        "combine",
+        "recover a secret from its shares",
+        "Reads shares written by 'split' from files (one per line, '-' for\n"
+        "standard input) and rebuilds the secret from any k of them. Shares that\n"
+        "are malformed, forged or from another secret are reported and left out.",
+        "  shardpix combine shares/*.txt\n  shardpix combine - -o seed.txt < shares.txt",
+    )
     p.add_argument(
         "shares", nargs="+", metavar="FILE", help="files holding shares, one per line ('-' = stdin)"
     )

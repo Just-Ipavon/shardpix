@@ -160,7 +160,6 @@ shardpix analyze sospetta.png
 | `-d, --directory` | Cartella di output (`seal`: predefinita `./sealed`; `split`: un file per quota) |
 | `-p, --passphrase` | Chiede una passphrase |
 | `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
-| `-m, --method` | `matching` (predefinito) o `replacement`, per i confronti |
 | `-o, --output` | File di output |
 | `--name` | Nome del file vault (`seal`) |
 | `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |

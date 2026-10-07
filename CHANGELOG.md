@@ -17,6 +17,11 @@ All notable changes to this project are documented here. The format follows
   file's first bytes.
 - The CLI no longer has `--method`: format 3 (matching, replacement) stays
   in the library as a benchmark baseline only.
+- **Detailed help.** `shardpix -h` shows how the pieces fit, a quick start,
+  how to pick covers and how passphrases work; every `shardpix COMMAND -h`
+  explains what the command does and ends with examples.
+- The README installs shardpix with pipx, so the command works in every
+  terminal; the virtual environment remains for development.
 
 - **Stego format v4, adaptive embedding, is the default** for `seal`,
   `embed` and the library (`Method.ADAPTIVE`). The salt, the length and the

@@ -379,3 +379,34 @@ class TestOutputSafety:
         """Formats other than adaptive exist for the benchmarks, not for users."""
         with pytest.raises(SystemExit):
             run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "-m", "replacement")
+
+
+class TestHelp:
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "capacity",
+            "embed",
+            "extract",
+            "seal",
+            "unseal",
+            "inspect",
+            "analyze",
+            "split",
+            "combine",
+        ],
+    )
+    def test_every_command_explains_itself_with_examples(self, command, capsys):
+        with pytest.raises(SystemExit) as exit_info:
+            cli.main([command, "-h"])
+        assert exit_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "examples:" in out
+        assert f"shardpix {command}" in out
+
+    def test_overview_lists_a_quick_start(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(["-h"])
+        out = capsys.readouterr().out
+        assert "quick start:" in out
+        assert "shardpix seal" in out
