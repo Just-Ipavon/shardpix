@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-10-07
+
+Major version: the CLI no longer has `--method`, and new images are written
+in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
+
 ### Changed
 
 - **`analyze` on JPEG.** The pixel attacks see nothing in a JPEG, whose data
@@ -14,14 +19,6 @@ All notable changes to this project are documented here. The format follows
   JSteg) and shows the estimated quality. Its closing note no longer says
   shardpix uses LSB matching: it says what the classical attacks catch and
   where shardpix's adaptive formats are measured.
-
-## [2.0.0] — 2026-10-07
-
-Major version: the CLI no longer has `--method`, and new images are written
-in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
-
-### Changed
-
 - **Phone photos are used as taken.** A JPEG cover is embedded in its own
   quantised coefficients (**stego format 5**, `shardpix/jpeg.py`): non-zero
   AC luminance coefficients, UERD costs, the same syndrome-trellis codes as
