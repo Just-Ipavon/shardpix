@@ -429,6 +429,30 @@ What this shows:
 The same caveats as §5.5.5–5.5.6 apply: two detectors, one image source, the
 detector trained at the exact rate.
 
+### 5.5.8 JPEG covers (format 5)
+
+Format 5 (01 ADR-13) is measured the way formats 3 and 4 are, in the JPEG
+domain: BOSSbase compressed with Pillow at quality 95 (close to phone
+cameras) and 75 (the usual benchmark), DCTR features (Holub and Fridrich,
+2015; 8,000 features from the 64 DCT-basis residuals of the decompressed
+image) with the ensemble classifier, half of the images for training and
+half for testing, at one vault share and at 0.1 bits per non-zero AC
+coefficient (`python -m shardpix.analysis.jpeg_benchmark`). The baseline is
+the non-adaptive equivalent of format 3: one bit per coefficient at random
+non-zero AC positions, ±1 away from zero.
+
+**Status: being measured on the 10,000 images.** A preliminary run on 200
+images at quality 95 (100 test pairs, intervals of about ±7 points) gave:
+
+| 200 images, quality 95 | One share | 0.4 bits per non-zero AC (control) |
+| --- | ---: | ---: |
+| Non-adaptive baseline | 43.0% | 0.0% |
+| Format 5 | 49.0% | 15.5% |
+
+This only shows that the experiment works (the control is detected) and
+which way it points; the full results and the pooled analysis replace this
+table when they are complete.
+
 ## 5.6 Known limitations
 
 **Not independently audited.** See §5.1 and 06.
