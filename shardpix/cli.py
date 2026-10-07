@@ -58,7 +58,7 @@ passphrases:
 
 documentation: https://github.com/Just-Ipavon/shardpix#readme"""
 
-PASSPHRASE_NOTE = """\
+KEYING_NOTE = """\
 passphrase:
   The passphrase picks the hidden positions and encrypts the payload; the
   same one is needed to read it back. Without -p or --passphrase-file the
@@ -571,7 +571,7 @@ def build_parser() -> argparse.ArgumentParser:
         "cover gives a JPEG (format 5: same quantisation tables and metadata);\n"
         "anything else gives a PNG (format 4). The changes are placed where the\n"
         "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
-        "much fits. The cover itself is never modified.\n\n" + PASSPHRASE_NOTE,
+        "much fits. The cover itself is never modified.\n\n" + KEYING_NOTE,
         '  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p\n'
         "  shardpix embed scan.png -o out.png -i contract.pdf --passphrase-file pw.txt",
     )
@@ -597,7 +597,7 @@ def build_parser() -> argparse.ArgumentParser:
         "Reads back what 'embed' hid. Without -o the payload is written to\n"
         "standard output as it is. Fails with 'no shardpix payload found' if the\n"
         "passphrase is wrong, the image holds nothing, or it was edited or\n"
-        "recompressed after embedding.\n\n" + PASSPHRASE_NOTE,
+        "recompressed after embedding.\n\n" + KEYING_NOTE,
         "  shardpix extract out.jpg -p\n"
         "  shardpix extract out.png -o contract.pdf --passphrase-file pw.txt",
     )
@@ -618,7 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
         "the directory given by -d: the vault plus one image per cover, keeping\n"
         "its name and kind (.jpg stays .jpg, anything else becomes .png).\n\n"
         "Give each image to a different holder, keep the vault anywhere, and never\n"
-        "publish the original covers.\n\n" + PASSPHRASE_NOTE,
+        "publish the original covers.\n\n" + KEYING_NOTE,
         "  shardpix seal notes.pdf a.jpg b.jpg c.jpg d.jpg e.jpg -k 3 -p\n"
         "  shardpix seal keys.txt photos/*.jpg -k 2 -d out --name keys.spx -p",
     )
@@ -650,7 +650,7 @@ def build_parser() -> argparse.ArgumentParser:
         "are fine: a table reports what happened to every image (used, no\n"
         "payload, other vault, rejected, ...), so a failed recovery still tells\n"
         "you which holder to call. The file is written under its original name\n"
-        "unless -o is given.\n\n" + PASSPHRASE_NOTE,
+        "unless -o is given.\n\n" + KEYING_NOTE,
         "  shardpix unseal notes.pdf.spx a.jpg c.jpg e.jpg -p\n"
         "  shardpix unseal vault.spx received/*.jpg -o notes.pdf -p",
     )
@@ -669,8 +669,7 @@ def build_parser() -> argparse.ArgumentParser:
         "show what an image holds",
         "Reads the payload of an image and tells whether it is a vault share and,\n"
         "if so, which vault it belongs to, its share number and how many shares\n"
-        "the vault needs; for any other payload, its size. Nothing is written.\n\n"
-        + PASSPHRASE_NOTE,
+        "the vault needs; for any other payload, its size. Nothing is written.\n\n" + KEYING_NOTE,
         "  shardpix inspect sealed/a.jpg -p",
     )
     p.add_argument("image", type=Path, help="image to inspect")
