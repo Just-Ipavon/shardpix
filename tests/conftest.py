@@ -71,6 +71,25 @@ def processed_image(height: int = 96, width: int = 128, seed: int = 1) -> np.nda
     return np.clip(np.round((base - 20) * 1.3), 0, 255).astype(np.uint8)
 
 
+def phone_jpeg(
+    path: Path, height: int = 192, width: int = 256, seed: int = 0, quality: int = 90
+) -> Path:
+    """A JPEG as a phone writes it: textured, with sensor noise and EXIF metadata.
+
+    Enough non-zero AC coefficients survive the quantisation to hold a
+    vault share, which a smooth synthetic image would not provide.
+    """
+    rng = np.random.default_rng(seed)
+    base = natural_image(height, width, 3, seed=seed).astype(np.float64)
+    texture = rng.normal(0, 14, size=base.shape)
+    pixels = np.clip(base + texture, 0, 255).round().astype(np.uint8)
+    exif = Image.Exif()
+    exif[0x010F] = "ShardpixTestPhone"
+    exif[0x0110] = "Model 1"
+    Image.fromarray(pixels).save(path, quality=quality, exif=exif.tobytes())
+    return path
+
+
 @pytest.fixture
 def rgb_carrier() -> Carrier:
     return from_pil(Image.fromarray(natural_image()))

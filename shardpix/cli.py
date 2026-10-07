@@ -12,10 +12,10 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from . import __version__, shamir, stego, vault
+from . import __version__, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
 from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
-from .images import load_image, save_png, write_new
+from .images import load_image, write_new
 
 DESCRIPTION = (
     "Encrypt a file and split its key into shares hidden in ordinary-looking images: "
@@ -31,10 +31,8 @@ JPEG_WARNING = (
     "prefer photos that were never JPEG-compressed, such as RAW exports (docs/07)."
 )
 
-REPLACEMENT_WARNING = (
-    "[yellow]warning:[/] --method replacement is detectable by chi-square and RS analysis; "
-    "it exists for comparisons, use the default for anything real."
-)
+OUTPUT_SUFFIXES = {".jpg": {".jpg", ".jpeg"}, ".png": {".png"}}
+"""Extensions accepted for the stego file, by the kind of cover."""
 
 RS_ALERT = 0.10
 """RS estimate above which LSB replacement is reported; clean photos measured -2.5% to +8.3%."""
@@ -188,38 +186,46 @@ def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
 
 
 def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
-    carrier = load_image(args.image)
-    height, width, channels = carrier.geometry
-    room = stego.carrier_capacity(carrier)
-    usable = int(stego.eligible_mask(carrier.samples()).sum())
-    console.print(
-        _key_value_table(
-            str(args.image),
-            [
-                ("Dimensions", f"{width} x {height}"),
-                (
-                    "Mode",
-                    f"{carrier.mode} ({channels} colour channel{'s' if channels > 1 else ''})",
-                ),
-                ("Carrier samples", f"{carrier.n_samples:,}"),
-                (
-                    "Usable samples",
-                    f"{usable:,} (values {stego.ELIGIBLE_MIN}-{stego.ELIGIBLE_MAX})",
-                ),
-                ("Capacity", f"{room:,} bytes ({format_bytes(room)})"),
-            ],
-        )
-    )
+    cover = media.open_cover(args.image)
+    room = cover.capacity()
+    if cover.coefficients is not None:
+        height, width = cover.coefficients.geometry()
+        coefficients = cover.coefficients.coefficients()
+        usable = int(jpeg.eligible_mask(coefficients).sum())
+        rows = [
+            ("Dimensions", f"{width} x {height}"),
+            ("Format", cover.format_name),
+            ("Luminance coefficients", f"{coefficients.size:,}"),
+            ("Usable coefficients", f"{usable:,} (non-zero AC)"),
+        ]
+    else:
+        carrier = cover._pixels()
+        height, width, channels = carrier.geometry
+        usable = int(stego.eligible_mask(carrier.samples()).sum())
+        rows = [
+            ("Dimensions", f"{width} x {height}"),
+            ("Format", cover.format_name),
+            ("Mode", f"{carrier.mode} ({channels} colour channel{'s' if channels > 1 else ''})"),
+            ("Carrier samples", f"{carrier.n_samples:,}"),
+            ("Usable samples", f"{usable:,} (values {stego.ELIGIBLE_MIN}-{stego.ELIGIBLE_MAX})"),
+        ]
+    rows.append(("Capacity", f"{room:,} bytes ({format_bytes(room)})"))
+    console.print(_key_value_table(str(args.image), rows))
     return 0
 
 
 def cmd_embed(args: argparse.Namespace, console: Console) -> int:
     check_output(args.output, force=args.force, inputs=(args.cover,))
     payload = read_secret(args)
-    carrier = load_image(args.cover)
+    cover = media.open_cover(args.cover)
+    if args.output.suffix.lower() not in OUTPUT_SUFFIXES[cover.suffix]:
+        raise ShardpixError(
+            f"{args.output.name}: a {'JPEG' if cover.is_jpeg else 'non-JPEG'} cover gives a "
+            f"{cover.suffix} file; name the output something{cover.suffix}"
+        )
     passphrase = read_passphrase(args, confirm=True)
-    stego_carrier, report = stego.embed(carrier, payload, passphrase, stego.Method(args.method))
-    save_png(stego_carrier, args.output, overwrite=args.force)
+    stego_file, report = media.hide(cover, payload, passphrase)
+    write_new(args.output, stego_file, overwrite=args.force)
 
     console.print(
         _key_value_table(
@@ -231,7 +237,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
                     f"{report.frame_bytes:,} bytes (payload + {stego.FRAME_OVERHEAD} overhead)",
                 ),
                 ("Capacity", f"{report.capacity_bytes:,} bytes"),
-                ("Method", args.method),
+                ("Format", cover.format_name),
                 ("Embedding rate", f"{report.embedding_rate:.4%} of samples"),
                 ("Samples changed", f"{report.samples_changed:,} ({report.change_rate:.4%})"),
                 ("Passphrase", "yes" if passphrase else "no"),
@@ -243,18 +249,15 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
             "[yellow]warning:[/] no passphrase - anyone running shardpix can locate and "
             "read this payload"
         )
-    if carrier.from_jpeg:
+    if cover.pixels is not None and cover.pixels.from_jpeg:
         console.print(JPEG_WARNING.format(names=f"{escape(str(args.cover))} was"))
-    if args.method == stego.Method.REPLACEMENT.value:
-        console.print(REPLACEMENT_WARNING)
     return 0
 
 
 def cmd_extract(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=(args.image,))
-    carrier = load_image(args.image)
-    payload = stego.extract(carrier, read_passphrase(args, confirm=False))
+    payload = media.reveal(args.image, read_passphrase(args, confirm=False))
     if args.output is None:
         sys.stdout.buffer.write(payload)
         sys.stdout.buffer.flush()
@@ -334,7 +337,6 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
         args.threshold,
         args.directory,
         passphrase,
-        method=stego.Method(args.method),
         vault_name=args.name,
         force=args.force,
     )
@@ -369,8 +371,6 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     if jpegs:
         verb = "was" if len(jpegs) == 1 else "were"
         console.print(JPEG_WARNING.format(names=f"{escape(', '.join(jpegs))} {verb}"))
-    if args.method == stego.Method.REPLACEMENT.value:
-        console.print(REPLACEMENT_WARNING)
     console.print("Keep the vault file anywhere; give each image to a different holder.")
     console.print("Never publish the original covers next to the images.")
     return 0
@@ -394,7 +394,7 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace, console: Console) -> int:
-    payload = stego.extract(load_image(args.image), read_passphrase(args, confirm=False))
+    payload = media.reveal(args.image, read_passphrase(args, confirm=False))
     try:
         share = shamir.Share.from_bytes(payload)
     except ShareFormatError:
@@ -496,18 +496,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_capacity)
 
     p = sub.add_parser("embed", help="hide a message or a file in an image")
-    p.add_argument("cover", type=Path, help="cover image (PNG, JPEG, BMP, ...)")
-    p.add_argument("-o", "--output", type=Path, required=True, help="stego image to write (.png)")
+    p.add_argument("cover", type=Path, help="cover image (JPEG from a phone, PNG, TIFF, ...)")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="stego image to write: .jpg for a JPEG cover, .png otherwise",
+    )
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument("-t", "--text", help="text message to hide")
     source.add_argument("-i", "--input", type=Path, metavar="FILE", help="file to hide")
-    p.add_argument(
-        "-m",
-        "--method",
-        choices=[m.value for m in stego.Method],
-        default=stego.Method.ADAPTIVE.value,
-        help="how samples are changed (default: adaptive)",
-    )
     _add_passphrase_options(p)
     p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
     p.set_defaults(handler=cmd_embed)
@@ -535,13 +534,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="where to write the vault and the images (default: ./sealed)",
     )
     p.add_argument("--name", help="vault file name (default: <file>.spx)")
-    p.add_argument(
-        "-m",
-        "--method",
-        choices=[m.value for m in stego.Method],
-        default=stego.Method.ADAPTIVE.value,
-        help="how samples are changed (default: adaptive)",
-    )
     _add_passphrase_options(p)
     p.add_argument("-f", "--force", action="store_true", help="overwrite existing outputs")
     p.set_defaults(handler=cmd_seal)

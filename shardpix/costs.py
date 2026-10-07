@@ -70,3 +70,35 @@ def sample_costs(pixels: np.ndarray, channels: int) -> np.ndarray:
     """
     per_channel = [hill(pixels[..., c]) for c in range(channels)]
     return np.stack(per_channel, axis=-1).reshape(-1)
+
+
+# --------------------------------------------------------------------------- JPEG
+
+
+def uerd(blocks: np.ndarray, quant: np.ndarray) -> np.ndarray:
+    """UERD cost of changing each quantised DCT coefficient by +-1.
+
+    Guo, Ni, Su, Tang and Shi (2015). ``blocks`` is ``Hb x Wb x 8 x 8`` (one
+    8x8 block of quantised coefficients per position), ``quant`` the 8x8
+    quantisation table. The energy of a block is the sum of its AC
+    coefficients weighted by their quantisation steps; a change costs the
+    step of its frequency divided by the energy of its block plus a quarter
+    of the energy of its eight neighbours. Changes are cheap in busy blocks
+    and at low frequencies, and expensive in flat blocks and where the
+    quantiser is coarse.
+    """
+    q = quant.astype(np.float64)
+    weighted = np.abs(blocks.astype(np.float64)) * q
+    energy = weighted.sum(axis=(2, 3)) - weighted[:, :, 0, 0]
+    padded = np.pad(energy, 1, mode="edge")
+    h, w = energy.shape
+    neighbours = sum(
+        padded[1 + dy : 1 + dy + h, 1 + dx : 1 + dx + w]
+        for dy in (-1, 0, 1)
+        for dx in (-1, 0, 1)
+        if (dy, dx) != (0, 0)
+    )
+    denominator = energy + 0.25 * neighbours + _EPSILON
+    steps = q.copy()
+    steps[0, 0] = 0.5 * (q[0, 1] + q[1, 0])
+    return steps[None, None, :, :] / denominator[:, :, None, None]
