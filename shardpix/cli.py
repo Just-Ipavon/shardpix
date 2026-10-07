@@ -59,7 +59,9 @@ quick start:
 
 good covers:
   Your own phone photos, as taken: colour, 2 megapixels or more, textured
-  (trees, streets, fabric), never shared online. Send the results as files,
+  (trees, streets, fabric), never shared online. Use the original files, not
+  photos saved from a chat or a social network: they are recompressed, and
+  shardpix warns when a JPEG's quality is below 90. Send the results as files,
   not as photos in a messaging app, which recompresses them. HEIC is not
   supported: set the iPhone camera to 'Most Compatible' (JPEG).
 
@@ -92,6 +94,13 @@ JPEG_WARNING = (
     "[yellow]warning:[/] {names} decoded from JPEG. Changing a decoded JPEG by +-1 breaks its "
     "8x8 block structure, which JPEG-compatibility steganalysis can detect at any rate; "
     "prefer photos that were never JPEG-compressed, such as RAW exports (docs/07)."
+)
+
+LOW_QUALITY_WARNING = (
+    "[yellow]warning:[/] {names} JPEG quality about {quality}, below {safe}: "
+    "a recompressed photo, such as one saved from a chat app or a social network. At "
+    "this quality the shares become detectable once several images of a vault are "
+    "pooled (docs/05 §5.5.8); use the original files from the camera."
 )
 
 OUTPUT_SUFFIXES = {".jpg": {".jpg", ".jpeg"}, ".png": {".png"}}
@@ -342,6 +351,12 @@ def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
 # --------------------------------------------------------------------------- commands
 
 
+def _quality_text(quality: int) -> str:
+    if quality >= jpeg.SAFE_QUALITY:
+        return f"about {quality}"
+    return f"about {quality} [yellow](recompressed? below {jpeg.SAFE_QUALITY}, see docs/05)[/]"
+
+
 def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
     cover = media.open_cover(args.image)
     room = cover.capacity()
@@ -352,6 +367,7 @@ def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
         rows = [
             ("Dimensions", f"{width} x {height}"),
             ("Format", cover.format_name),
+            ("JPEG quality", _quality_text(cover.coefficients.quality)),
             ("Luminance coefficients", f"{coefficients.size:,}"),
             ("Usable coefficients", f"{usable:,} (non-zero AC)"),
         ]
@@ -409,6 +425,14 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
         )
     if cover.pixels is not None and cover.pixels.from_jpeg:
         console.print(JPEG_WARNING.format(names=f"{escape(str(args.cover))} was"))
+    if cover.coefficients is not None and cover.coefficients.quality < jpeg.SAFE_QUALITY:
+        console.print(
+            LOW_QUALITY_WARNING.format(
+                names=f"{escape(str(args.cover))} has",
+                quality=cover.coefficients.quality,
+                safe=jpeg.SAFE_QUALITY,
+            )
+        )
     return 0
 
 
@@ -534,6 +558,20 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     if jpegs:
         verb = "was" if len(jpegs) == 1 else "were"
         console.print(JPEG_WARNING.format(names=f"{escape(', '.join(jpegs))} {verb}"))
+    low = [
+        image
+        for image in result.images
+        if image.jpeg_quality is not None and image.jpeg_quality < jpeg.SAFE_QUALITY
+    ]
+    if low:
+        names = ", ".join(image.cover.name for image in low)
+        console.print(
+            LOW_QUALITY_WARNING.format(
+                names=f"{escape(names)} {'has' if len(low) == 1 else 'have'}",
+                quality=min(image.jpeg_quality or 0 for image in low),
+                safe=jpeg.SAFE_QUALITY,
+            )
+        )
     console.print("Keep the vault file anywhere; give each image to a different holder.")
     console.print("Never publish the original covers next to the images.")
     return 0

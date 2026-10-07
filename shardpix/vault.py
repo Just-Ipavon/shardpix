@@ -123,6 +123,8 @@ class SealedImage:
     """The cover was a JPEG decoded to pixels (only for formats Pillow reads as JPEG
     but that are not baseline JPEG files); JPEG files are embedded natively."""
     format: str = "PNG (format 4)"
+    jpeg_quality: int | None = None
+    """Estimated quality of a JPEG cover; ``None`` for pixel covers."""
 
 
 @dataclass(frozen=True)
@@ -281,7 +283,13 @@ def seal(
         decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
         sealed.append(
             SealedImage(
-                cover, output, share.index, embed_report, decoded_jpeg, opened_cover.format_name
+                cover,
+                output,
+                share.index,
+                embed_report,
+                decoded_jpeg,
+                opened_cover.format_name,
+                None if opened_cover.coefficients is None else opened_cover.coefficients.quality,
             )
         )
     report(1.0, f"writing {vault_path.name}")

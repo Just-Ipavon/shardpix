@@ -23,6 +23,10 @@ All notable changes to this project are documented here. The format follows
   it is weakly detectable on one image (42.5%) and clearly once pooled
   (7.8% with fifty): covers should be original camera files, not photos
   recompressed by chat apps.
+- **Recompressed JPEG warning.** shardpix estimates a JPEG's quality from
+  its luminance quantisation table (`jpeg.estimate_quality`, exact for
+  standard tables) and `embed` and `seal` warn below 90, where the
+  measurements show pooled detection; `capacity` shows the estimate.
 - **Progress bar.** `seal`, `unseal`, `embed` and `extract` show a bar
   with the current step (deriving the key, measuring the texture, choosing
   the changes, writing the image) on a terminal; nothing changes when the

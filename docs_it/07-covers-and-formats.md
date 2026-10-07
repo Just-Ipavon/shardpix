@@ -138,7 +138,9 @@ file in uscita deve avere l'estensione corrispondente (`.jpg` o `.png`).
   contro DCTR, con un'immagine e con cinquanta aggregate; a qualità 75 è
   debolmente rilevabile su un'immagine (42,5%) e chiaramente con molte (7,8%
   con cinquanta). Usa i file originali della fotocamera, che i telefoni
-  salvano a qualità 90 o più (05 §5.5.8).
+  salvano a qualità 90 o più (05 §5.5.8). `embed` e `seal` stimano la
+  qualità di ogni JPEG dalla sua tabella di quantizzazione e avvisano sotto
+  90; `capacity` mostra la stima.
 - **Rilevatori.** Il formato 5 è stato misurato contro DCTR; rilevatori JPEG
   più potenti (GFR, reti profonde come SRNet per JPEG) non sono stati provati.
 

@@ -127,6 +127,8 @@ the output must carry the matching extension (`.jpg` or `.png`).
   for one image and for fifty pooled; at quality 75 it is weakly detectable
   on one image (42.5%) and clearly with many (7.8% with fifty). Use original
   camera files, which phones save at quality 90 or more (05 §5.5.8).
+  `embed` and `seal` estimate each JPEG's quality from its quantisation
+  table and warn below 90; `capacity` shows the estimate.
 - **Detectors.** Format 5 is measured against DCTR; stronger JPEG detectors
   (GFR, deep networks such as SRNet for JPEG) were not run.
 

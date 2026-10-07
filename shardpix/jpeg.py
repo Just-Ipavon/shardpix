@@ -42,6 +42,48 @@ MAX_COEFFICIENT = 1023
 
 JPEG_MAGIC = b"\xff\xd8\xff"
 
+SAFE_QUALITY = 90
+"""Estimated quality below which a JPEG cover is reported as recompressed.
+
+At quality 95 format 5 is at chance against DCTR even with fifty images of
+one vault pooled; at quality 75 it falls to 7.8% (docs/05 §5.5.8). Phones
+save at 90 or more; chat apps and social networks recompress to 70-85.
+"""
+
+# Luminance table of the JPEG standard (ITU-T T.81, Annex K), row by row.
+_STANDARD_LUMINANCE = np.array(
+    [
+        [16, 11, 10, 16, 24, 40, 51, 61],
+        [12, 12, 14, 19, 26, 58, 60, 55],
+        [14, 13, 16, 24, 40, 57, 69, 56],
+        [14, 17, 22, 29, 51, 87, 80, 62],
+        [18, 22, 37, 56, 68, 109, 103, 77],
+        [24, 35, 55, 64, 81, 104, 113, 92],
+        [49, 64, 78, 87, 103, 121, 120, 101],
+        [72, 92, 95, 98, 112, 100, 103, 99],
+    ],
+    dtype=np.float64,
+)
+
+
+def standard_table(quality: int) -> np.ndarray:
+    """The luminance table libjpeg writes at ``quality`` (1-100)."""
+    scale = 5000 / quality if quality < 50 else 200 - 2 * quality
+    return np.clip(np.floor((_STANDARD_LUMINANCE * scale + 50) / 100), 1, 255)
+
+
+def estimate_quality(quant: np.ndarray) -> int:
+    """The libjpeg quality whose luminance table is closest to ``quant``.
+
+    Exact for files written with the standard tables (libjpeg, Pillow, most
+    editors); for the custom tables of phone cameras it gives the standard
+    quality with the most similar quantisation, which is what matters for
+    how much room the coefficients leave.
+    """
+    table = np.asarray(quant, dtype=np.float64).reshape(8, 8)
+    errors = [np.abs(np.log(standard_table(q)) - np.log(table)).sum() for q in range(1, 101)]
+    return int(np.argmin(errors)) + 1
+
 
 def is_jpeg(path: str | Path) -> bool:
     """True when the file starts with the JPEG start-of-image marker."""
@@ -75,6 +117,11 @@ class JpegCover:
 
     def geometry(self) -> tuple[int, int]:
         return int(self.image.height), int(self.image.width)
+
+    @property
+    def quality(self) -> int:
+        """Estimated JPEG quality, from the luminance quantisation table."""
+        return estimate_quality(self.quant)
 
 
 def load(path: str | Path) -> JpegCover:
