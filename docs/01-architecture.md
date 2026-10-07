@@ -55,10 +55,12 @@ graph TD
 
     subgraph orchestration["Orchestration layer"]
         VAULT["vault.py<br/><i>seal, unseal</i>"]
+        MEDIA["media.py<br/><i>JPEG or pixels, by file</i>"]
     end
 
     subgraph core["Core layer"]
         STEGO["stego.py<br/><i>keyed and adaptive embedding</i>"]
+        JPEG["jpeg.py<br/><i>embedding in JPEG coefficients</i>"]
         STC["stc.py<br/><i>syndrome-trellis codes</i>"]
         COSTS["costs.py<br/><i>HiLL embedding costs</i>"]
         SHAMIR["shamir.py<br/><i>authenticated secret sharing</i>"]
@@ -78,6 +80,12 @@ graph TD
     end
 
     CLI --> VAULT
+    CLI --> MEDIA
+    VAULT --> MEDIA
+    MEDIA --> STEGO
+    MEDIA --> JPEG
+    JPEG --> STEGO
+    JPEG --> COSTS
     CLI --> STEGO
     CLI --> SHAMIR
     CLI --> CHI
@@ -129,8 +137,10 @@ vault's share size) to produce its experiments.
 | [`shardpix/cli.py`](../shardpix/cli.py) | Argument parsing, passphrase input, overwrite protection, terminal output, exit codes | `vault`, `stego`, `shamir`, `images`, `analysis` |
 | [`shardpix/vault.py`](../shardpix/vault.py) | Encrypts a file, splits its key, distributes the shares over images, and reverses it | `stego`, `shamir`, `images` |
 | [`shardpix/stego.py`](../shardpix/stego.py) | Key derivation, keyed walk, framing, adaptive (format 4) and LSB matching/replacement (format 3) embedding, extraction of both formats | `images`, `stc`, `costs` |
+| [`shardpix/media.py`](../shardpix/media.py) | Opens a cover in the domain its file uses (JPEG coefficients or pixels), hides and reveals through the matching format | `jpeg`, `stego`, `images` |
+| [`shardpix/jpeg.py`](../shardpix/jpeg.py) | Format 5: payload in non-zero AC luminance coefficients, read and written without decoding | `stego`, `costs` |
 | [`shardpix/stc.py`](../shardpix/stc.py) | Syndrome-trellis codes: least-cost embedding with the Viterbi algorithm, syndrome extraction | — |
-| [`shardpix/costs.py`](../shardpix/costs.py) | HiLL cost of a ±1 change at every sample | — |
+| [`shardpix/costs.py`](../shardpix/costs.py) | HiLL cost of a ±1 change at every sample; UERD cost of a ±1 change at every JPEG coefficient | — |
 | [`shardpix/shamir.py`](../shardpix/shamir.py) | Shamir splitting, share format, MACs, robust recovery | `gf256` |
 | [`shardpix/gf256.py`](../shardpix/gf256.py) | GF(2^8) arithmetic, polynomial evaluation, Lagrange interpolation | — |
 | [`shardpix/images.py`](../shardpix/images.py) | Loading any image as an 8-bit carrier, writing lossless PNG | — |
@@ -315,8 +325,17 @@ Keys come from the domain `shardpix/stego/v4`, so formats 3 and 4 never
 share a key. The extractor tries format 4 first, then format 3; a cost
 byte that does not match the format being tried ends that attempt.
 
+**Format 5 (JPEG, ADR-13).** The same three codes as format 4, over the
+luminance coefficients of the JPEG instead of pixel samples: the eligible
+set is the non-zero AC coefficients, costs are UERD, and a coefficient at
+±1 always moves away from zero so the eligible set never changes. Keys come
+from the domain `shardpix/jpeg/v1`. The output is a JPEG with the cover's
+quantisation tables and metadata.
+
 **Format 3 (matching, replacement).** One bit per sample, salt and cost on
 the public walk, the rest on the keyed walk; domain `shardpix/stego/v3`.
+Kept in the library as the benchmarks' baseline; the CLI no longer writes
+it.
 
 In both formats bits are written most significant first, only samples with
 values 2–253 are used (ADR-06), and the public and keyed walks never share
@@ -491,7 +510,7 @@ thousands. A forged set is never accepted by `unseal`, and is reported as
 such. The budget bounds the worst case at the price of a clear error in
 adversarial inputs far beyond realistic use.
 
-### ADR-10 — Lossless output only, and a warning for JPEG covers
+### ADR-10 — Lossless output for pixel covers (JPEG covers: see ADR-13)
 
 **Context.** JPEG re-quantises pixels and destroys LSB payloads. Pixels that
 come from a decoded JPEG also carry the 8×8 block structure of the original;
@@ -502,7 +521,9 @@ JPEG are accepted but trigger a warning recommending covers that were never
 JPEG-compressed.
 
 **Consequences.** Users cannot destroy a payload by choosing the wrong
-extension. The JPEG risk is documented rather than hidden (05 §5.6).
+extension. Superseded for JPEG covers by ADR-13: a JPEG is no longer decoded
+to pixels but embedded in its own coefficients; the warning remains only
+for files Pillow decodes as JPEG without them being baseline JPEG files.
 
 ### ADR-11 — Use at most half of the eligible samples
 
@@ -538,6 +559,28 @@ needs no cost map. Embedding is slower (about one second per share, pure
 numpy) and format-4 images cannot be read by shardpix 1.1. The measured
 effect on detectability is in 05 §5.5.6.
 
+### ADR-13 — Embed JPEG covers in their own coefficients (format 5)
+
+**Context.** Phone cameras save JPEG, and the project should work with the
+photos people actually have. Embedding in the decoded pixels of a JPEG is
+detectable at any rate (JPEG-compatibility steganalysis) and turns a phone
+photo into an unusual PNG.
+
+**Decision.** A cover whose file starts with the JPEG marker is read as
+quantised DCT coefficients with `jpeglib` and never decoded. The payload
+goes into the non-zero AC coefficients of the luminance with the same
+syndrome-trellis codes as format 4 and UERD costs (Guo et al.); zeros and
+DC coefficients are never changed, and ±1 always moves away from zero. The
+JPEG is written back with its quantisation tables and markers (EXIF, ICC).
+`media.py` makes the choice from the file's first bytes, so neither the
+vault nor the CLI has a `--method` any more.
+
+**Consequences.** Phone photos are used as taken and the stego file is a
+JPEG of the same quality. One new dependency (`jpeglib`, which bundles
+libjpeg). The file is rewritten by libjpeg, so Huffman tables and marker
+layout may differ from the camera's own encoder (07 §7.6). The measured
+detectability is in 05 §5.5.8.
+
 ## 1.7 Deployment view
 
 ```mermaid
@@ -545,10 +588,10 @@ graph TD
     subgraph host["Owner's or holder's workstation"]
         subgraph venv["Python ≥ 3.10 virtual environment"]
             APP["shardpix<br/><i>single process, offline</i>"]
-            DEP["cryptography · numpy · pillow · rich"]
+            DEP["cryptography · jpeglib · numpy · pillow · rich"]
         end
         IN["covers · file to seal · passphrase file"]
-        OUT["sealed/*.png · *.spx"]
+        OUT["sealed/*.jpg or *.png · *.spx"]
     end
 
     APP --> DEP
@@ -559,7 +602,8 @@ graph TD
 ```
 
 There are no network calls, databases or background services. The optional
-`bench` extra adds matplotlib and scikit-image for the benchmark only.
+`bench` extra adds matplotlib and scikit-image for the benchmarks, and the
+`ml` extra PyTorch for the CNN.
 
 ## 1.8 Non-functional requirements
 
@@ -573,4 +617,4 @@ There are no network calls, databases or background services. The optional
 | No input file is ever overwritten | Path identity checks in CLI and vault, case-folded | `TestOutputCollisions`, `test_refuses_to_overwrite_the_cover` |
 | Memory and time grow with the payload, not the image | Rejection-sampled walk (ADR-04) | 04 §4.9 |
 | The test suite runs offline in seconds | Synthetic covers, reduced scrypt cost in tests | 310 tests, ~9 s |
-| Portability | Python 3.10–3.13, four dependencies | CI matrix |
+| Portability | Python 3.10–3.13, five dependencies (cryptography, jpeglib, numpy, Pillow, rich) | CI matrix |

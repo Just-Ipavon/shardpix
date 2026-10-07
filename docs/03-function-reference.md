@@ -33,7 +33,8 @@ graph LR
         P1["gf256: field arithmetic"]
         P2["shamir: split, recover_all, combine"]
         P3["stego: derive_key, SampleOrder,<br/>embed, extract"]
-        P5["stc, costs: syndrome-trellis codes,<br/>HiLL costs"]
+        P5["stc, costs: syndrome-trellis codes,<br/>HiLL and UERD costs"]
+        P6["jpeg: format 5 on coefficients"]
         P4["chi_square, rs"]
     end
 
@@ -152,7 +153,7 @@ cannot be written. Test: `TestSave`.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `FORMAT_VERSION`, `LEGACY_VERSION` | `4`, `3` | Format written by `ADAPTIVE` and by the other methods; part of the AES-GCM associated data. |
+| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `4`, `3`, `5` | Format written by `ADAPTIVE`, by the baseline methods and by `jpeg.py`; part of the AES-GCM associated data and of the key domain. |
 | `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Per-image salt and scrypt cost, written along the public walk (ADR-05). |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Frame fields. |
 | `FRAME_OVERHEAD` | `32` | Bytes the keyed frame adds to every payload. |
@@ -274,6 +275,14 @@ Raises `ValueError` if `positions` is not a multiple of `bits`.
 ### `read_adaptive(samples, positions, length, seed)`
 
 The `length` bits written by `write_adaptive`: the syndrome of the LSBs.
+
+### `choose_flips(samples, positions, bits, sample_costs, seed)`
+
+The syndrome-trellis part of format 4 and 5: the indices among `positions`
+(`width` candidates per bit) whose parity must flip, chosen to minimise the
+total cost. Works on any integer array, pixels or JPEG coefficients;
+`write_adaptive` and `jpeg.embed_coefficients` apply the ±1 changes with
+their own rules.
 
 ### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom)`
 
@@ -558,8 +567,8 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0.10: detected prefix at which `analyze` reports the chi-square signature. |
 | `RS_ALERT` | 0.10: RS estimate at which `analyze` reports LSB replacement. Clean photographs measured −2.5% to +8.3% in the benchmark. |
-| `JPEG_WARNING` | Text shown when a cover was decoded from JPEG. |
-| `REPLACEMENT_WARNING` | Text shown when `--method replacement` is used for `embed` or `seal` (06 SR-05). |
+| `JPEG_WARNING` | Text shown when a non-JPEG file was nonetheless decoded as JPEG by Pillow; JPEG files are embedded natively (format 5). |
+| `OUTPUT_SUFFIXES` | Extensions accepted for the stego file: `.jpg`/`.jpeg` for a JPEG cover, `.png` otherwise. |
 
 ### Helpers
 
@@ -577,8 +586,8 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 
 | Function | Command | Notes |
 | --- | --- | --- |
-| `cmd_capacity` | `capacity IMAGE` | Dimensions, mode, samples, usable samples, capacity. |
-| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE)` | Warns without passphrase and for JPEG covers. |
+| `cmd_capacity` | `capacity IMAGE` | Dimensions, format, usable samples or coefficients, capacity. |
+| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE)` | Format from the cover's file; refuses an output extension of the other kind; warns without passphrase. |
 | `cmd_extract` | `extract IMAGE [-o FILE]` | Raw bytes to stdout unless `-o`. |
 | `cmd_analyze` | `analyze IMAGE [--steps N]` | Chi-square and RS; RS skipped below 4 pixels of width. |
 | `cmd_seal` | `seal FILE COVER... -k K [-d DIR] [--name N]` | Per-image table, warnings, guidance. |
@@ -591,6 +600,8 @@ Every command accepts `-p/--passphrase` or `--passphrase-file` where a
 passphrase applies, and `-f/--force` where it writes a file.
 
 ### `build_parser()` and `main(argv=None) -> int`
+
+There is no `--method` option: the format follows the cover (01 ADR-13).
 
 `main` dispatches to the handler and maps outcomes to exit codes: 0 on
 success, 1 for any `ShardpixError` (printing the per-image or per-share
@@ -648,6 +659,13 @@ smooth areas. Test: `TestHiLL::test_texture_is_cheaper_than_smooth_regions`.
 `hill` of every colour channel, flattened in the order of
 `Carrier.samples()`. Test: `TestHiLL::test_costs_are_positive_and_follow_sample_order`.
 
+### `uerd(blocks, quant) -> ndarray`
+
+UERD cost of each quantised coefficient (Guo et al., 2015): the
+quantisation step of its frequency (DC uses the mean of the two lowest AC
+steps) divided by the AC energy of its block plus a quarter of its eight
+neighbours' energies. Tests: `test_jpeg.py::TestUERD`.
+
 ---
 
 ## 3.16 Trained steganalysis (`shardpix/analysis/`)
@@ -658,6 +676,66 @@ smooth areas. Test: `TestHiLL::test_texture_is_cheaper_than_smooth_regions`.
 | `ensemble.py` | `train`, `Ensemble.votes`, `decision_error`, `detection_error`, `auc` | Ensemble of Fisher linear discriminants on random subspaces, subspace size chosen by out-of-bag error; detection metrics. |
 | `cnn.py` | `StegoNet`, `train`, `scores` | Small CNN with a fixed SRM high-pass layer, trained on cover/stego pairs (optional, PyTorch). |
 | `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`, `--cache`, `--rerun`) | Paired train/test experiments on BOSSbase; results in `docs/data/ml_benchmark_*.json`, per-image test scores in `*.scores.npz`. |
+| `features.py` (JPEG) | `decompress`, `dctr`, `dctr_step` | Decoding from coefficients, and DCTR features (8,000): 64 DCT-basis residuals, quantised, histogrammed per 8x8 phase in 25 merged classes. |
+| `jpeg_benchmark.py` | `main` (`--quality`, `--strategy jpeg\|naive`, `--payloads share,…`) | Format 5 against a non-adaptive baseline on BOSSbase JPEGs, DCTR + ensemble; results in `docs/data/jpeg_benchmark_q*.json`. |
 | `pooled.py` | `pooled`, `run`, `main` | An adversary holding g images of one vault: pooled scores (mean or fitted likelihood ratio), calibration and evaluation on disjoint halves over 40 splits (05 §5.5.7). |
 
 Tests: `test_ml.py`.
+
+---
+
+## 3.17 `shardpix/jpeg.py`
+
+| Name | Value | Role |
+| --- | --- | --- |
+| `VERSION` | `5` | `stego.JPEG_VERSION`. |
+| `MAX_COEFFICIENT` | `1023` | Largest magnitude of a baseline coefficient; a change never crosses it. |
+
+### `is_jpeg(path)`, `load(path) -> JpegCover`
+
+`is_jpeg` reads the first three bytes (`FF D8 FF`). `load` reads the
+quantised coefficients with `jpeglib` without decoding; raises
+`UnsupportedImageError` for a non-JPEG, an unreadable file or a JPEG with no
+luminance. `JpegCover` exposes `blocks` (`Hb × Wb × 8 × 8`), `quant` (the
+luminance table), `coefficients()` (flat copy) and `geometry()`.
+
+### `eligible_mask(coefficients)`, `capacity(cover)`
+
+Non-zero AC coefficients; capacity as for pixels, over that count.
+
+### `embed(cover, payload, passphrase=None, random_bytes) -> (bytes, EmbedReport)`
+
+`embed_coefficients` on the cover, then the JPEG file rewritten with the new
+luminance and everything else unchanged. Raises `CapacityError` like
+`stego.embed`. Tests: `test_jpeg.py::TestFormat5`.
+
+### `embed_coefficients(coefficients, shape, quant, payload, passphrase, random_bytes)`
+
+The three syndrome codes of format 4 over the eligible coefficients, with
+UERD costs, keys from the JPEG domain; each flip moves a coefficient by ±1,
+away from zero at ±1 and inwards at ±1023 (`_apply`). Returns the new flat
+coefficients and the report. Used directly by the benchmark.
+
+### `extract(cover, passphrase=None) -> bytes`
+
+Mirrors `stego.extract` for format 5; one error for every failure.
+
+---
+
+## 3.18 `shardpix/media.py`
+
+### `class Cover` *(immutable)*
+
+`path` and either `pixels` (a `Carrier`) or `coefficients` (a `JpegCover`);
+`is_jpeg`, `suffix` (`.jpg`/`.png`), `format_name` and `capacity()`.
+
+### `kind_suffix(path)`, `open_cover(path)`
+
+The output extension and the opened cover, both decided from the file's
+first bytes, never from its name.
+
+### `hide(cover, payload, passphrase, random_bytes, method=ADAPTIVE) -> (bytes, EmbedReport)`
+
+Format 5 for a JPEG, format 4 (or a baseline `method`) for pixels, returned
+as the bytes of the file to write. `reveal(path, passphrase)` is the
+inverse. Tests: `test_jpeg.py::TestMedia`, `test_vault.py`.
