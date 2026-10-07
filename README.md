@@ -110,7 +110,8 @@ folder:
 sudo apt install pipx            # Debian, Ubuntu, Kali
 brew install pipx                # macOS
 py -m pip install --user pipx    # Windows
-pipx ensurepath                  # then open a new terminal
+pipx ensurepath                  # Linux, macOS; then open a new terminal
+py -m pipx ensurepath            # Windows; then open a new PowerShell
 
 # 2. shardpix, straight from GitHub
 pipx install git+https://github.com/Just-Ipavon/shardpix.git
@@ -125,7 +126,9 @@ Update to the latest version with `pipx reinstall shardpix`, remove it with
 shardpix runs the same in PowerShell (Windows 10 and 11, Python 3.10 or
 later; every dependency ships ready-made for Windows). Install pipx with
 `py -m pip install --user pipx`, run `py -m pipx ensurepath`, open a new
-PowerShell window and continue as above. Two things differ from bash:
+PowerShell window and continue as above (the first `pipx` command works only
+in a new window; until then use `py -m pipx`). If `py` is not found, install
+Python first: `winget install Python.Python.3.13`. Two things differ from bash:
 
 - PowerShell does not expand `*.jpg` for other programs; shardpix does it
   itself, so `shardpix seal notes.pdf photos\*.jpg -k 3 -p` works as in bash.
