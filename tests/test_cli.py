@@ -404,9 +404,17 @@ class TestHelp:
         assert "examples:" in out
         assert f"shardpix {command}" in out
 
+    def test_options_are_explained(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(["seal", "-h"])
+        out = " ".join(capsys.readouterr().out.split())
+        assert "how many images are needed to open the vault" in out
+        assert "anyone running shardpix can read the payload" in out
+
     def test_overview_lists_a_quick_start(self, capsys):
         with pytest.raises(SystemExit):
             cli.main(["-h"])
         out = capsys.readouterr().out
         assert "quick start:" in out
         assert "shardpix seal" in out
+        assert "options used by several commands:" in out
