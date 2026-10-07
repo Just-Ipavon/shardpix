@@ -177,3 +177,14 @@ class TestMedia:
             out = tmp_path / name
             out.write_bytes(data)
             assert media.reveal(out, "pw") == b"either way"
+
+
+class TestQuality:
+    @pytest.mark.parametrize("quality", [30, 50, 75, 85, 90, 95, 100])
+    def test_estimates_the_quality_of_standard_tables(self, quality, tmp_path):
+        path = phone_jpeg(tmp_path / "photo.jpg", 64, 64, quality=quality)
+        assert jpeg.load(path).quality == quality
+
+    def test_standard_table_matches_libjpeg_at_50(self):
+        # Quality 50 is the table of the standard itself.
+        assert jpeg.standard_table(50)[0, :4].tolist() == [16, 11, 10, 16]

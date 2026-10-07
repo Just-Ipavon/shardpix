@@ -549,3 +549,38 @@ class TestWildcards:
         args = ("unseal", out / "secret.txt.spx", out / "*.png", "-o", recovered)
         assert run(*args, "--passphrase-file", passphrase_file) == 0
         assert recovered.read_text() == "hello"
+
+
+class TestLowQualityJpeg:
+    def _photo(self, tmp_path, quality, name="photo.jpg", seed=0):
+        from .conftest import phone_jpeg
+
+        return phone_jpeg(tmp_path / name, seed=seed, quality=quality)
+
+    def test_embed_warns_on_a_recompressed_photo(self, tmp_path, capsys):
+        photo = self._photo(tmp_path, 75)
+        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        out = " ".join(capsys.readouterr().out.split())
+        assert "JPEG quality about 75" in out
+        assert "original files" in out
+
+    def test_embed_is_quiet_on_a_camera_photo(self, tmp_path, capsys):
+        photo = self._photo(tmp_path, 95)
+        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert "JPEG quality" not in capsys.readouterr().out
+
+    def test_seal_names_only_the_recompressed_photos(self, tmp_path, capsys):
+        good = self._photo(tmp_path, 95, "good.jpg", seed=1)
+        bad = self._photo(tmp_path, 70, "bad.jpg", seed=2)
+        secret = tmp_path / "secret.txt"
+        secret.write_text("hello")
+        assert run("seal", secret, good, bad, "-k", "2", "-d", tmp_path / "out") == 0
+        out = " ".join(capsys.readouterr().out.split())
+        assert "bad.jpg has JPEG quality about 70" in out
+        assert "good.jpg has" not in out
+
+    def test_capacity_shows_the_quality(self, tmp_path, capsys):
+        assert run("capacity", self._photo(tmp_path, 75)) == 0
+        out = capsys.readouterr().out
+        assert "JPEG quality" in out
+        assert "about 75" in out

@@ -690,6 +690,7 @@ Tests: `test_ml.py`.
 | --- | --- | --- |
 | `VERSION` | `5` | `stego.JPEG_VERSION`. |
 | `MAX_COEFFICIENT` | `1023` | Largest magnitude of a baseline coefficient; a change never crosses it. |
+| `SAFE_QUALITY` | `90` | Estimated quality below which `embed` and `seal` warn that a JPEG cover looks recompressed (05 §5.5.8). |
 
 ### `is_jpeg(path)`, `load(path) -> JpegCover`
 
@@ -697,7 +698,16 @@ Tests: `test_ml.py`.
 quantised coefficients with `jpeglib` without decoding; raises
 `UnsupportedImageError` for a non-JPEG, an unreadable file or a JPEG with no
 luminance. `JpegCover` exposes `blocks` (`Hb × Wb × 8 × 8`), `quant` (the
-luminance table), `coefficients()` (flat copy) and `geometry()`.
+luminance table), `coefficients()` (flat copy), `geometry()` and `quality`.
+
+### `standard_table(quality)`, `estimate_quality(quant) -> int`
+
+`standard_table` is the luminance table libjpeg writes at a quality (the
+Annex K table scaled by `5000/q` below 50, `200 − 2q` above, clipped to
+1–255). `estimate_quality` returns the quality whose table is closest to
+`quant` in log ratio: exact for standard tables, the nearest standard
+quality for the custom tables of phone cameras. Tests:
+`test_jpeg.py::TestQuality`, `test_cli.py::TestLowQualityJpeg`.
 
 ### `eligible_mask(coefficients)`, `capacity(cover)`
 
