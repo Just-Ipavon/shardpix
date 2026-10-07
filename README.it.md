@@ -28,7 +28,7 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 ```text
 notes.pdf ──AES-256-GCM, chiave casuale K──────►  notes.pdf.spx      conservalo dove vuoi
 K ─────────Shamir su GF(256), 3 su 5───────────►  5 quote autenticate
-quota i ───LSB matching con chiave, ~0,2% pixel►  photo_i.png        una per custode
+quota i ───±1 adattivo, ~0,08% dei pixel───────►  photo_i.png        una per custode
 ```
 
 - **Il file vault** è testo cifrato. Può stare su un disco condiviso o in una
@@ -36,8 +36,9 @@ quota i ───LSB matching con chiave, ~0,2% pixel►  photo_i.png        una
 - **La chiave** esiste solo sotto forma di quote. Tre quote qualsiasi su cinque
   la ricostruiscono; due non dicono nulla, nemmeno con potenza di calcolo
   illimitata.
-- **Ogni quota** è nascosta in una foto, sparsa in posizioni che solo la
-  passphrase permette di trovare, e cifrata in modo che i bit nascosti
+- **Ogni quota** è nascosta in una foto, tra posizioni candidate che solo la
+  passphrase permette di trovare, con le poche modifiche messe dove la foto
+  ha più texture, e cifrata in modo che i bit nascosti
   sembrino rumore.
 
 ## Funzionalità
@@ -155,6 +156,26 @@ limiti noti sono in [docs/05-security-analysis.md](docs/05-security-analysis.md)
 `pip install -e ".[bench,ml]"` e `python -m shardpix.analysis.ml_benchmark`
 su una copia di BOSSbase.
 
+## Scegliere le foto: PNG, JPEG e foto del telefono
+
+Il PNG conserva ogni pixel esattamente; il JPEG conserva coefficienti di
+frequenza arrotondati, a blocchi di 8x8. shardpix nasconde i dati nei pixel,
+quindi:
+
+| Foto | Risultato |
+| --- | --- |
+| Foto PNG o TIFF a 8 bit, mai compressa in JPEG (ad esempio un'esportazione da RAW) | La scelta migliore |
+| RAW del telefono (ProRAW su iPhone, DNG su Android) | La scelta migliore, dopo averla esportata in PNG/TIFF a 8 bit |
+| JPEG del telefono | Funziona, con un avviso: una modifica di ±1 a un JPEG decodificato si rileva a qualunque tasso |
+| HEIC dell'iPhone | Non viene letto; convertirlo porta allo stesso problema del JPEG |
+
+Usa foto a colori di almeno 2 megapixel, con texture, mai immagini prese da
+internet, e invia i risultati come file, non come "foto" in un'app di
+messaggistica. L'inserimento direttamente nei coefficienti JPEG, che
+renderebbe sicure le foto JPEG del telefono, è in programma. Dettagli,
+metodi e istruzioni passo passo per il telefono (in inglese):
+[docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
+
 ## Scelte progettuali
 
 **Si divide la chiave, non il file.** Viene condivisa solo la chiave da 32
@@ -180,6 +201,14 @@ con ampie zone nere: un campione a 0 può solo salire, e uno spostamento in
 un'unica direzione è identico alla LSB replacement. Ora i campioni fuori
 dall'intervallo 2–253 non vengono mai usati, e la stima è scesa al 4,5%.
 
+**Le modifiche vanno dove la foto è già rumorosa.** Dal formato 4 il carico
+viene scritto come codice a traliccio di sindrome (STC) su campioni
+candidati scelti con la chiave: il codificatore può scegliere quali campioni
+modificare e sceglie quelli con il costo HiLL più basso, nel fogliame e
+nella grana invece che nel cielo. Una quota cambia circa un terzo dei
+campioni di prima (208 contro 633 in una foto 512x512), e chi estrae non ha
+bisogno di sapere dove sono.
+
 **Le posizioni costano quanto il carico.** Le posizioni vengono da un
 percorso ChaCha20 con campionamento a rifiuto, derivato dalla passphrase e da
 un salt diverso per ogni immagine. Inserire una quota in una foto da 48
@@ -197,7 +226,9 @@ immagini esistenti fa fallire prima la build.
 shardpix/
 ├── cli.py              comandi, passphrase, protezione da sovrascritture, codici di uscita
 ├── vault.py            seal e unseal: AES-256-GCM + Shamir + steganografia
-├── stego.py            derivazione delle chiavi, percorso, LSB matching, framing
+├── stego.py            derivazione delle chiavi, percorso, formati v4 (adattivo) e v3, framing
+├── stc.py              codici a traliccio di sindrome (Viterbi)
+├── costs.py            costi HiLL delle modifiche
 ├── shamir.py           condivisione del segreto, formato delle quote, MAC, recupero robusto
 ├── gf256.py            aritmetica in GF(2^8) e interpolazione di Lagrange
 ├── images.py           qualsiasi immagine in ingresso, PNG senza perdita in uscita
@@ -228,6 +259,7 @@ segnalare una vulnerabilità vedi [SECURITY.md](SECURITY.md).
 | [04 — Comportamento a runtime](docs/04-runtime-behaviour.md) | Diagrammi di sequenza, algoritmo di recupero delle quote, codici di uscita, tempi |
 | [05 — Analisi di sicurezza](docs/05-security-analysis.md) | Modello delle minacce, proprietà di sicurezza, risultati della steganalisi, limiti |
 | [06 — Revisione di sicurezza](docs/06-security-review.md) | Analisi statica, fuzzing, mutation testing, checklist ASVS, problemi trovati e correzioni |
+| [07 — Foto e formati](docs/07-covers-and-formats.md) | PNG e JPEG, metodi di inserimento, foto del telefono |
 
 ## Licenza
 

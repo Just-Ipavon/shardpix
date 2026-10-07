@@ -33,6 +33,7 @@ graph LR
         P1["gf256: field arithmetic"]
         P2["shamir: split, recover_all, combine"]
         P3["stego: derive_key, SampleOrder,<br/>embed, extract"]
+        P5["stc, costs: syndrome-trellis codes,<br/>HiLL costs"]
         P4["chi_square, rs"]
     end
 
@@ -51,7 +52,7 @@ graph LR
 
 Embedding, sharing and both attacks operate on arrays and bytes, never on
 paths: the file system is touched only by `images`, `vault`, `cli` and the
-benchmark. That is what lets most of the 310 tests run without creating a
+benchmark. That is what lets most of the 369 tests run without creating a
 single file.
 
 ---
@@ -151,7 +152,7 @@ cannot be written. Test: `TestSave`.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `FORMAT_VERSION` | `3` | Part of the AES-GCM associated data; bumped when the layout changes. |
+| `FORMAT_VERSION`, `LEGACY_VERSION` | `4`, `3` | Format written by `ADAPTIVE` and by the other methods; part of the AES-GCM associated data. |
 | `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Per-image salt and scrypt cost, written along the public walk (ADR-05). |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Frame fields. |
 | `FRAME_OVERHEAD` | `32` | Bytes the keyed frame adds to every payload. |
@@ -159,18 +160,25 @@ cannot be written. Test: `TestSave`.
 | `SCRYPT_LOG_N_ACCEPTED` | `range(10, 19)` | Costs accepted when extracting; the cap keeps a forged image from demanding gigabytes. |
 | `ELIGIBLE_MIN`, `ELIGIBLE_MAX` | `2`, `253` | Samples outside this range are never used nor produced (ADR-06). |
 | `MAX_FILL` | `2` | At most one eligible sample in two is used (ADR-11). |
-| `_DOMAIN` | `b"shardpix/stego/v3"` | Domain separation for every derivation. |
-| `_PUBLIC_WALK_KEY` | SHA-256 of the domain and a label | Key of the public walk that places the salt. |
+| `ADAPTIVE_FLAG` | `0x80` | Set in the cost byte of a format-4 image. |
+| `MAX_WIDTH`, `COLUMN_BUDGET`, `CHUNK_BITS` | `128`, `2^20`, `8192` | Widest body code, most samples one payload's trellis visits, payload bits per trellis (ADR-12). |
+| `HEADER_WIDTH`, `LENGTH_BITS` | `64`, `32` | Widest code for the format-4 public bytes and length; length field in bits. |
+| `_DOMAIN`, `_DOMAIN_V4` | `b"shardpix/stego/v3"`, `b"shardpix/stego/v4"` | Domain separation for every derivation, one per format. |
+| `_PUBLIC_WALK_KEY` | SHA-256 of the v3 domain and a label | Key of the public walk that places the salt (both formats). |
+| `_PUBLIC_CODE_SEED` | SHA-256 of the v4 domain and a label | Seed of the public code matrix for the format-4 salt and cost. |
 
 ### `class Method(str, Enum)`
 
-`MATCHING` (default): a mismatching sample moves by ±1 at random.
-`REPLACEMENT`: its least significant bit is overwritten.
+`ADAPTIVE` (default): format 4, ±1 changes chosen by syndrome-trellis codes
+where the HiLL cost is lowest (ADR-12). `MATCHING`: format 3, a mismatching
+sample moves by ±1 at random. `REPLACEMENT`: format 3, its least significant
+bit is overwritten.
 
 ### `class StegoKey` *(frozen)*
 
 `order` (32 B, keyed walk), `aead` (32 B, AES-256-GCM), `length_mask` (4 B),
-`keyed` (whether a passphrase was used).
+`keyed` (whether a passphrase was used), `code` (32 B, seed of the body code
+matrix; empty in format 3).
 
 ### `class EmbedReport` *(frozen)*
 
@@ -178,10 +186,10 @@ Payload, frame and capacity sizes, total and eligible samples, bits written
 (salt included) and samples changed; `embedding_rate` and `change_rate` are
 both relative to all colour samples.
 
-### `derive_key(passphrase, salt, log_n=None) -> StegoKey`
+### `derive_key(passphrase, salt, log_n=None, version=3) -> StegoKey`
 
 With a passphrase: NFC-normalise it, run scrypt with salt
-`_DOMAIN ‖ "|" ‖ salt`, then expand three subkeys with HKDF-SHA256 under
+`domain ‖ "|" ‖ salt` (the domain of `version`), then expand three subkeys with HKDF-SHA256 under
 distinct labels. Without one: hash the domain and salt instead — the payload
 is still scattered and encrypted, but anyone can read it. NFC normalisation
 makes "caffè" typed with a combining accent equal to the precomposed form.
@@ -237,30 +245,56 @@ high=253`; the benchmark uses the defaults to model naive tools. Test:
 
 The LSBs at the given positions.
 
-### `build_frame(payload, key, random_bytes) -> bytes`
+### `build_frame(payload, key, random_bytes, version=3) -> bytes`
 
 `masked length ‖ nonce ‖ AES-GCM(payload)`, with associated data
-`_DOMAIN ‖ FORMAT_VERSION ‖ length`: a frame cut from one version cannot be
+`domain ‖ version ‖ length`: a frame cut from one version cannot be
 replayed as another, and the length cannot be altered without detection.
 
-### `_salt_positions(n_samples, eligible)`, `_keyed_order(key, eligible, salt_positions)` *(private)*
+### `_salt_positions(n_samples, eligible, width=1)`, `_keyed_order(key, eligible, salt_positions)` *(private)*
 
-The first 136 positions of the public walk, and the keyed walk over the
-eligible samples minus those positions.
+The first 136 × `width` positions of the public walk, and the keyed walk
+over the eligible samples minus those positions.
 
-### `embed(carrier, payload, passphrase=None, method=MATCHING, random_bytes=os.urandom)`
+### `header_width(n_eligible)`, `code_width(free_samples, message_bits)`
 
-Returns `(stego carrier, EmbedReport)`. Raises `CapacityError` if the image
-cannot hold even an empty frame, or if the payload exceeds the capacity.
-Tests: `TestRoundTrip`, `TestDistortion`, `TestSaturation`, `TestImageModes`.
+Widths of the format-4 codes, computed by embedder and extractor from the
+same numbers: `min(64, n_eligible // 1344)` for the salt, cost and length,
+and `min(128, free // bits, 2^20 // bits)` for the body, never below 1.
+Test: `test_adaptive.py::TestCodeWidth`.
+
+### `write_adaptive(samples, positions, bits, sample_costs, seed, random_bytes, *, low=2, high=253)`
+
+Writes `bits` as the syndrome of the LSBs at `positions` (`width`
+candidates per bit, in order), coding at most `CHUNK_BITS` bits per trellis,
+and applies each chosen flip as a ±1 change in a random direction (up at
+`low`, down at `high`). Returns the copy and the number of changed samples.
+Raises `ValueError` if `positions` is not a multiple of `bits`.
+
+### `read_adaptive(samples, positions, length, seed)`
+
+The `length` bits written by `write_adaptive`: the syndrome of the LSBs.
+
+### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom)`
+
+Returns `(stego carrier, EmbedReport)`. Format 3 writes the public bytes and
+the frame one bit per sample. Format 4 computes the HiLL costs of the cover
+and writes three codes: public bytes, length, body (01 §1.5.1). Raises
+`CapacityError` if the image cannot hold even an empty frame, or if the
+payload exceeds the capacity (for format 4, also when the body does not fit
+after the header codes). Tests: `TestRoundTrip`, `TestDistortion`,
+`TestSaturation`, `TestImageModes`, `test_adaptive.py::TestFormat4`.
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Recomputes the eligible set, reads the salt and the cost (refusing a cost outside the accepted range before any key derivation), derives the keys, reads and
-unmasks the length, checks it against the largest possible frame, reads the
-frame and decrypts it. Raises `PayloadNotFoundError` with the same message for
-a wrong passphrase, a clean image and a modified one: telling them apart
-would only help an attacker probe. Test: `TestAuthentication`.
+Tries format 4, then format 3. For each: reads the salt and the cost the
+way that format writes them, refuses a cost byte of the other format or a
+cost outside the accepted range before any key derivation, derives the
+keys, reads and unmasks the length, checks it against the largest possible
+frame, reads the body and decrypts it. Raises `PayloadNotFoundError` with
+the same message for a wrong passphrase, a clean image and a modified one:
+telling them apart would only help an attacker probe. Tests:
+`TestAuthentication`, `test_adaptive.py::TestFormat4`.
 
 ---
 
@@ -562,3 +596,67 @@ passphrase applies, and `-f/--force` where it writes a file.
 success, 1 for any `ShardpixError` (printing the per-image or per-share
 details it carries) or `OSError`, 2 for usage errors (argparse), 130 on
 Ctrl-C. Tests: `test_cli.py`, in particular `TestCleanErrors`.
+
+---
+
+## 3.14 `shardpix/stc.py`
+
+| Name | Value | Role |
+| --- | --- | --- |
+| `HEIGHT` | `10` | Constraint height: 1,024 trellis states. |
+| `WET` | `1e13` | Cost that forbids changing an element. |
+
+### `submatrix(seed, width, height=HEIGHT) -> ndarray`
+
+A `height × width` binary matrix from SHAKE-256 of `"shardpix/stc|" ‖ seed`,
+first and last rows forced to ones. Independent of the NumPy version.
+Tests: `TestSTC::test_submatrix_is_deterministic_and_keyed`,
+`test_known_answers.py::test_stc_submatrix`.
+
+### `syndrome(bits, h_hat, length) -> ndarray`
+
+`H x` for a block of `length × width` bits: the message a receiver reads.
+Raises `ValueError` on a block of the wrong size.
+
+### `embed(bits, costs, message, h_hat) -> (y, total)`
+
+Viterbi over the trellis: for every element, each of the 2^h states keeps
+the cheaper of "write 0" and "write 1"; at the end of each block of `width`
+elements the states whose lowest bit disagrees with the message bit are
+dropped and the window shifts. Back-pointers are stored one bit per state.
+Returns the least-cost `y` with `syndrome(y) == message` and its cost.
+Raises `ValueError` if no solution avoids every wet element. Tests:
+`test_adaptive.py::TestSTC`.
+
+---
+
+## 3.15 `shardpix/costs.py`
+
+### `box_mean(x, size)`
+
+Mean over a `size × size` window with symmetric padding, through an
+integral image.
+
+### `hill(channel) -> ndarray`
+
+HiLL cost of each sample: `1 / (|KB ⊛ X| ⊛ L3)` smoothed by a 15 × 15 mean,
+where KB is the 3 × 3 "square" high-pass kernel. Low in texture, high in
+smooth areas. Test: `TestHiLL::test_texture_is_cheaper_than_smooth_regions`.
+
+### `sample_costs(pixels, channels) -> ndarray`
+
+`hill` of every colour channel, flattened in the order of
+`Carrier.samples()`. Test: `TestHiLL::test_costs_are_positive_and_follow_sample_order`.
+
+---
+
+## 3.16 Trained steganalysis (`shardpix/analysis/`)
+
+| Module | Main entries | Role |
+| --- | --- | --- |
+| `features.py` | `spam`, `srm_lite`, `extract` | SPAM (686) and SRM-lite (3,125) features of a greyscale channel; colour images average their channels. |
+| `ensemble.py` | `train`, `Ensemble.votes`, `decision_error`, `detection_error`, `auc` | Ensemble of Fisher linear discriminants on random subspaces, subspace size chosen by out-of-bag error; detection metrics. |
+| `cnn.py` | `StegoNet`, `train`, `scores` | Small CNN with a fixed SRM high-pass layer, trained on cover/stego pairs (optional, PyTorch). |
+| `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`) | Paired train/test experiments on BOSSbase; results in `docs/data/ml_benchmark_*.json`. |
+
+Tests: `test_ml.py`.
