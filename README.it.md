@@ -139,9 +139,9 @@ compresse, un classificatore basato sui rich model, addestrato nelle
 condizioni più favorevoli per chi attacca, sbaglia nel 42,5% dei casi su una
 quota nascosta in una foto in scala di grigi 512x512, contro il 50% di chi
 tira a caso: un segnale debole, ma non nullo. Il segnale cala con la radice
-quadrata della dimensione dell'immagine, e al tasso più basso misurato i
-rilevatori erano al livello del caso. **Usa foto a colori di almeno 2
-megapixel**, che portano una quota sotto quel punto.
+quadrata della dimensione dell'immagine: al tasso più basso misurato i
+rilevatori erano entro 1,5 punti dal caso. **Usa foto a colori di almeno 2
+megapixel**, che portano una quota a quel punto o sotto.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">

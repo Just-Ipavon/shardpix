@@ -133,9 +133,9 @@ Trained detectors are stronger. On BOSSbase, 10,000 never-compressed
 photographs, a rich-model classifier trained under ideal conditions for the
 attacker brings a share in a 512x512 greyscale photo to 42.5% detection
 error, against 50% for guessing: weak, but not zero. The signal shrinks with
-the square root of the cover size, and at the lowest rate measured the
-detectors were at chance. **Use colour photos of at least 2 megapixels**,
-which puts a share below that point.
+the square root of the cover size: at the lowest rate measured the
+detectors were within 1.5 points of chance. **Use colour photos of at least
+2 megapixels**, which puts a share at or below that point.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">
