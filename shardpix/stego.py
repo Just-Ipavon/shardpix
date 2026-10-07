@@ -53,6 +53,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from . import costs, stc
 from .errors import CapacityError, PayloadNotFoundError
 from .images import Carrier
+from .progress import Progress, span
 
 FORMAT_VERSION = 4
 """Format written by :attr:`Method.ADAPTIVE`; the other methods write format 3."""
@@ -387,6 +388,7 @@ def choose_flips(
     bits: np.ndarray,
     sample_costs: np.ndarray,
     seed: bytes,
+    progress: Progress | None = None,
 ) -> np.ndarray:
     """Indices among ``positions`` whose LSB must flip so they carry ``bits``.
 
@@ -399,12 +401,15 @@ def choose_flips(
     if positions.size != width * bits.size:
         raise ValueError("positions must hold the same number of candidates for every bit")
     h_hat = stc.submatrix(seed, width)
+    report = span(progress, 0.0, 1.0)
     targets = []
     for start, stop in _chunks(bits.size):
+        report(start / max(bits.size, 1), "choosing the changes")
         chunk = positions[start * width : stop * width]
         cover_bits = (samples[chunk] & 1).astype(np.uint8)
         stego_bits, _ = stc.embed(cover_bits, sample_costs[chunk], bits[start:stop], h_hat)
         targets.append(chunk[stego_bits != cover_bits])
+    report(1.0, "choosing the changes")
     return np.concatenate(targets) if targets else np.zeros(0, dtype=np.intp)
 
 
@@ -418,6 +423,7 @@ def write_adaptive(
     *,
     low: int = ELIGIBLE_MIN,
     high: int = ELIGIBLE_MAX,
+    progress: Progress | None = None,
 ) -> tuple[np.ndarray, int]:
     """Write ``bits`` as the syndrome of the LSBs of ``samples[positions]``.
 
@@ -426,7 +432,7 @@ def write_adaptive(
     copy and the number of samples that changed.
     """
     out = samples.astype(np.int16, copy=True)
-    flips = choose_flips(out, positions, bits, sample_costs, seed)
+    flips = choose_flips(out, positions, bits, sample_costs, seed, progress)
     values = out[flips]
     step = np.where(np.frombuffer(random_bytes(flips.size), dtype=np.uint8) & 1, 1, -1)
     step = np.where(values <= low, 1, np.where(values >= high, -1, step))
@@ -452,6 +458,7 @@ def embed(
     passphrase: str | None = None,
     method: Method = Method.ADAPTIVE,
     random_bytes: RandomBytes = os.urandom,
+    progress: Progress | None = None,
 ) -> tuple[Carrier, EmbedReport]:
     """Hide ``payload`` in ``carrier`` and return the stego carrier."""
     cover = carrier.samples()
@@ -468,6 +475,7 @@ def embed(
     log_n = SCRYPT_LOG_N
     adaptive = method is Method.ADAPTIVE
     version = FORMAT_VERSION if adaptive else LEGACY_VERSION
+    span(progress, 0.0, 1.0)(0.0, "deriving the key")
     key = derive_key(passphrase, salt, log_n, version)
     frame = build_frame(payload, key, random_bytes, version)
     public = salt + bytes([log_n | (ADAPTIVE_FLAG if adaptive else 0)])
@@ -494,14 +502,16 @@ def embed(
             raise CapacityError("this image is too small for this payload in the adaptive format")
         width = code_width(free, body.size)
         keyed = order.first(LENGTH_BITS * hw + width * body.size)
-        rho = costs.sample_costs(carrier.pixels, carrier.colour_channels)
+        rho = costs.sample_costs(carrier.pixels, carrier.colour_channels, span(progress, 0.05, 0.8))
         samples, changed = cover, 0
-        for positions, part, seed in (
-            (public_positions, _to_bits(public), _PUBLIC_CODE_SEED),
-            (keyed[: LENGTH_BITS * hw], frame_bits[:LENGTH_BITS], _length_seed(key)),
-            (keyed[LENGTH_BITS * hw :], body, key.code),
+        for positions, part, seed, steps in (
+            (public_positions, _to_bits(public), _PUBLIC_CODE_SEED, None),
+            (keyed[: LENGTH_BITS * hw], frame_bits[:LENGTH_BITS], _length_seed(key), None),
+            (keyed[LENGTH_BITS * hw :], body, key.code, span(progress, 0.8, 1.0)),
         ):
-            samples, flipped = write_adaptive(samples, positions, part, rho, seed, random_bytes)
+            samples, flipped = write_adaptive(
+                samples, positions, part, rho, seed, random_bytes, progress=steps
+            )
             changed += flipped
     report = EmbedReport(
         payload_bytes=len(payload),

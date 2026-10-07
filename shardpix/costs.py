@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .progress import Progress, span
+
 _KB = np.array([[-1, 2, -1], [2, -4, 2], [-1, 2, -1]], dtype=np.float64)
 HILL_SMALL = 3
 HILL_LARGE = 15
@@ -54,21 +56,29 @@ def box_mean(x: np.ndarray, size: int) -> np.ndarray:
     return total / (size * size)
 
 
-def hill(channel: np.ndarray) -> np.ndarray:
+def hill(channel: np.ndarray, progress: Progress | None = None) -> np.ndarray:
     """HiLL cost of changing each sample of one greyscale channel by +-1."""
+    report = span(progress, 0.0, 1.0)
     x = channel.astype(np.float64)
     residual = np.abs(_filter3(x, _KB))
+    report(1 / 3, "measuring the texture")
     smoothed = box_mean(residual, HILL_SMALL)
+    report(2 / 3, "measuring the texture")
     return box_mean(1.0 / (smoothed + _EPSILON), HILL_LARGE)
 
 
-def sample_costs(pixels: np.ndarray, channels: int) -> np.ndarray:
+def sample_costs(pixels: np.ndarray, channels: int, progress: Progress | None = None) -> np.ndarray:
     """HiLL costs of the colour samples of an ``H x W x C`` image, in sample order.
 
     The order is that of :meth:`shardpix.images.Carrier.samples`: row-major,
     channel-interleaved. Each channel is filtered on its own.
     """
-    per_channel = [hill(pixels[..., c]) for c in range(channels)]
+    report = span(progress, 0.0, 1.0)
+    per_channel = []
+    for c in range(channels):
+        report(c / channels, "measuring the texture")
+        per_channel.append(hill(pixels[..., c], span(progress, c / channels, (c + 1) / channels)))
+    report(1.0, "measuring the texture")
     return np.stack(per_channel, axis=-1).reshape(-1)
 
 

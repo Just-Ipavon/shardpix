@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 import numpy as np
 import pytest
@@ -418,3 +419,133 @@ class TestHelp:
         assert "quick start:" in out
         assert "shardpix seal" in out
         assert "options used by several commands:" in out
+
+
+class TestBinaryOnTheTerminal:
+    def _embed_png_payload(self, cover_png, passphrase_file, tmp_path):
+        payload = tmp_path / "inner.png"
+        Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(payload)
+        out = tmp_path / "stego.png"
+        args = ("embed", cover_png, "-o", out, "-i", payload, "--passphrase-file", passphrase_file)
+        assert run(*args) == 0
+        return out, payload
+
+    def test_a_file_is_not_printed_on_a_terminal(
+        self, cover_png, passphrase_file, tmp_path, capsysbinary, monkeypatch
+    ):
+        out, _ = self._embed_png_payload(cover_png, passphrase_file, tmp_path)
+        capsysbinary.readouterr()
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        assert run("extract", out, "--passphrase-file", passphrase_file) == 1
+        captured = capsysbinary.readouterr()
+        assert captured.out == b""
+        message = b" ".join(captured.err.split())
+        assert b"a PNG image" in message
+        assert b"-o FILE.png" in message
+
+    def test_a_file_still_goes_through_a_pipe(
+        self, cover_png, passphrase_file, tmp_path, capsysbinary
+    ):
+        out, payload = self._embed_png_payload(cover_png, passphrase_file, tmp_path)
+        capsysbinary.readouterr()
+        assert run("extract", out, "--passphrase-file", passphrase_file) == 0
+        assert capsysbinary.readouterr().out == payload.read_bytes()
+
+    def test_text_is_printed_on_a_terminal(
+        self, cover_png, passphrase_file, tmp_path, capsysbinary, monkeypatch
+    ):
+        out = tmp_path / "stego.png"
+        args = ("embed", cover_png, "-o", out, "-t", "ciao\n", "--passphrase-file", passphrase_file)
+        assert run(*args) == 0
+        capsysbinary.readouterr()
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        assert run("extract", out, "--passphrase-file", passphrase_file) == 0
+        assert capsysbinary.readouterr().out == b"ciao\n"
+
+
+class TestProgress:
+    @pytest.mark.parametrize("kind", ["png", "jpeg"])
+    def test_progress_moves_forward_to_the_end(self, kind, tmp_path):
+        from shardpix import media
+
+        from .conftest import natural_image, phone_jpeg
+
+        if kind == "jpeg":
+            path = phone_jpeg(tmp_path / "photo.jpg")
+        else:
+            path = tmp_path / "photo.png"
+            Image.fromarray(natural_image()).save(path)
+        steps: list[tuple[float, str]] = []
+        media.hide(
+            media.open_cover(path),
+            b"x" * 100,
+            "pw",
+            progress=lambda f, label: steps.append((f, label)),
+        )
+        fractions = [f for f, _ in steps]
+        assert fractions == sorted(fractions)
+        assert fractions[0] == 0.0
+        assert fractions[-1] >= 0.6
+        labels = {label for _, label in steps}
+        assert "deriving the key" in labels
+        assert "choosing the changes" in labels
+
+    def test_seal_reports_every_image(self, tmp_path):
+        from shardpix import vault
+
+        from .conftest import natural_image
+
+        covers = []
+        for i in range(3):
+            path = tmp_path / f"c{i}.png"
+            Image.fromarray(natural_image(seed=i + 1)).save(path)
+            covers.append(path)
+        secret = tmp_path / "secret.txt"
+        secret.write_text("hello")
+        steps: list[tuple[float, str]] = []
+        vault.seal(
+            secret, covers, 2, tmp_path / "out", progress=lambda f, label: steps.append((f, label))
+        )
+        fractions = [f for f, _ in steps]
+        assert fractions == sorted(fractions)
+        assert fractions[-1] > 0.9
+        for cover in covers:
+            assert any(label.startswith(f"{cover.name}: ") for _, label in steps)
+
+
+class TestWildcards:
+    """PowerShell and cmd.exe pass '*.png' to the program unexpanded."""
+
+    def test_patterns_are_expanded_in_sorted_order(self, tmp_path):
+        for name in ("b.png", "a.png", "c.jpg"):
+            (tmp_path / name).write_bytes(b"x")
+        found = cli.expand_wildcards([tmp_path / "*.png", tmp_path / "c.jpg"])
+        assert found == [tmp_path / "a.png", tmp_path / "b.png", tmp_path / "c.jpg"]
+
+    def test_an_existing_file_with_a_bracket_is_kept(self, tmp_path):
+        odd = tmp_path / "photo[1].png"
+        odd.write_bytes(b"x")
+        assert cli.expand_wildcards([odd]) == [odd]
+
+    def test_a_pattern_matching_nothing_is_reported_as_missing(self, tmp_path):
+        assert cli.expand_wildcards([tmp_path / "*.gif"]) == [tmp_path / "*.gif"]
+
+    def test_seal_and_unseal_with_unexpanded_patterns(self, tmp_path, passphrase_file):
+        from .conftest import natural_image
+
+        covers = tmp_path / "covers"
+        covers.mkdir()
+        for i in range(3):
+            Image.fromarray(natural_image(seed=i + 1)).save(covers / f"c{i}.png")
+        secret = tmp_path / "secret.txt"
+        secret.write_text("hello")
+        out = tmp_path / "sealed"
+        pattern = covers / "*.png"
+        assert (
+            run("seal", secret, pattern, "-k", "2", "-d", out, "--passphrase-file", passphrase_file)
+            == 0
+        )
+        recovered = tmp_path / "back.txt"
+        args = ("unseal", out / "secret.txt.spx", out / "*.png", "-o", recovered)
+        assert run(*args, "--passphrase-file", passphrase_file) == 0
+        assert recovered.read_text() == "hello"

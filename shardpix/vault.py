@@ -44,6 +44,7 @@ from .errors import (
     VaultError,
 )
 from .images import write_new
+from .progress import Progress, span
 
 MAGIC = b"SPXV"
 VERSION = 1
@@ -196,6 +197,7 @@ def seal(
     vault_name: str | None = None,
     force: bool = False,
     random_bytes: RandomBytes = os.urandom,
+    progress: Progress | None = None,
 ) -> SealResult:
     """Encrypt ``source`` and hide one share of its key in each cover image.
 
@@ -239,8 +241,10 @@ def seal(
     for path in [*outputs, vault_path]:
         _check_new_file(path, force, protected)
 
+    report = span(progress, 0.0, 1.0)
     opened: list[media.Cover] = []
-    for cover in covers:
+    for i, cover in enumerate(covers):
+        report(0.05 * i / count, f"opening {cover.name}")
         opened_cover = media.open_cover(cover)
         room = opened_cover.capacity()
         if room < SHARE_BYTES:
@@ -264,15 +268,23 @@ def seal(
 
     _write(out_dir, lambda: out_dir.mkdir(parents=True, exist_ok=True))
     sealed = []
-    for cover, opened_cover, share, output in zip(covers, opened, shares, outputs, strict=True):
-        stego_file, report = media.hide(
-            opened_cover, share.to_bytes(), passphrase, random_bytes, method
+    for i, (cover, opened_cover, share, output) in enumerate(
+        zip(covers, opened, shares, outputs, strict=True)
+    ):
+        image_progress = span(
+            progress, 0.05 + 0.95 * i / count, 0.05 + 0.95 * (i + 1) / count, f"{cover.name}: "
+        )
+        stego_file, embed_report = media.hide(
+            opened_cover, share.to_bytes(), passphrase, random_bytes, method, image_progress
         )
         write_new(output, stego_file, overwrite=force)
         decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
         sealed.append(
-            SealedImage(cover, output, share.index, report, decoded_jpeg, opened_cover.format_name)
+            SealedImage(
+                cover, output, share.index, embed_report, decoded_jpeg, opened_cover.format_name
+            )
         )
+    report(1.0, f"writing {vault_path.name}")
     write_new(vault_path, header.to_bytes() + ciphertext, overwrite=force)
 
     return SealResult(vault_path, header, len(data), tuple(sealed))
@@ -318,15 +330,22 @@ def _read_share(path: Path, passphrase: str | None) -> shamir.Share | ImageOutco
         return ImageOutcome(path, Status.REJECTED, str(exc))
 
 
-def unseal(vault_path: Path, images: Sequence[Path], passphrase: str | None = None) -> UnsealResult:
+def unseal(
+    vault_path: Path,
+    images: Sequence[Path],
+    passphrase: str | None = None,
+    progress: Progress | None = None,
+) -> UnsealResult:
     """Recover the file sealed in ``vault_path`` from (some of) its images."""
     header, ciphertext = read_vault(vault_path)
     images = list(dict.fromkeys(Path(p) for p in images))
+    report = span(progress, 0.0, 1.0)
 
     outcomes: dict[Path, ImageOutcome] = {}
     origin: dict[bytes, Path] = {}
     shares: list[shamir.Share] = []
-    for path in images:
+    for i, path in enumerate(images):
+        report(i / len(images), f"reading {path.name}")
         result = _read_share(path, passphrase)
         if isinstance(result, ImageOutcome):
             outcomes[path] = result
@@ -348,6 +367,7 @@ def unseal(vault_path: Path, images: Sequence[Path], passphrase: str | None = No
     def ordered() -> tuple[ImageOutcome, ...]:
         return tuple(outcomes[p] for p in images if p in outcomes)
 
+    report(1.0, "rebuilding the key")
     try:
         recoveries = shamir.recover_all(shares)
     except ShareError as exc:

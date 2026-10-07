@@ -127,6 +127,21 @@ shardpix --version
 Aggiornalo all'ultima versione con `pipx reinstall shardpix`, rimuovilo con
 `pipx uninstall shardpix`.
 
+### Windows e PowerShell
+
+shardpix funziona allo stesso modo in PowerShell (Windows 10 e 11, Python
+3.10 o successivo; tutte le dipendenze sono già pronte per Windows).
+Installa pipx con `py -m pip install --user pipx`, esegui
+`py -m pipx ensurepath`, apri una nuova finestra di PowerShell e prosegui
+come sopra. Due cose cambiano rispetto a bash:
+
+- PowerShell non espande `*.jpg` per gli altri programmi; shardpix lo fa da
+  sé, quindi `shardpix seal notes.pdf foto\*.jpg -k 3 -p` funziona come in
+  bash.
+- Non salvare mai un file con `>` (`shardpix extract out.jpg > file.pdf`):
+  Windows PowerShell 5 riscrive i byte come testo e rovina il file. Usa
+  `-o file.pdf`, che funziona ovunque.
+
 ### Per lo sviluppo
 
 Per lavorare sul codice usa invece un ambiente virtuale. In questo caso il

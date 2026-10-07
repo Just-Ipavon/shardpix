@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import glob
+import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
+from rich.progress import (
+    BarColumn,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.progress import Progress as ProgressBar
 from rich.table import Table
 
 from . import __version__, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
 from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
 from .images import load_image, write_new
+from .progress import Progress
 
 DESCRIPTION = (
     "Encrypt a file and split its key into shares hidden in ordinary-looking images: "
@@ -150,6 +162,67 @@ def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> N
         raise ShardpixError(f"{path} already exists; use --force to overwrite it")
 
 
+@contextmanager
+def progress_bar(title: str) -> Iterator[Progress | None]:
+    """A progress bar on stderr while the block runs; nothing when not a terminal.
+
+    The bar is cleared when the block ends, so only the results stay on screen,
+    and scripts that pipe the output never see it.
+    """
+    if not sys.stderr.isatty():
+        yield None
+        return
+    columns = (
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeElapsedColumn(),
+    )
+    with ProgressBar(*columns, console=make_console(stderr=True), transient=True) as bar:
+        task = bar.add_task(title, total=1.0)
+
+        def report(fraction: float, label: str) -> None:
+            bar.update(task, completed=fraction, description=f"{title} - {escape(label)}")
+
+        yield report
+        bar.update(task, completed=1.0)
+
+
+_FILE_KINDS = (
+    (b"\x89PNG\r\n\x1a\n", "a PNG image", ".png"),
+    (b"\xff\xd8\xff", "a JPEG image", ".jpg"),
+    (b"GIF8", "a GIF image", ".gif"),
+    (b"%PDF", "a PDF document", ".pdf"),
+    (b"PK\x03\x04", "a ZIP archive (or a .docx, .xlsx, .odt, ...)", ".zip"),
+)
+
+
+def _is_text(data: bytes) -> bool:
+    """True for UTF-8 text without control characters other than whitespace."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return all(ch.isprintable() or ch in "\n\r\t" for ch in text)
+
+
+def write_stdout(data: bytes, what: str) -> None:
+    """Print ``data``, unless it is binary and would land on a terminal as garbage."""
+    if sys.stdout.isatty() and not _is_text(data):
+        kind, suffix = "binary data", ""
+        for magic, name, extension in _FILE_KINDS:
+            if data.startswith(magic):
+                kind, suffix = name, extension
+                break
+        raise ShardpixError(
+            f"the {what} is {kind} ({len(data):,} bytes), not text: save it with "
+            f"-o FILE{suffix} instead of printing it on the terminal"
+        )
+    sys.stdout.buffer.write(data)
+    sys.stdout.buffer.flush()
+
+
 def format_bytes(size: int) -> str:
     """Human-readable size: ``1536`` -> ``1.5 KiB``."""
     value = float(size)
@@ -169,6 +242,29 @@ def _key_value_table(title: str, rows: list[tuple[str, str]]) -> Table:
     for key, value in rows:
         table.add_row(key, value)
     return table
+
+
+_WILDCARD = re.compile(r"[*?\[]")
+
+
+def expand_wildcards(paths: list[Path]) -> list[Path]:
+    """Expand ``*``, ``?`` and ``[...]`` the way bash would, for shells that do not.
+
+    PowerShell and cmd.exe pass ``photos/*.jpg`` to the program as it is. An
+    argument naming an existing file is kept, even if its name contains
+    wildcard characters; a pattern that matches nothing is kept too, so the
+    command reports it as a missing file.
+    """
+    expanded: list[Path] = []
+    for path in paths:
+        text = str(path)
+        if not path.exists() and _WILDCARD.search(text):
+            matches = sorted(glob.glob(text))
+            if matches:
+                expanded.extend(Path(m) for m in matches)
+                continue
+        expanded.append(path)
+    return expanded
 
 
 def positive_int(value: str) -> int:
@@ -285,7 +381,8 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
             f"{cover.suffix} file; name the output something{cover.suffix}"
         )
     passphrase = read_passphrase(args, confirm=True)
-    stego_file, report = media.hide(cover, payload, passphrase)
+    with progress_bar("Embedding") as progress:
+        stego_file, report = media.hide(cover, payload, passphrase, progress=progress)
     write_new(args.output, stego_file, overwrite=args.force)
 
     console.print(
@@ -318,10 +415,13 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
 def cmd_extract(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=(args.image,))
-    payload = media.reveal(args.image, read_passphrase(args, confirm=False))
+    passphrase = read_passphrase(args, confirm=False)
+    with progress_bar("Extracting") as progress:
+        if progress is not None:
+            progress(0.0, "reading the image")
+        payload = media.reveal(args.image, passphrase)
     if args.output is None:
-        sys.stdout.buffer.write(payload)
-        sys.stdout.buffer.flush()
+        write_stdout(payload, "payload")
         return 0
     write_new(args.output, payload, overwrite=args.force)
     console.print(f"Extracted {len(payload):,} bytes to [bold]{escape(str(args.output))}[/]")
@@ -392,15 +492,17 @@ def _outcome_table(outcomes: tuple[vault.ImageOutcome, ...]) -> Table:
 
 def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     passphrase = read_passphrase(args, confirm=True)
-    result = vault.seal(
-        args.file,
-        args.covers,
-        args.threshold,
-        args.directory,
-        passphrase,
-        vault_name=args.name,
-        force=args.force,
-    )
+    with progress_bar("Sealing") as progress:
+        result = vault.seal(
+            args.file,
+            args.covers,
+            args.threshold,
+            args.directory,
+            passphrase,
+            vault_name=args.name,
+            force=args.force,
+            progress=progress,
+        )
     header = result.header
     console.print(
         f"Sealed [bold]{escape(str(args.file))}[/] ({format_bytes(result.plaintext_bytes)}) "
@@ -442,7 +544,8 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=inputs)
     passphrase = read_passphrase(args, confirm=False)
-    result = vault.unseal(args.vault, args.images, passphrase)
+    with progress_bar("Unsealing") as progress:
+        result = vault.unseal(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
     output = args.output if args.output is not None else Path(result.filename)
     check_output(output, force=args.force, inputs=inputs)
@@ -536,8 +639,7 @@ def cmd_combine(args: argparse.Namespace, console: Console) -> int:
         )
 
     if args.output is None:
-        sys.stdout.buffer.write(recovery.secret)
-        sys.stdout.buffer.flush()
+        write_stdout(recovery.secret, "secret")
     else:
         write_new(args.output, recovery.secret, overwrite=args.force)
         report.print(f"Secret written to [bold]{escape(str(args.output))}[/]")
@@ -625,8 +727,9 @@ def build_parser() -> argparse.ArgumentParser:
         sub,
         "extract",
         "recover a message or a file from an image",
-        "Reads back what 'embed' hid. Without -o the payload is written to\n"
-        "standard output as it is. Fails with 'no shardpix payload found' if the\n"
+        "Reads back what 'embed' hid. Without -o a text payload is printed; a\n"
+        "file (image, PDF, ...) must be saved with -o, and shardpix says which\n"
+        "kind it looks like. Fails with 'no shardpix payload found' if the\n"
         "passphrase is wrong, the image holds nothing, or it was edited or\n"
         "recompressed after embedding.\n\n" + KEYING_NOTE,
         "  shardpix extract out.jpg -p\n"
@@ -637,8 +740,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-o",
         "--output",
         type=Path,
-        help="save the payload to this file; use it whenever the payload is a file. "
-        "Without -o it is printed on the terminal",
+        help="save the payload to this file; needed whenever the payload is a file "
+        "(an image, a PDF, ...). Without -o only text is printed on the terminal",
     )
     _add_passphrase_options(p)
     p.add_argument(
@@ -858,6 +961,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    for name in ("covers", "images"):
+        if hasattr(args, name):
+            setattr(args, name, expand_wildcards(getattr(args, name)))
+    if args.command == "combine":
+        args.shares = [str(path) for path in expand_wildcards([Path(s) for s in args.shares])]
     console = make_console()
     errors = make_console(stderr=True)
     handler: Callable[[argparse.Namespace, Console], int] = args.handler
