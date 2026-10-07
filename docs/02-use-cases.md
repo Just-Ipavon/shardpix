@@ -74,7 +74,7 @@ the layers can be used and demonstrated independently.
 | UC-05 | `shamir.split` | `split` | `test_shamir.py::TestSplitCombine`, `TestSecrecy`, `TestEncoding` |
 | UC-06 | `shamir.combine`, `shamir.recover_all` | `combine` | `test_shamir.py::TestAuthentication`, `TestRobustSearch`, `TestMixedSplits` |
 | UC-07 | `stego.extract`, `Share.from_bytes` | `inspect` | `test_cli.py::TestVaultCommands` |
-| UC-08 | `chi_square.pair_test`, `chi_square.sequential_attack`, `rs.estimate` | `analyze` | `test_chi_square.py`, `test_rs.py`, `test_cli.py::TestOtherCommands` |
+| UC-08 | `chi_square.pair_test`, `chi_square.sequential_attack`, `rs.estimate`; for JPEG `chi_square.coefficient_pair_test`, `chi_square.sequential_coefficient_attack` | `analyze` | `test_chi_square.py`, `test_rs.py`, `test_cli.py::TestOtherCommands`, `test_cli.py::TestAnalyzeJpeg` |
 | UC-09 | `analysis.benchmark.run` | `python -m shardpix.analysis.benchmark` | Manual; results in [data/benchmark.json](data/benchmark.json) |
 
 ---

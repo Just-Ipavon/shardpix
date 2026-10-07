@@ -548,6 +548,15 @@ contenere un inserimento". Con meno di due coppie utilizzabili restituisce
 sulla quale p resta sopra la soglia. Solleva `ValueError` per `steps < 1`.
 Test: `TestSequentialAttack`.
 
+### `coefficient_pair_test(coefficients)`, `sequential_coefficient_attack(coefficients, steps=100)`
+
+Lo stesso test sui coefficienti DCT quantizzati di un JPEG, come l'attacco di
+Westfeld a JSteg: i valori formano coppie (2k, 2k+1) in complemento a due
+(−2/−1, 2/3, …) e la coppia (0, 1), che JSteg non scrive mai, è esclusa.
+`analyze` li esegue sulla luminanza di un JPEG al posto degli attacchi sui
+pixel, che non vedono nulla una volta decodificato il JPEG. Test:
+`TestCoefficients`, `test_cli.py::TestAnalyzeJpeg`.
+
 ---
 
 ## 3.11 `shardpix/analysis/rs.py`

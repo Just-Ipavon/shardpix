@@ -96,7 +96,7 @@ share i ───adaptive ±1, a few hundred changes─►  photo_i.jpg        o
 | `embed` / `extract` | Hides or recovers a message or file in a single image |
 | `split` / `combine` | Shamir secret sharing with printable, authenticated shares |
 | `inspect` | Shows whether an image holds a share, and of which vault |
-| `analyze` | Runs the chi-square and RS attacks against any image |
+| `analyze` | Runs classical attacks: chi-square and RS on pixels, chi-square on a JPEG's DCT coefficients |
 | `capacity` | Shows how many bytes an image can hold |
 
 Damaged images are identified rather than silently breaking the recovery, and

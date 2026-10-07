@@ -524,6 +524,14 @@ two usable pairs returns `p = 0`. Test: `TestPairTest`.
 start, over which p stays above the threshold. Raises `ValueError` for
 `steps < 1`. Test: `TestSequentialAttack`.
 
+### `coefficient_pair_test(coefficients)`, `sequential_coefficient_attack(coefficients, steps=100)`
+
+The same test on quantised JPEG DCT coefficients, as Westfeld's attack on
+JSteg: values pair as (2k, 2k+1) in two's complement (−2/−1, 2/3, …), and the
+pair (0, 1), which JSteg never writes, is left out. `analyze` runs them on a
+JPEG's luminance instead of the pixel attacks, which see nothing once a JPEG
+is decoded. Test: `TestCoefficients`, `test_cli.py::TestAnalyzeJpeg`.
+
 ---
 
 ## 3.11 `shardpix/analysis/rs.py`

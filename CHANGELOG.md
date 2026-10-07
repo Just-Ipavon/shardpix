@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`analyze` on JPEG.** The pixel attacks see nothing in a JPEG, whose data
+  lives in the DCT coefficients. On a JPEG, `analyze` now runs the chi-square
+  attack on the quantised luminance coefficients (Westfeld's attack on
+  JSteg) and shows the estimated quality. Its closing note no longer says
+  shardpix uses LSB matching: it says what the classical attacks catch and
+  where shardpix's adaptive formats are measured.
+
 ## [2.0.0] — 2026-10-07
 
 Major version: the CLI no longer has `--method`, and new images are written

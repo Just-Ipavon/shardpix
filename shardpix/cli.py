@@ -453,6 +453,8 @@ def cmd_extract(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_analyze(args: argparse.Namespace, console: Console) -> int:
+    if jpeg.is_jpeg(args.image):
+        return _analyze_jpeg(args, console)
     carrier = load_image(args.image)
     samples = carrier.samples()
     whole = chi_square.pair_test(samples)
@@ -491,8 +493,46 @@ def cmd_analyze(args: argparse.Namespace, console: Console) -> int:
     else:
         console.print("[green]No LSB replacement detected.[/]")
         console.print(
-            "A negative result is not proof of a clean image: LSB matching, which shardpix "
-            "uses, is built to evade both attacks."
+            "A negative result is not proof of a clean image: these attacks catch tools that "
+            "overwrite the lowest bit of pixels. Embedding by +-1 changes placed where the "
+            "image is textured, as shardpix does, is measured against trained detectors in "
+            "docs/05 §5.5.5-5.5.7."
+        )
+    return 0
+
+
+def _analyze_jpeg(args: argparse.Namespace, console: Console) -> int:
+    """The chi-square attack in the domain where JPEG steganography works: the coefficients.
+
+    Decoding a JPEG to pixels spreads any change over an 8x8 block, so the
+    pixel attacks see nothing there; RS analysis has no JPEG counterpart here.
+    """
+    cover = jpeg.load(args.image)
+    coefficients = cover.coefficients()
+    whole = chi_square.coefficient_pair_test(coefficients)
+    prefix = chi_square.sequential_coefficient_attack(coefficients, args.steps).detected_prefix()
+    rows = [
+        ("Coefficients analysed", f"{coefficients.size:,} (luminance, quantised DCT)"),
+        ("JPEG quality", _quality_text(cover.quality)),
+        (
+            "Chi-square, whole image",
+            f"p = {whole.p_value:.4f} (statistic {whole.statistic:.1f}, {whole.dof} dof)",
+        ),
+        ("Chi-square, sequential", f"signature over the first {prefix:.0%} of the coefficients"),
+    ]
+    console.print(_key_value_table(f"Steganalysis of {args.image}", rows))
+    if prefix >= CHI_SQUARE_ALERT:
+        console.print(
+            "[bold red]Suspicious:[/] chi-square suggests that the lowest bit of the DCT "
+            f"coefficients was overwritten over the first {prefix:.0%}, as JSteg-like tools do."
+        )
+    else:
+        console.print("[green]No JSteg-like embedding detected.[/]")
+        console.print(
+            "A negative result is not proof of a clean image: this attack catches tools that "
+            "overwrite the lowest bit of the DCT coefficients. shardpix's JPEG format moves "
+            "coefficients by +-1 where the image is textured and is measured against trained "
+            "detectors in docs/05 §5.5.8."
         )
     return 0
 
@@ -900,20 +940,24 @@ def build_parser() -> argparse.ArgumentParser:
         sub,
         "analyze",
         "run steganalysis attacks against an image",
-        "Runs two classical attacks that detect naive LSB embedding: the\n"
-        "chi-square attack (Westfeld-Pfitzmann), which finds data written\n"
-        "sequentially, and RS analysis (Fridrich), which estimates the fraction of\n"
-        "pixels carrying LSB replacement. Useful to check suspicious images and to\n"
-        "see that shardpix outputs do not trigger them. Modern trained detectors\n"
-        "are stronger; their results are in docs/05.",
-        "  shardpix analyze suspicious.png\n  shardpix analyze photo.png --steps 200",
+        "Runs classical attacks that detect naive embedding, in the domain where\n"
+        "the image keeps its data:\n"
+        "  - PNG, TIFF, BMP: the chi-square attack (Westfeld-Pfitzmann), which\n"
+        "    finds data written sequentially, and RS analysis (Fridrich), which\n"
+        "    estimates the fraction of pixels carrying LSB replacement;\n"
+        "  - JPEG: the chi-square attack on the quantised DCT coefficients, which\n"
+        "    catches JSteg-like tools; pixel attacks see nothing in a JPEG.\n"
+        "Useful to check suspicious images. They do not detect shardpix's own\n"
+        "adaptive formats, which are measured against trained detectors (docs/05).",
+        "  shardpix analyze suspicious.png\n  shardpix analyze photo.jpg --steps 200",
     )
     p.add_argument("image", type=Path, help="image to analyse")
     p.add_argument(
         "--steps",
         type=positive_int,
         default=100,
-        help="how many portions of the image the sequential chi-square attack tests, from "
+        help="how many portions of the image (or of a JPEG's coefficients) the sequential "
+        "chi-square attack tests, from "
         "the first 1%% to the whole image; more steps, finer result (default: 100)",
     )
     p.set_defaults(handler=cmd_analyze)

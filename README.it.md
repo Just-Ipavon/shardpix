@@ -104,7 +104,7 @@ quota i ───±1 adattivo, poche centinaia di modifiche►  photo_i.jpg   un
 | `embed` / `extract` | Nasconde o recupera un messaggio o un file in una singola immagine |
 | `split` / `combine` | Condivisione del segreto di Shamir con quote stampabili e autenticate |
 | `inspect` | Mostra se un'immagine contiene una quota, e di quale vault |
-| `analyze` | Esegue il test del chi-quadro e l'analisi RS su qualsiasi immagine |
+| `analyze` | Esegue attacchi classici: chi-quadro e RS sui pixel, chi-quadro sui coefficienti DCT di un JPEG |
 | `capacity` | Mostra quanti byte può contenere un'immagine |
 
 Le immagini danneggiate vengono individuate invece di far fallire in silenzio

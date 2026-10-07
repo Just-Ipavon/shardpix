@@ -95,8 +95,33 @@ class ChiSquareResult:
 def pair_test(samples: np.ndarray) -> ChiSquareResult:
     """Run the pairs-of-values chi-square test on 8-bit samples."""
     hist = np.bincount(np.asarray(samples, dtype=np.uint8).ravel(), minlength=256)
-    even = hist[0::2].astype(np.float64)
-    odd = hist[1::2].astype(np.float64)
+    return _test_pairs(hist[0::2].astype(np.float64), hist[1::2].astype(np.float64))
+
+
+def coefficient_pair_test(coefficients: np.ndarray) -> ChiSquareResult:
+    """The same test on quantised JPEG DCT coefficients (Westfeld's attack on JSteg).
+
+    JSteg-like tools overwrite the lowest bit of every coefficient except 0
+    and 1, so they swap values within the pairs ``(2k, 2k + 1)`` of the
+    two's-complement integers (..., -4/-3, -2/-1, 2/3, ...). The pair
+    ``(0, 1)`` is left out: those values are never written, and their
+    imbalance would dominate the statistic.
+    """
+    values = np.asarray(coefficients, dtype=np.int64).ravel()
+    pairs = values >> 1  # arithmetic shift: -2 and -1 share a pair, as 2 and 3 do
+    used = pairs != 0
+    pairs, odd_value = pairs[used], (values[used] & 1).astype(bool)
+    if pairs.size == 0:
+        return ChiSquareResult(statistic=0.0, dof=0, p_value=0.0)
+    index = pairs - pairs.min()
+    size = int(index.max()) + 1
+    even = np.bincount(index[~odd_value], minlength=size).astype(np.float64)
+    odd = np.bincount(index[odd_value], minlength=size).astype(np.float64)
+    return _test_pairs(even, odd)
+
+
+def _test_pairs(even: np.ndarray, odd: np.ndarray) -> ChiSquareResult:
+    """Chi-square of the even counts against the means of their pairs."""
     expected = (even + odd) / 2.0
     keep = expected >= MIN_EXPECTED
     categories = int(keep.sum())
@@ -129,11 +154,19 @@ class ChiSquareCurve:
 
 def sequential_attack(samples: np.ndarray, steps: int = 100) -> ChiSquareCurve:
     """Run :func:`pair_test` on the first 1/steps, 2/steps, ... of ``samples``."""
-    flat = np.asarray(samples, dtype=np.uint8).ravel()
+    return _sequential(np.asarray(samples, dtype=np.uint8).ravel(), steps, pair_test)
+
+
+def sequential_coefficient_attack(coefficients: np.ndarray, steps: int = 100) -> ChiSquareCurve:
+    """Run :func:`coefficient_pair_test` on growing prefixes of the coefficients."""
+    return _sequential(np.asarray(coefficients).ravel(), steps, coefficient_pair_test)
+
+
+def _sequential(flat: np.ndarray, steps: int, test) -> ChiSquareCurve:
     if steps < 1:
         raise ValueError("steps must be at least 1")
     fractions = np.arange(1, steps + 1, dtype=np.float64) / steps
     p_values = np.array(
-        [pair_test(flat[: max(1, int(round(f * flat.size)))]).p_value for f in fractions]
+        [test(flat[: max(1, int(round(f * flat.size)))]).p_value for f in fractions]
     )
     return ChiSquareCurve(fractions=fractions, p_values=p_values)
