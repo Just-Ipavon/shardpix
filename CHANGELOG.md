@@ -13,7 +13,10 @@ All notable changes to this project are documented here. The format follows
   sealed body are written as syndrome-trellis codes (Filler, Judas and
   Fridrich) whose changes follow HiLL costs: one share changes about a third
   as many samples as before (208 against 633 on BOSSbase 512x512), in
-  texture rather than in smooth areas. Format 3 images are still read;
+  texture rather than in smooth areas. Against SPAM and SRM-lite on 10,000
+  BOSSbase images a share is at chance (49.9%, against 42.5% for format 3),
+  and the detectors only start to see it at 10% of the samples
+  (docs/05 §5.5.6). Format 3 images are still read;
   `--method matching` still writes format 3. shardpix 1.1 cannot read
   format 4.
 

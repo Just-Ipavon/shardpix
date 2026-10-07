@@ -141,12 +141,18 @@ condizioni più favorevoli per chi attacca, sbaglia nel 42,5% dei casi su una
 quota nascosta in una foto in scala di grigi 512x512, contro il 50% di chi
 tira a caso: un segnale debole, ma non nullo. Il segnale cala con la radice
 quadrata della dimensione dell'immagine: al tasso più basso misurato i
-rilevatori erano entro 1,5 punti dal caso. **Usa foto a colori di almeno 2
-megapixel**, che portano una quota a quel punto o sotto.
+rilevatori erano entro 1,5 punti dal caso.
+
+Questo valeva per il formato 3. **Il formato 4, con inserimento adattivo, è
+al livello del caso**: gli stessi rilevatori sulle stesse 10.000 immagini
+sbagliano il 49,9% delle volte su una quota, e iniziano a vedere qualcosa
+solo al 10% dei campioni, dove il formato 3 veniva scoperto nove volte su
+dieci. Le foto a colori di almeno 2 megapixel restano la scelta più
+prudente.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">
-  <img alt="Errore dei rilevatori addestrati SPAM e SRM-lite rispetto al tasso di inserimento: 4-8% al 40%, 42-45% con una quota in una foto 512x512, 48-49% allo 0,1%" src="assets/ml-detection-512-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-format-comparison-512-dark.png">
+  <img alt="Errore di rilevamento rispetto al tasso di inserimento per il formato 3 e il formato 4: il formato 4 è al 50% con una quota e al 43-46% al 10%, dove il formato 3 è al 12-19%" src="assets/ml-format-comparison-512-light.png">
 </picture>
 
 I risultati completi, l'attacco del chi-quadro, i rilevatori addestrati e i

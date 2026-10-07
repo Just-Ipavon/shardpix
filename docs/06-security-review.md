@@ -320,9 +320,8 @@ Examples of mutants that survive because they are equivalent:
 ## 6.10 Accepted risks
 
 Beyond SR-06 to SR-08, the limitations listed in 05 §5.6 remain accepted:
-weak detectability of shares in small covers by trained steganalysis
-(measured in 05 §5.5.5; mitigated by using colour covers of at least
-2 megapixels), JPEG covers, cover availability,
+trained steganalysis measured against SPAM and SRM-lite only (format 4 at
+chance, 05 §5.5.6; format 3 weakly detectable in small covers, §5.5.5), JPEG covers, cover availability,
 transport re-compression, visible vault metadata, one passphrase per vault,
 non-constant-time arithmetic and memory that cannot be wiped, and the search
 budget as a denial-of-service limit.

@@ -64,14 +64,15 @@ way to understand how such tools are built.
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. | `TestForgedSets` |
 | SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
-| SP-09 | Classical steganalysis does not detect a vault share; trained steganalysis detects it only weakly, and not at all in large enough covers | ADV-3 | LSB matching (ADR-03), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits whose detectability falls with the square root of the cover size. Measured in §5.5. | Benchmarks (§5.5.1–5.5.5) |
+| SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 4 | ADV-3 | Adaptive ±1 embedding with syndrome-trellis codes and HiLL costs (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits. At chance on BOSSbase 512x512 (§5.5.6); format 3 was weakly detectable (§5.5.5). | Benchmarks (§5.5.1–5.5.6) |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters and replaces reserved names. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | No input is ever overwritten | User error | Case-folded path identity checks in the CLI and in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
 
-What shardpix deliberately does **not** claim: that a share in a small cover
-is invisible to trained steganalysis — in a 512x512 greyscale photo a
-detector trained under ideal conditions beats chance (§5.5.5) — or that the
-vault file itself is inconspicuous — it is recognisable ciphertext.
+What shardpix deliberately does **not** claim: that a share is invisible to
+*every* trained detector — format 4 is at chance against SPAM and SRM-lite
+(§5.5.6), but stronger detectors were not run — that format 3 shares are
+invisible in small covers (they are not, §5.5.5), or that the vault file
+itself is inconspicuous — it is recognisable ciphertext.
 
 ## 5.4 Cryptographic parameters
 
@@ -303,7 +304,8 @@ What it means for a real cover: a share in a 512x512 greyscale image has
 M/√N ≈ 2.5; in a 1-megapixel colour photo (3 million samples) ≈ 0.7; in a
 2-megapixel colour photo ≈ 0.5, the lowest point measured; in a
 12-megapixel phone photo ≈ 0.2, more than twice below it. **Use colour photos of at least
-2 megapixels.** That threshold is an extrapolation along the square-root law
+2 megapixels** — the advice was derived for format 3; format 4 is already
+at chance at 512x512 (§5.5.6), and more samples remain the safer choice. That threshold is an extrapolation along the square-root law
 from greyscale 512x512 images, not a measurement on large photos, which
 BOSSbase does not contain.
 
@@ -318,22 +320,74 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.01 --detectors cnn --fine-epochs 5 --checkpoint cnn-256
 ```
 
+### 5.5.6 Adaptive embedding (format 4)
+
+§5.5.5 found that format 3 is weakly visible to trained detectors in small
+covers. Format 4 (01 ADR-12) writes the same payload as a syndrome-trellis
+code whose changes follow HiLL costs: about a third as many changes (208
+against 633 per share in BOSSbase 512x512, 07 §7.3), all in texture. The
+same experiment, the same 10,000 BOSSbase images, the same split and the
+same detectors were run against it; the stego images are produced by
+`stego.embed` itself (`ml_benchmark --strategy adaptive`), so what is
+measured is exactly what the tool writes.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/ml-format-comparison-512-dark.png">
+  <img alt="Detection error against embedding rate for format 3 and format 4 on BOSSbase 512x512: format 4 is at 50% at one share and at 43-46% at 10%, where format 3 is at 12-19%" src="../assets/ml-format-comparison-512-light.png">
+</picture>
+
+Raw numbers in [data/ml_benchmark_512_adaptive.json](data/ml_benchmark_512_adaptive.json).
+
+| Samples carrying bits | Format 3, SPAM | Format 3, SRM-lite | **Format 4, SPAM** | **Format 4, SRM-lite** |
+| ---: | ---: | ---: | ---: | ---: |
+| **0.48% (one share)** | 45.0% | 42.5% | **49.9%** [48.9, 50.9], AUC 0.50 | **49.9%** [48.9, 50.8], AUC 0.50 |
+| 10% | 19.0% | 12.1% | **46.0%** [45.0, 47.0], AUC 0.57 | **42.9%** [42.0, 43.9], AUC 0.61 |
+
+What this shows:
+
+1. **One share in format 4 is at chance.** Both detectors, trained at the
+   exact rate on images from the same source as the test images, are wrong
+   49.9% of the time; the 95% intervals contain 50% and the AUC is 0.50.
+   Format 3 at the same rate gave 42.5%.
+2. **The measurement is not blind.** At 10% the same detectors see format 4
+   (SRM-lite 42.9%, interval well below 50%), so the experiment can detect
+   it when there is something to detect. A null result with no positive
+   control would have proved nothing.
+3. **The gain is large.** Format 4 at 10% of the samples is about as
+   visible as format 3 at one share (42.9% against 42.5%), with twenty
+   times the payload. In square-root-law terms the same cover now carries
+   a far larger payload at the same risk; for a fixed share it moves the
+   operating point well inside the region where these detectors fail.
+4. **What it does not show.** Stronger detectors (the full SRM with its
+   min-max residuals, SRNet trained on a GPU) are designed for adaptive
+   embedding and could still find something at one share. The intermediate
+   rates (5%, 2%, 1%) are being measured with the same setup and will be
+   added to the data file; a first run, interrupted before it was saved,
+   gave 49.7% (SPAM) and 50.3% (SRM-lite) at 1%.
+
+Reproduce (about 1.5 hours per rate on four CPU cores, the
+syndrome-trellis coder being pure numpy):
+
+```bash
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy adaptive --detectors spam,srm_lite --rates 0.00482177734375
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy adaptive --detectors spam,srm_lite --rates 0.1,0.05,0.02,0.01
+```
+
+
 ## 5.6 Known limitations
 
 **Not independently audited.** See §5.1 and 06.
 
-**Trained steganalysis sees shares in small covers.** Measured in §5.5.5:
-in a 512x512 greyscale photo a share brings a rich-model detector to 42.5%
-error, against 50% for guessing; at 256x256 to 29.6%, and a CNN to 31.6%.
-In colour photos of 2 megapixels or more the share falls to or below the
-lowest rate measured, where the detectors were at or within 1.5 points of
-chance — but that is an
-extrapolation along the square-root law, not a measurement on large photos.
-The detectors used are SPAM, a 3,125-feature subset of the spatial rich
-model and a small CNN trained on a CPU; the full SRM (34,671 features) and
-larger networks such as SRNet, trained on a GPU, would likely do better.
-Shares are not adaptive: they do not prefer textured regions as HUGO, WOW or
-S-UNIWARD do, which would lower detectability further at the same payload.
+**Trained steganalysis: measured against two detectors, not all.** A
+format-4 share on BOSSbase 512x512 is at chance for SPAM and SRM-lite
+(§5.5.6); format 3 was weakly visible (42.5% for SRM-lite, §5.5.5) and is
+still what `--method matching` writes. The detectors used are SPAM, a
+3,125-feature subset of the spatial rich model and, for format 3, a small
+CNN trained on a CPU. The full SRM (34,671 features, including the min-max
+residuals designed against adaptive embedding) and larger networks such as
+SRNet, trained on a GPU, would likely do better and were not run. All
+measurements use one image source (BOSSbase); in the field, cover-source
+mismatch works against the detector.
 
 **JPEG covers.** Pixels decoded from a JPEG obey the block quantisation of
 the original file. Changing any of them by ±1 breaks that structure, which

@@ -46,7 +46,7 @@ shardpix treats them like JPEG: decoded pixels are not a clean cover.
 
 | Method | Format | How a share is written | Samples changed by one share (BOSSbase 512x512, mean of 60) | Against trained detectors (05 §5.5) | Use |
 | --- | --- | --- | ---: | --- | --- |
-| `adaptive` (default) | v4 | ±1 changes placed by a syndrome-trellis code where the HiLL cost is lowest: in texture and noise, away from smooth areas | 208 | See 05 §5.5.6 | Always, unless you need format 3 |
+| `adaptive` (default) | v4 | ±1 changes placed by a syndrome-trellis code where the HiLL cost is lowest: in texture and noise, away from smooth areas | 208 | At chance: 49.9% for SPAM and SRM-lite at 512x512 (05 §5.5.6) | Always, unless you need format 3 |
 | `matching` | v3 | ±1 changes at keyed pseudo-random positions, one bit per sample | 633 | SRM-lite 42.5% error at 512x512 | Compatibility with shardpix 1.1 |
 | `replacement` | v3 | LSB overwritten at keyed positions | about 630 | Broken by RS and chi-square | Demonstrations only |
 
