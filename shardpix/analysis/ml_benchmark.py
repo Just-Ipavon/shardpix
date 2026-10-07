@@ -37,7 +37,7 @@ import argparse
 import json
 import multiprocessing as mp
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -199,8 +199,17 @@ def split(n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
     return np.sort(order[: n // 2]), np.sort(order[n // 2 :])
 
 
-def run_features(covers: np.ndarray, rates: Sequence[float], seed: int) -> dict[str, list[dict]]:
-    """Train and test both feature-based detectors at every rate."""
+def run_features(
+    covers: np.ndarray,
+    rates: Sequence[float],
+    seed: int,
+    on_rate: Callable[[dict[str, list[dict]]], None] | None = None,
+) -> dict[str, list[dict]]:
+    """Train and test both feature-based detectors at every rate.
+
+    ``on_rate`` is called with the rows so far after each rate, so a long run
+    can save its progress and survive an interruption.
+    """
     train_idx, test_idx = split(len(covers), seed)
     start = time.time()
     clean = feature_matrix(covers, 0.0, seed)
@@ -225,6 +234,8 @@ def run_features(covers: np.ndarray, rates: Sequence[float], seed: int) -> dict[
                 f"[{row['p_e_low']:.3f}, {row['p_e_high']:.3f}], AUC {row['auc']:.3f}"
             )
         print(f"    ({time.time() - start:.0f} s)")
+        if on_rate is not None:
+            on_rate(results)
     return results
 
 
@@ -485,10 +496,16 @@ def main(argv: list[str] | None = None) -> int:
         detectors = results["detectors"]
         wanted = [d for d in chosen if d in FEATURE_DETECTORS]
         todo = [r for r in rates if any(not _has(detectors, d, r) for d in wanted)]
-        if todo:
-            for name, rows in run_features(covers, todo, args.seed).items():
+
+        def save(rows_by_name: dict[str, list[dict]]) -> None:
+            for name, rows in rows_by_name.items():
                 if name in chosen:
                     detectors[name] = _merge(detectors.get(name, []), rows)
+            args.data.parent.mkdir(parents=True, exist_ok=True)
+            args.data.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+
+        if todo:
+            save(run_features(covers, todo, args.seed, on_rate=save))
         if "cnn" in chosen:
             # Curriculum training depends on the whole sequence: always redone.
             detectors["cnn"] = run_cnn(
