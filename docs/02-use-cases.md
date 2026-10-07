@@ -344,9 +344,11 @@ photo libraries. The vault file lives on the shared drive.
 of 3 images: one at home, one with a relative, one in a cloud photo album.
 Losing one location is survivable; compromising one is harmless.
 
-**Teaching steganalysis.** An instructor uses `embed --method replacement`,
-`embed`, and `analyze` side by side to show why naive LSB tools are caught
-and what LSB matching changes; the benchmark charts back the lesson with data.
+**Teaching steganalysis.** An instructor runs the benchmarks
+(`python -m shardpix.analysis.benchmark`, `ml_benchmark`, `pooled`) and
+`analyze` to show why naive LSB tools are caught, what LSB matching and
+adaptive embedding change, and why several images of one vault matter; the
+charts in 05 §5.5 back the lesson with data.
 
 ## 2.6 Legitimacy constraints
 

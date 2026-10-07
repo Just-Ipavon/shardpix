@@ -34,7 +34,8 @@ graph LR
         P1["gf256: aritmetica del campo"]
         P2["shamir: split, recover_all, combine"]
         P3["stego: derive_key, SampleOrder,<br/>embed, extract"]
-        P5["stc, costs: codici a traliccio di sindrome,<br/>costi HiLL"]
+        P5["stc, costs: codici a traliccio di sindrome,<br/>costi HiLL e UERD"]
+        P6["jpeg: formato 5 sui coefficienti"]
         P4["chi_square, rs"]
     end
 
@@ -157,7 +158,7 @@ esiste (senza `overwrite`) o non può essere scritto. Test: `TestSave`.
 
 | Nome | Valore | Ruolo |
 | --- | --- | --- |
-| `FORMAT_VERSION`, `LEGACY_VERSION` | `4`, `3` | Formato scritto da `ADAPTIVE` e dagli altri metodi; fa parte dei dati associati di AES-GCM. |
+| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `4`, `3`, `5` | Formato scritto da `ADAPTIVE`, dai metodi di base e da `jpeg.py`; fa parte dei dati associati di AES-GCM e del dominio delle chiavi. |
 | `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Sale per immagine e costo di scrypt, scritti lungo il percorso pubblico (ADR-05). |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Campi del frame. |
 | `FRAME_OVERHEAD` | `32` | Byte che il frame con chiave aggiunge a ogni carico. |
@@ -285,6 +286,14 @@ multiplo di `bits`.
 ### `read_adaptive(samples, positions, length, seed)`
 
 I `length` bit scritti da `write_adaptive`: la sindrome degli LSB.
+
+### `choose_flips(samples, positions, bits, sample_costs, seed)`
+
+La parte a traliccio di sindrome dei formati 4 e 5: gli indici tra le
+`positions` (`width` candidati per bit) la cui parità deve essere invertita,
+scelti in modo da minimizzare il costo totale. Funziona su qualsiasi array di
+interi, pixel o coefficienti JPEG; `write_adaptive` e
+`jpeg.embed_coefficients` applicano le modifiche di ±1 con le proprie regole.
 
 ### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom)`
 
@@ -582,8 +591,8 @@ Test: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0,10: prefisso rilevato a partire dal quale `analyze` segnala la firma del chi quadrato. |
 | `RS_ALERT` | 0,10: stima RS a partire dalla quale `analyze` segnala un LSB replacement. Le fotografie pulite hanno misurato da −2,5% a +8,3% nel benchmark. |
-| `JPEG_WARNING` | Testo mostrato quando un'immagine di copertura è stata decodificata da JPEG. |
-| `REPLACEMENT_WARNING` | Testo mostrato quando si usa `--method replacement` con `embed` o `seal` (06 SR-05). |
+| `JPEG_WARNING` | Testo mostrato quando un file non JPEG è stato comunque decodificato come JPEG da Pillow; i file JPEG ricevono l'inserimento in modo nativo (formato 5). |
+| `OUTPUT_SUFFIXES` | Estensioni accettate per il file stego: `.jpg`/`.jpeg` per un'immagine di copertura JPEG, `.png` altrimenti. |
 
 ### Funzioni di supporto
 
@@ -601,8 +610,8 @@ Test: `test_rs.py::TestFlips`, `TestEstimate`.
 
 | Funzione | Comando | Note |
 | --- | --- | --- |
-| `cmd_capacity` | `capacity IMAGE` | Dimensioni, modalità, campioni, campioni utilizzabili, capacità. |
-| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE)` | Avvisa in assenza di passphrase e per immagini di copertura JPEG. |
+| `cmd_capacity` | `capacity IMAGE` | Dimensioni, formato, campioni o coefficienti utilizzabili, capacità. |
+| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE)` | Formato determinato dal file dell'immagine di copertura; rifiuta un'estensione di output dell'altro tipo; avvisa in assenza di passphrase. |
 | `cmd_extract` | `extract IMAGE [-o FILE]` | Byte grezzi su stdout, salvo `-o`. |
 | `cmd_analyze` | `analyze IMAGE [--steps N]` | Chi quadrato e RS; RS saltato sotto i 4 pixel di larghezza. |
 | `cmd_seal` | `seal FILE COVER... -k K [-d DIR] [--name N]` | Tabella per immagine, avvisi, indicazioni. |
@@ -615,6 +624,9 @@ Ogni comando accetta `-p/--passphrase` o `--passphrase-file` dove è prevista
 una passphrase, e `-f/--force` dove scrive un file.
 
 ### `build_parser()` e `main(argv=None) -> int`
+
+Non esiste un'opzione `--method`: il formato segue l'immagine di copertura
+(01 ADR-13).
 
 `main` smista la richiesta al gestore e mappa gli esiti sui codici di uscita:
 0 in caso di successo, 1 per qualsiasi `ShardpixError` (stampando i dettagli
@@ -675,6 +687,13 @@ testurizzate, alto nelle aree uniformi. Test:
 `hill` di ogni canale di colore, appiattito nell'ordine di
 `Carrier.samples()`. Test: `TestHiLL::test_costs_are_positive_and_follow_sample_order`.
 
+### `uerd(blocks, quant) -> ndarray`
+
+Costo UERD di ogni coefficiente quantizzato (Guo et al., 2015): il passo di
+quantizzazione della sua frequenza (il DC usa la media dei due passi AC più
+bassi) diviso per l'energia AC del suo blocco più un quarto delle energie
+degli otto blocchi vicini. Test: `test_jpeg.py::TestUERD`.
+
 ---
 
 ## 3.16 Steganalisi addestrata (`shardpix/analysis/`)
@@ -684,6 +703,71 @@ testurizzate, alto nelle aree uniformi. Test:
 | `features.py` | `spam`, `srm_lite`, `extract` | Feature SPAM (686) e SRM-lite (3.125) di un canale in scala di grigi; per le immagini a colori si calcola la media dei canali. |
 | `ensemble.py` | `train`, `Ensemble.votes`, `decision_error`, `detection_error`, `auc` | Ensemble di discriminanti lineari di Fisher su sottospazi casuali, con dimensione del sottospazio scelta in base all'errore out-of-bag; metriche di rilevamento. |
 | `cnn.py` | `StegoNet`, `train`, `scores` | Piccola CNN con uno strato passa-alto SRM fisso, addestrata su coppie cover/stego (facoltativa, PyTorch). |
-| `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`) | Esperimenti appaiati di addestramento/test su BOSSbase; risultati in `docs/data/ml_benchmark_*.json`. |
+| `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`, `--cache`, `--rerun`) | Esperimenti appaiati di addestramento/test su BOSSbase; risultati in `docs/data/ml_benchmark_*.json`, punteggi per immagine di test in `*.scores.npz`. |
+| `pooled.py` | `pooled`, `run`, `main` | Un avversario con g immagini della stessa cassaforte: punteggi combinati (media o rapporto di verosimiglianza stimato), calibrazione e valutazione su metà disgiunte, su 40 suddivisioni (05 §5.5.7). |
+| `features.py` (JPEG) | `decompress`, `dctr`, `dctr_step` | Decodifica a partire dai coefficienti, e feature DCTR (8.000): 64 residui sulla base DCT, quantizzati, con istogrammi per ciascuna fase 8x8 in 25 classi unite. |
+| `jpeg_benchmark.py` | `main` (`--quality`, `--strategy jpeg\|naive`, `--payloads share,…`) | Formato 5 a confronto con un riferimento di base non adattivo sui JPEG di BOSSbase, DCTR + ensemble; risultati in `docs/data/jpeg_benchmark_q*.json`. |
 
 Test: `test_ml.py`.
+
+---
+
+## 3.17 `shardpix/jpeg.py`
+
+| Nome | Valore | Ruolo |
+| --- | --- | --- |
+| `VERSION` | `5` | `stego.JPEG_VERSION`. |
+| `MAX_COEFFICIENT` | `1023` | Modulo massimo di un coefficiente baseline; una modifica non lo supera mai. |
+
+### `is_jpeg(path)`, `load(path) -> JpegCover`
+
+`is_jpeg` legge i primi tre byte (`FF D8 FF`). `load` legge i coefficienti
+quantizzati con `jpeglib` senza decodificarli; solleva
+`UnsupportedImageError` per un file non JPEG, un file illeggibile o un JPEG
+senza luminanza. `JpegCover` espone `blocks` (`Hb × Wb × 8 × 8`), `quant` (la
+tabella della luminanza), `coefficients()` (copia appiattita) e `geometry()`.
+
+### `eligible_mask(coefficients)`, `capacity(cover)`
+
+Coefficienti AC non nulli; capacità calcolata come per i pixel, su quel
+numero.
+
+### `embed(cover, payload, passphrase=None, random_bytes) -> (bytes, EmbedReport)`
+
+`embed_coefficients` sull'immagine di copertura, poi il file JPEG riscritto
+con la nuova luminanza e tutto il resto invariato. Solleva `CapacityError`
+come `stego.embed`. Test: `test_jpeg.py::TestFormat5`.
+
+### `embed_coefficients(coefficients, shape, quant, payload, passphrase, random_bytes)`
+
+I tre codici a sindrome del formato 4 sui coefficienti idonei, con costi
+UERD e chiavi dal dominio JPEG; ogni inversione sposta un coefficiente di ±1,
+allontanandolo da zero a ±1 e verso l'interno a ±1023 (`_apply`).
+Restituisce i nuovi coefficienti appiattiti e il report. Usata direttamente
+dal benchmark.
+
+### `extract(cover, passphrase=None) -> bytes`
+
+Rispecchia `stego.extract` per il formato 5; un unico errore per ogni
+fallimento.
+
+---
+
+## 3.18 `shardpix/media.py`
+
+### `class Cover` *(immutabile)*
+
+`path` e in alternativa `pixels` (un `Carrier`) o `coefficients` (un
+`JpegCover`); `is_jpeg`, `suffix` (`.jpg`/`.png`), `format_name` e
+`capacity()`.
+
+### `kind_suffix(path)`, `open_cover(path)`
+
+L'estensione di output e l'immagine di copertura aperta, entrambe
+determinate dai primi byte del file, mai dal suo nome.
+
+### `hide(cover, payload, passphrase, random_bytes, method=ADAPTIVE) -> (bytes, EmbedReport)`
+
+Formato 5 per un JPEG, formato 4 (o un `method` di base) per i pixel,
+restituiti come byte del file da scrivere. `reveal(path, passphrase)` è
+l'operazione inversa. Test: `test_jpeg.py::TestMedia`, `test_vault.py`.
