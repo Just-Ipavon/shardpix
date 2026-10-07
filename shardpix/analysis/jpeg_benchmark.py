@@ -73,6 +73,11 @@ def stego_blocks(
         flips = positions[mismatch]
         out = jpeg._apply(coefficients, flips, rng.bytes)
     else:
+        if stego.max_frame_bytes(eligible.size) < stego.FRAME_OVERHEAD:
+            # A flat photo at a low quality can have too few non-zero AC
+            # coefficients to hold even an empty frame: shardpix refuses it
+            # as a cover, so it stays as it is.
+            return blocks
         size = bits // 8 - stego.PUBLIC_BYTES - stego.FRAME_OVERHEAD
         size = max(0, min(size, stego.capacity(eligible.size)))
         out, _ = jpeg.embed_coefficients(
