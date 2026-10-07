@@ -156,8 +156,34 @@ def _features_worker(args: tuple[int, float, int]) -> np.ndarray:
     return np.concatenate([features.extract(image, name) for name in FEATURE_DETECTORS])
 
 
+CACHE: Path | None = None
+"""Directory where feature matrices are kept between runs; set by :func:`main`."""
+
+
+def _cache_path(covers: np.ndarray, rate: float, seed: int) -> Path | None:
+    if CACHE is None:
+        return None
+    kind = "clean" if rate == 0 else STRATEGY
+    shape = f"{len(covers)}x{covers.shape[1]}"
+    return CACHE / f"features-{kind}-{shape}-seed{seed}-rate{rate:.10f}.npy"
+
+
 def feature_matrix(covers: np.ndarray, rate: float, seed: int) -> np.ndarray:
-    """SPAM and SRM-lite features of every cover (``rate == 0``) or its stego."""
+    """SPAM and SRM-lite features of every cover (``rate == 0``) or its stego.
+
+    With :data:`CACHE` set, a matrix computed once is read back from disk.
+    """
+    path = _cache_path(covers, rate, seed)
+    if path is not None and path.exists():
+        return np.load(path)
+    matrix = _compute_features(covers, rate, seed)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(path, matrix)
+    return matrix
+
+
+def _compute_features(covers: np.ndarray, rate: float, seed: int) -> np.ndarray:
     global _COVERS
     _COVERS = covers
     try:
@@ -207,11 +233,15 @@ def run_features(
     rates: Sequence[float],
     seed: int,
     on_rate: Callable[[dict[str, list[dict]]], None] | None = None,
+    scores: dict[str, np.ndarray] | None = None,
 ) -> dict[str, list[dict]]:
     """Train and test both feature-based detectors at every rate.
 
     ``on_rate`` is called with the rows so far after each rate, so a long run
-    can save its progress and survive an interruption.
+    can save its progress and survive an interruption. If ``scores`` is
+    given, the votes of every test image are stored in it under
+    ``"<detector>@<rate>"`` as a ``2 x n`` array (covers, then their stegos,
+    in the order of ``scores["test_index"]``): what :mod:`.pooled` needs.
     """
     train_idx, test_idx = split(len(covers), seed)
     start = time.time()
@@ -225,6 +255,9 @@ def run_features(
             cols = _columns(name)
             model = ensemble.train(clean[train_idx, cols], dirty[train_idx, cols], seed=seed)
             v0, v1 = model.votes(clean[test_idx, cols]), model.votes(dirty[test_idx, cols])
+            if scores is not None:
+                scores["test_index"] = test_idx
+                scores[f"{name}@{rate:.10f}"] = np.stack([v0, v1]).astype(np.float32)
             row = {
                 "rate": rate,
                 **_summary(v0, v1, 0.5),
@@ -542,13 +575,22 @@ def main(argv: list[str] | None = None) -> int:
         "--data", type=Path, default=None, help="default: docs/data/ml_benchmark_<size>.json"
     )
     parser.add_argument("--strategy", choices=sorted(STRATEGIES), default="shardpix")
+    parser.add_argument(
+        "--cache", type=Path, default=None, help="keep feature matrices here between runs"
+    )
+    parser.add_argument(
+        "--rerun",
+        action="store_true",
+        help="measure the requested rates again even if the data file has them",
+    )
     parser.add_argument("--plot-only", action="store_true")
     args = parser.parse_args(argv)
     suffix = "" if args.strategy == "shardpix" else f"_{args.strategy}"
     if args.data is None:
         args.data = Path(f"docs/data/ml_benchmark_{args.size}{suffix}.json")
-    global STRATEGY
+    global STRATEGY, CACHE
     STRATEGY = args.strategy
+    CACHE = args.cache
     if args.strategy == "adaptive":
         # Key derivation cost has no effect on the pixels; keep the run short.
         stego.SCRYPT_LOG_N = min(stego.SCRYPT_LOG_N_ACCEPTED)
@@ -575,7 +617,10 @@ def main(argv: list[str] | None = None) -> int:
         chosen = [d.strip() for d in args.detectors.split(",") if d.strip()]
         detectors = results["detectors"]
         wanted = [d for d in chosen if d in FEATURE_DETECTORS]
-        todo = [r for r in rates if any(not _has(detectors, d, r) for d in wanted)]
+        todo = [r for r in rates if args.rerun or any(not _has(detectors, d, r) for d in wanted)]
+
+        scores_path = args.data.with_suffix(".scores.npz")
+        scores: dict[str, np.ndarray] = dict(np.load(scores_path)) if scores_path.exists() else {}
 
         def save(rows_by_name: dict[str, list[dict]]) -> None:
             for name, rows in rows_by_name.items():
@@ -583,9 +628,10 @@ def main(argv: list[str] | None = None) -> int:
                     detectors[name] = _merge(detectors.get(name, []), rows)
             args.data.parent.mkdir(parents=True, exist_ok=True)
             args.data.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+            np.savez_compressed(scores_path, **scores)
 
         if todo:
-            save(run_features(covers, todo, args.seed, on_rate=save))
+            save(run_features(covers, todo, args.seed, on_rate=save, scores=scores))
         if "cnn" in chosen:
             # Curriculum training depends on the whole sequence: always redone.
             detectors["cnn"] = run_cnn(
