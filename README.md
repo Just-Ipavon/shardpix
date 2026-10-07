@@ -90,6 +90,33 @@ a forged set of shares can never pass for the real key.
 
 ## Install
 
+shardpix needs Python 3.10 or later. Install it with
+[pipx](https://pipx.pypa.io), which puts it in its own environment and the
+`shardpix` command on your `PATH`, so it works in every terminal and every
+folder:
+
+```bash
+# 1. pipx, once
+sudo apt install pipx            # Debian, Ubuntu, Kali
+brew install pipx                # macOS
+py -m pip install --user pipx    # Windows
+pipx ensurepath                  # then open a new terminal
+
+# 2. shardpix, straight from GitHub
+pipx install git+https://github.com/Just-Ipavon/shardpix.git
+shardpix --version
+```
+
+Update to the latest version with `pipx reinstall shardpix`, remove it with
+`pipx uninstall shardpix`.
+
+### For development
+
+To work on the code, use a virtual environment instead. The `shardpix`
+command then exists only while that environment is active: in a new
+terminal, run `source .venv/bin/activate` again (`.venv\Scripts\activate` on
+Windows).
+
 ```bash
 git clone https://github.com/Just-Ipavon/shardpix.git
 cd shardpix
