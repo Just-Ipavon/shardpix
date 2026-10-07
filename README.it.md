@@ -17,7 +17,7 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 > condivisione del segreto, l'inserimento nelle immagini e la steganalisi sono
 > implementati qui. Il codice è passato per analisi statica, fuzzing,
 > mutation testing e una revisione manuale secondo OWASP ASVS — vedi la
-> [revisione di sicurezza](docs/06-security-review.md) — ma nessuna terza
+> [revisione di sicurezza](docs_it/06-security-review.md) — ma nessuna terza
 > parte ne ha fatto un audit. Per segreti che non puoi permetterti di perdere
 > usa strumenti consolidati come [age](https://age-encryption.org).
 
@@ -150,8 +150,8 @@ megapixel**, che portano una quota a quel punto o sotto.
 </picture>
 
 I risultati completi, l'attacco del chi-quadro, i rilevatori addestrati e i
-limiti noti sono in [docs/05-security-analysis.md](docs/05-security-analysis.md)
-(in inglese). Per riprodurli: `pip install -e ".[bench]"` e poi
+limiti noti sono in [docs_it/05-security-analysis.md](docs_it/05-security-analysis.md).
+Per riprodurli: `pip install -e ".[bench]"` e poi
 `python -m shardpix.analysis.benchmark`; per i rilevatori addestrati
 `pip install -e ".[bench,ml]"` e `python -m shardpix.analysis.ml_benchmark`
 su una copia di BOSSbase.
@@ -173,8 +173,8 @@ Usa foto a colori di almeno 2 megapixel, con texture, mai immagini prese da
 internet, e invia i risultati come file, non come "foto" in un'app di
 messaggistica. L'inserimento direttamente nei coefficienti JPEG, che
 renderebbe sicure le foto JPEG del telefono, è in programma. Dettagli,
-metodi e istruzioni passo passo per il telefono (in inglese):
-[docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
+metodi e istruzioni passo passo per il telefono:
+[docs_it/07-covers-and-formats.md](docs_it/07-covers-and-formats.md).
 
 ## Scelte progettuali
 
@@ -245,21 +245,23 @@ shardpix/
 
 ## Documentazione
 
-La documentazione tecnica completa, in inglese, si trova in
+La documentazione tecnica completa è disponibile in italiano in
+[docs_it/](docs_it/README.md) e, nella versione originale in inglese, in
 [docs/](docs/README.md): architettura e decisioni di progetto, casi d'uso, un
 riferimento funzione per funzione, il comportamento a runtime, un'analisi di
-sicurezza e una revisione di sicurezza interna, con diagrammi UML. Per
-segnalare una vulnerabilità vedi [SECURITY.md](SECURITY.md).
+sicurezza e una revisione di sicurezza interna, con diagrammi UML. In caso di
+differenze fa fede la versione inglese. Per segnalare una vulnerabilità vedi
+[SECURITY.md](SECURITY.md).
 
 | Documento | Contenuto |
 | --- | --- |
-| [01 — Architettura](docs/01-architecture.md) | Contesto, pacchetti, modello dei dati, formati su disco, undici decisioni architetturali |
-| [02 — Casi d'uso](docs/02-use-cases.md) | Attori, diagramma dei casi d'uso, nove specifiche dettagliate, scenari operativi |
-| [03 — Riferimento delle funzioni](docs/03-function-reference.md) | Ogni funzione: comportamento, casi limite, errori, test che la coprono |
-| [04 — Comportamento a runtime](docs/04-runtime-behaviour.md) | Diagrammi di sequenza, algoritmo di recupero delle quote, codici di uscita, tempi |
-| [05 — Analisi di sicurezza](docs/05-security-analysis.md) | Modello delle minacce, proprietà di sicurezza, risultati della steganalisi, limiti |
-| [06 — Revisione di sicurezza](docs/06-security-review.md) | Analisi statica, fuzzing, mutation testing, checklist ASVS, problemi trovati e correzioni |
-| [07 — Foto e formati](docs/07-covers-and-formats.md) | PNG e JPEG, metodi di inserimento, foto del telefono |
+| [01 — Architettura](docs_it/01-architecture.md) | Contesto, pacchetti, modello dei dati, formati su disco, dodici decisioni architetturali |
+| [02 — Casi d'uso](docs_it/02-use-cases.md) | Attori, diagramma dei casi d'uso, nove specifiche dettagliate, scenari operativi |
+| [03 — Riferimento delle funzioni](docs_it/03-function-reference.md) | Ogni funzione: comportamento, casi limite, errori, test che la coprono |
+| [04 — Comportamento a runtime](docs_it/04-runtime-behaviour.md) | Diagrammi di sequenza, algoritmo di recupero delle quote, codici di uscita, tempi |
+| [05 — Analisi di sicurezza](docs_it/05-security-analysis.md) | Modello delle minacce, proprietà di sicurezza, risultati della steganalisi, limiti |
+| [06 — Revisione di sicurezza](docs_it/06-security-review.md) | Analisi statica, fuzzing, mutation testing, checklist ASVS, problemi trovati e correzioni |
+| [07 — Foto e formati](docs_it/07-covers-and-formats.md) | PNG e JPEG, metodi di inserimento, foto del telefono |
 
 ## Licenza
 
