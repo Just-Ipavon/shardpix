@@ -610,7 +610,14 @@ def main(argv: list[str] | None = None) -> int:
             "seed": args.seed,
             "strategy": f"{args.strategy}: {STRATEGIES[args.strategy]}",
         }
-        if results and {k: results.get(k) for k in config} != config:
+
+        def same_experiment(old: dict) -> bool:
+            # The strategy is compared by name: its description may be reworded.
+            keys = [k for k in config if k != "strategy"]
+            name = str(old.get("strategy", "")).split(":")[0]
+            return name == args.strategy and all(old.get(k) == config[k] for k in keys)
+
+        if results and not same_experiment(results):
             results = {}  # a different experiment: start over
         results.update(config)
         results.setdefault("detectors", {})
