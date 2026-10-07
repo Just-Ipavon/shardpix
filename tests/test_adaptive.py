@@ -65,6 +65,17 @@ class TestSTC:
         assert np.array_equal(y[wet], bits[wet])
         assert np.array_equal(stc.syndrome(y, h_hat, 60), message)
 
+    def test_many_expensive_changes_are_not_mistaken_for_wet_ones(self):
+        # Flat areas cost ~1e10 per change: thousands of them add up past WET
+        # without any single element being forbidden.
+        rng = np.random.default_rng(5)
+        h_hat = stc.submatrix(bytes(32), 1)
+        bits = rng.integers(0, 2, 4000).astype(np.uint8)
+        message = rng.integers(0, 2, 4000).astype(np.uint8)
+        y, total = stc.embed(bits, np.full(bits.size, 1e10), message, h_hat)
+        assert total >= stc.WET
+        assert np.array_equal(stc.syndrome(y, h_hat, 4000), message)
+
     def test_impossible_when_everything_is_wet(self):
         h_hat = stc.submatrix(bytes(32), 4)
         bits = np.zeros(40, dtype=np.uint8)
@@ -218,3 +229,18 @@ def test_each_embedding_changes_different_samples():
     a = np.flatnonzero(first.pixels != cover.pixels)
     b = np.flatnonzero(second.pixels != cover.pixels)
     assert len(np.intersect1d(a, b)) < 0.2 * min(a.size, b.size)
+
+
+class TestFlatCovers:
+    def test_a_flat_screenshot_holds_a_large_payload(self):
+        # Regression: a screenshot of flat colours made every change cost the
+        # maximum, and a payload of a few KiB was reported as impossible.
+        pixels = np.full((200, 300, 3), 240, dtype=np.uint8)
+        pixels[40:160, 30:270] = 30
+        pixels[60:140:12, 40:250] = 220
+        cover = Carrier(pixels=pixels, mode="RGB")
+        payload = np.random.default_rng(0).bytes(4000)
+        stego_carrier, _ = stego.embed(
+            cover, payload, "pw", ADAPTIVE, np.random.default_rng(1).bytes
+        )
+        assert stego.extract(stego_carrier, "pw") == payload
