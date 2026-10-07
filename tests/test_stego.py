@@ -14,6 +14,8 @@ from shardpix.stego import Method, SampleOrder
 from .conftest import PRODUCTION_SCRYPT, natural_image
 
 PASSPHRASE = "correct horse battery staple"
+FORMAT_3 = Method.MATCHING
+"""Tests of the format-3 layout (positions, one bit per sample) pin the method."""
 
 
 def frame_positions(samples: np.ndarray, passphrase: str | None, count: int) -> np.ndarray:
@@ -73,7 +75,7 @@ class TestAuthentication:
             stego.extract(rgb_carrier, PASSPHRASE)
 
     def test_a_single_flipped_payload_bit_is_detected(self, rgb_carrier):
-        stego_carrier, _ = stego.embed(rgb_carrier, b"integrity matters", PASSPHRASE)
+        stego_carrier, _ = stego.embed(rgb_carrier, b"integrity matters", PASSPHRASE, FORMAT_3)
         samples = stego_carrier.samples()
         positions = frame_positions(samples, PASSPHRASE, 200)
         samples[positions[150]] ^= 1
@@ -111,7 +113,7 @@ class TestDistortion:
         assert np.array_equal(stego_carrier.pixels >> 1, rgb_carrier.pixels >> 1)
 
     def test_about_half_of_the_written_samples_change(self, large_carrier):
-        _, report = stego.embed(large_carrier, bytes(4000), PASSPHRASE)
+        _, report = stego.embed(large_carrier, bytes(4000), PASSPHRASE, FORMAT_3)
         ratio = report.samples_changed / report.bits_written
         assert 0.45 < ratio < 0.55
 
@@ -265,8 +267,8 @@ class TestKeyDerivation:
 
     def test_same_passphrase_scatters_differently_in_every_image(self, large_carrier):
         """Each embedding draws its own salt, hence its own keys and positions."""
-        first, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE)
-        second, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE)
+        first, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE, FORMAT_3)
+        second, _ = stego.embed(large_carrier, bytes(64), PASSPHRASE, FORMAT_3)
         a = frame_positions(first.samples(), PASSPHRASE, 400)
         b = frame_positions(second.samples(), PASSPHRASE, 400)
         assert len(np.intersect1d(a, b)) < 40

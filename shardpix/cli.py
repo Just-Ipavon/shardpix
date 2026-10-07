@@ -505,8 +505,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-m",
         "--method",
         choices=[m.value for m in stego.Method],
-        default=stego.Method.MATCHING.value,
-        help="how samples are changed (default: matching)",
+        default=stego.Method.ADAPTIVE.value,
+        help="how samples are changed (default: adaptive)",
     )
     _add_passphrase_options(p)
     p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
@@ -539,8 +539,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-m",
         "--method",
         choices=[m.value for m in stego.Method],
-        default=stego.Method.MATCHING.value,
-        help="how samples are changed (default: matching)",
+        default=stego.Method.ADAPTIVE.value,
+        help="how samples are changed (default: adaptive)",
     )
     _add_passphrase_options(p)
     p.add_argument("-f", "--force", action="store_true", help="overwrite existing outputs")

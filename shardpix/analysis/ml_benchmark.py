@@ -105,10 +105,30 @@ def share_rate(size: int) -> float:
     return report.embedding_rate
 
 
+STRATEGIES = {
+    "shardpix": "format 3: LSB matching on samples 2-253, keyed positions, random bits",
+    "adaptive": "format 4: HiLL costs and syndrome-trellis codes, via stego.embed",
+}
+STRATEGY = "shardpix"
+"""Embedding under test; set by :func:`main` before any worker is forked."""
+
+
 def embed(cover: np.ndarray, rate: float, rng: np.random.Generator) -> np.ndarray:
-    """``cover`` (``H x W``) with ``rate`` of its samples carrying random bits, shardpix-style."""
+    """``cover`` (``H x W``) with ``rate`` of its samples carrying payload bits.
+
+    ``shardpix`` writes random bits at keyed positions as format 3 does.
+    ``adaptive`` calls :func:`shardpix.stego.embed` itself with a random
+    payload sized so that the image carries ``rate`` bits per sample, as the
+    tool would for a share or a file of that size.
+    """
     carrier = Carrier(pixels=cover[..., np.newaxis], mode="L")
-    return embed_random(carrier, rate, SCENARIO_BY_KEY["shardpix"], rng)[..., 0]
+    if STRATEGY == "shardpix":
+        return embed_random(carrier, rate, SCENARIO_BY_KEY["shardpix"], rng)[..., 0]
+    payload = int(round(rate * cover.size / 8)) - stego.PUBLIC_BYTES - stego.FRAME_OVERHEAD
+    if payload < 0:
+        raise ValueError(f"rate {rate:.3%} is below the frame overhead for this size")
+    out, _ = stego.embed(carrier, rng.bytes(payload), "benchmark", stego.Method.ADAPTIVE, rng.bytes)
+    return out.pixels[..., 0]
 
 
 def stego_rng(seed: int, index: int, rate: float) -> np.random.Generator:
@@ -364,12 +384,16 @@ def plot(results: dict, out: Path, mode: str) -> Path:
     ax.set_ylabel(
         "Detection error P_E on unseen images (%)", color=theme["secondary"], fontsize=9.5
     )
-    path = out / f"ml-detection-{results['size']}-{mode}.png"
+    adaptive = results.get("strategy", "").startswith("adaptive")
+    suffix = "-adaptive" if adaptive else ""
+    path = out / f"ml-detection-{results['size']}{suffix}-{mode}.png"
     _finish(
         fig,
         ax,
         theme,
-        "Trained detectors: strong on heavy embedding, weak on a vault share",
+        "Adaptive embedding (format 4) against trained detectors"
+        if adaptive
+        else "Trained detectors: strong on heavy embedding, weak on a vault share",
         f"{results['dataset']}: {results['images']} images at {results['size']}x"
         f"{results['size']}, half for training, half for testing. Shaded: 95% interval.",
         path,
@@ -426,10 +450,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--data", type=Path, default=None, help="default: docs/data/ml_benchmark_<size>.json"
     )
+    parser.add_argument("--strategy", choices=sorted(STRATEGIES), default="shardpix")
     parser.add_argument("--plot-only", action="store_true")
     args = parser.parse_args(argv)
+    suffix = "" if args.strategy == "shardpix" else f"_{args.strategy}"
     if args.data is None:
-        args.data = Path(f"docs/data/ml_benchmark_{args.size}.json")
+        args.data = Path(f"docs/data/ml_benchmark_{args.size}{suffix}.json")
+    global STRATEGY
+    STRATEGY = args.strategy
+    if args.strategy == "adaptive":
+        # Key derivation cost has no effect on the pixels; keep the run short.
+        stego.SCRYPT_LOG_N = min(stego.SCRYPT_LOG_N_ACCEPTED)
 
     results = json.loads(args.data.read_text("utf-8")) if args.data.exists() else {}
     if not args.plot_only:
@@ -444,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
             "preprocessing": args.how,
             "share_rate": share,
             "seed": args.seed,
-            "strategy": "shardpix: LSB matching on samples 2-253, keyed positions, random bits",
+            "strategy": f"{args.strategy}: {STRATEGIES[args.strategy]}",
         }
         if results and {k: results.get(k) for k in config} != config:
             results = {}  # a different experiment: start over
