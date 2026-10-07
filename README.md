@@ -22,6 +22,41 @@ are built in.
 
 ![shardpix sealing a file behind 3 of 5 photos, opening it with three of them, and analysing one image](assets/demo.svg)
 
+## Why it matters
+
+Splitting a key with Shamir's scheme and hiding the shares in pictures is not
+a new idea. What is usually missing is the question an adversary would
+actually ask: **not "does this one photo hide something?", but "do these
+photos, taken together, hide something?"** Whoever finds one share often
+finds others of the same vault - the holders know each other, use the same
+cloud, send to the same people. Schemes that combine secret sharing and
+steganography are judged image by image, typically with off-the-shelf tools,
+and most hide the shares by LSB embedding.
+
+shardpix is built around that question and measures the answer:
+
+- **One image is the wrong test.** With LSB-style embedding (format 3, kept
+  as a baseline) a trained detector is wrong 42.6% of the time on a single
+  512x512 image - it looks almost safe. Given 50 images of the same vault and
+  pooling its scores, it is wrong only 7.4% of the time: the shares give the
+  vault away together.
+- **Adaptive embedding holds.** Format 4 places each share with
+  syndrome-trellis codes where the photo is textured; on the same 10,000
+  BOSSbase images the pooled detector stays at chance, about 50%, from 1 to
+  50 images.
+- **Real covers, not lab covers.** Phone photos are JPEG, so shardpix hides
+  the share inside the JPEG coefficients themselves (format 5) and returns a
+  JPEG with the same quality settings and metadata - no conversion that
+  would betray the image.
+- **Everything is reproducible.** The detectors, the datasets, the positive
+  controls and the confidence intervals are in the repository; every number
+  in this README can be regenerated.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/pooled-512-dark.png">
+  <img alt="Detection error against the number of images of one vault the adversary holds: format 3 falls from 43% to 7% at 50 images, format 4 stays at 50%" src="assets/pooled-512-light.png">
+</picture>
+
 ## How it works
 
 ```text

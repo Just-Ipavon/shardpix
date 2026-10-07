@@ -23,6 +23,43 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 
 ![shardpix che sigilla un file dietro 3 foto su 5, lo riapre con tre di esse e analizza un'immagine](assets/demo.svg)
 
+## Perché è importante
+
+Dividere una chiave con lo schema di Shamir e nascondere le quote nelle
+immagini non è un'idea nuova. Quello che di solito manca è la domanda che un
+avversario si farebbe davvero: **non "questa foto nasconde qualcosa?", ma
+"queste foto, prese insieme, nascondono qualcosa?"** Chi trova una quota
+spesso ne trova altre della stessa cassaforte: i custodi si conoscono, usano
+lo stesso cloud, scrivono alle stesse persone. Gli schemi che uniscono
+condivisione del segreto e steganografia vengono valutati un'immagine alla
+volta, di solito con strumenti generici, e quasi sempre nascondono le quote
+nei bit meno significativi (LSB).
+
+shardpix è costruito attorno a quella domanda e ne misura la risposta:
+
+- **Una sola immagine è il test sbagliato.** Con un inserimento di tipo LSB
+  (il formato 3, tenuto come termine di confronto) un rilevatore addestrato
+  sbaglia il 42,6% delle volte su una singola immagine 512x512: sembra quasi
+  sicuro. Con 50 immagini della stessa cassaforte, combinando i punteggi,
+  sbaglia solo il 7,4% delle volte: insieme, le quote tradiscono la
+  cassaforte.
+- **L'inserimento adattivo regge.** Il formato 4 colloca ogni quota con
+  codici a traliccio di sindrome (STC) dove la foto è più ricca di dettagli;
+  sulle stesse 10.000 immagini di BOSSbase il rilevatore aggregato resta al
+  livello del caso, circa 50%, da 1 a 50 immagini.
+- **Foto vere, non foto di laboratorio.** Le foto del telefono sono JPEG,
+  quindi shardpix nasconde la quota direttamente nei coefficienti del JPEG
+  (formato 5) e restituisce un JPEG con le stesse impostazioni di qualità e
+  gli stessi metadati, senza conversioni che tradirebbero l'immagine.
+- **Tutto è riproducibile.** Rilevatori, dataset, controlli positivi e
+  intervalli di confidenza sono nel repository; ogni numero di questo README
+  si può rigenerare.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/pooled-512-dark.png">
+  <img alt="Errore di rilevazione in funzione del numero di immagini della stessa cassaforte in mano all'avversario: il formato 3 scende dal 43% al 7% con 50 immagini, il formato 4 resta al 50%" src="assets/pooled-512-light.png">
+</picture>
+
 ## Come funziona
 
 ```text
