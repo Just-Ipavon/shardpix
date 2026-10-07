@@ -51,6 +51,15 @@ good covers:
   not as photos in a messaging app, which recompresses them. HEIC is not
   supported: set the iPhone camera to 'Most Compatible' (JPEG).
 
+options used by several commands:
+  -k N    how many images (or shares) are needed to open; with -k 3 any 3 do
+  -p      ask for a passphrase; without it anyone with shardpix reads the data
+  -o F    the file to write
+  -d DIR  the folder to write into
+  -t / -i the data as text in quotes (-t) or as a file (-i)
+  -f      allow replacing files that already exist
+  Every command lists all its options with 'shardpix COMMAND -h'.
+
 passphrases:
   -p prompts for one, --passphrase-file reads it from a file. Passphrases are
   never accepted on the command line, where the shell history would keep
@@ -215,12 +224,22 @@ def _share_label(share: shamir.Share) -> str:
 
 def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("-p", "--passphrase", action="store_true", help="prompt for a passphrase")
+    group.add_argument(
+        "-p",
+        "--passphrase",
+        action="store_true",
+        help="ask for a passphrase at the prompt (typed twice when hiding, hidden as you "
+        "type). It chooses where the data hides and encrypts it: the same passphrase is "
+        "needed to read it back. Without -p or --passphrase-file, no passphrase is used "
+        "and anyone running shardpix can read the payload",
+    )
     group.add_argument(
         "--passphrase-file",
         type=Path,
         metavar="FILE",
-        help="read the passphrase from the first line of FILE",
+        help="read the passphrase from the first line of FILE instead of asking, for "
+        "scripts. Passphrases are never accepted as plain arguments, which would leave "
+        "them in the shell history",
     )
 
 
@@ -581,13 +600,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         required=True,
-        help="stego image to write: .jpg for a JPEG cover, .png otherwise",
+        help="(required) the image to write with the payload inside. It must end in .jpg "
+        "or .jpeg for a JPEG cover and in .png for any other cover. Never the cover itself",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="text message to hide")
-    source.add_argument("-i", "--input", type=Path, metavar="FILE", help="file to hide")
+    source.add_argument("-t", "--text", help="the message to hide, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        metavar="FILE",
+        help="a file to hide, of any type, up to the capacity of the cover (use either -t or -i)",
+    )
     _add_passphrase_options(p)
-    p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace the output file if it already exists (without -f shardpix refuses)",
+    )
     p.set_defaults(handler=cmd_embed)
 
     p = _command(
@@ -601,10 +632,21 @@ def build_parser() -> argparse.ArgumentParser:
         "  shardpix extract out.jpg -p\n"
         "  shardpix extract out.png -o contract.pdf --passphrase-file pw.txt",
     )
-    p.add_argument("image", type=Path, help="image written by 'embed'")
-    p.add_argument("-o", "--output", type=Path, help="write the payload here instead of stdout")
+    p.add_argument("image", type=Path, help="the image written by 'embed'")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="save the payload to this file; use it whenever the payload is a file. "
+        "Without -o it is printed on the terminal",
+    )
     _add_passphrase_options(p)
-    p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace the -o file if it already exists (without -f shardpix refuses)",
+    )
     p.set_defaults(handler=cmd_extract)
 
     p = _command(
@@ -622,23 +664,45 @@ def build_parser() -> argparse.ArgumentParser:
         "  shardpix seal notes.pdf a.jpg b.jpg c.jpg d.jpg e.jpg -k 3 -p\n"
         "  shardpix seal keys.txt photos/*.jpg -k 2 -d out --name keys.spx -p",
     )
-    p.add_argument("file", type=Path, help="file to seal")
+    p.add_argument("file", type=Path, help="the file to protect, of any type and size")
     p.add_argument(
-        "covers", type=Path, nargs="+", metavar="COVER", help="cover images, one per share"
+        "covers",
+        type=Path,
+        nargs="+",
+        metavar="COVER",
+        help="the images that will carry the key, at least 2: each gets one share. Their "
+        "number is n, the total number of shares. The originals are never modified",
     )
     p.add_argument(
-        "-k", "--threshold", type=positive_int, required=True, help="images needed to unseal"
+        "-k",
+        "--threshold",
+        type=positive_int,
+        required=True,
+        help="(required) how many images are needed to open the vault, from 2 to the "
+        "number of covers. With -k 3 and 5 covers, any 3 of the 5 images open it and 2 "
+        "reveal nothing, so up to 2 images can be lost or stolen",
     )
     p.add_argument(
         "-d",
         "--directory",
         type=Path,
         default=Path("sealed"),
-        help="where to write the vault and the images (default: ./sealed)",
+        help="folder where the vault and the new images are written, created if needed "
+        "(default: ./sealed)",
     )
-    p.add_argument("--name", help="vault file name (default: <file>.spx)")
+    p.add_argument(
+        "--name",
+        help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
+        "followed by .spx, e.g. notes.pdf.spx)",
+    )
     _add_passphrase_options(p)
-    p.add_argument("-f", "--force", action="store_true", help="overwrite existing outputs")
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace a vault or images already in the output folder (without -f "
+        "shardpix refuses and writes nothing)",
+    )
     p.set_defaults(handler=cmd_seal)
 
     p = _command(
@@ -654,13 +718,28 @@ def build_parser() -> argparse.ArgumentParser:
         "  shardpix unseal notes.pdf.spx a.jpg c.jpg e.jpg -p\n"
         "  shardpix unseal vault.spx received/*.jpg -o notes.pdf -p",
     )
-    p.add_argument("vault", type=Path, help="vault file (.spx)")
-    p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images holding shares")
+    p.add_argument("vault", type=Path, help="the vault file (.spx) written by 'seal'")
     p.add_argument(
-        "-o", "--output", type=Path, help="where to write the file (default: its original name)"
+        "images",
+        type=Path,
+        nargs="+",
+        metavar="IMAGE",
+        help="images from 'seal', at least as many as the threshold; extra or unrelated "
+        "images are allowed and reported",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="where to save the recovered file (default: its original name, in the current folder)",
     )
     _add_passphrase_options(p)
-    p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace the output file if it already exists (without -f shardpix refuses)",
+    )
     p.set_defaults(handler=cmd_unseal)
 
     p = _command(
@@ -690,7 +769,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("image", type=Path, help="image to analyse")
     p.add_argument(
-        "--steps", type=positive_int, default=100, help="prefixes tested by the sequential attack"
+        "--steps",
+        type=positive_int,
+        default=100,
+        help="how many portions of the image the sequential chi-square attack tests, from "
+        "the first 1%% to the whole image; more steps, finer result (default: 100)",
     )
     p.set_defaults(handler=cmd_analyze)
 
@@ -705,16 +788,42 @@ def build_parser() -> argparse.ArgumentParser:
         "  shardpix split -i seed.txt -k 3 -n 5 -d shares/",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="text secret to split")
-    source.add_argument("-i", "--input", type=Path, metavar="FILE", help="file to split")
-    p.add_argument(
-        "-k", "--threshold", type=positive_int, required=True, help="shares needed to recover"
+    source.add_argument("-t", "--text", help="the secret to split, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        metavar="FILE",
+        help="a small file to split, such as a key or a seed phrase (use either -t or -i; "
+        "for large files use 'seal')",
     )
-    p.add_argument("-n", "--shares", type=positive_int, required=True, help="shares to create")
     p.add_argument(
-        "-d", "--directory", type=Path, help="write one file per share here instead of stdout"
+        "-k",
+        "--threshold",
+        type=positive_int,
+        required=True,
+        help="(required) how many shares are needed to recover the secret, from 2 to n",
     )
-    p.add_argument("-f", "--force", action="store_true", help="overwrite existing share files")
+    p.add_argument(
+        "-n",
+        "--shares",
+        type=positive_int,
+        required=True,
+        help="(required) how many shares to create in total",
+    )
+    p.add_argument(
+        "-d",
+        "--directory",
+        type=Path,
+        help="save each share in its own file in this folder (share-<id>-<n>.txt) instead "
+        "of printing them",
+    )
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace share files already in the folder (without -f shardpix refuses)",
+    )
     p.set_defaults(handler=cmd_split)
 
     p = _command(
@@ -729,8 +838,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "shares", nargs="+", metavar="FILE", help="files holding shares, one per line ('-' = stdin)"
     )
-    p.add_argument("-o", "--output", type=Path, help="write the secret here instead of stdout")
-    p.add_argument("-f", "--force", action="store_true", help="overwrite the output file")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="save the recovered secret to this file instead of printing it",
+    )
+    p.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="replace the -o file if it already exists (without -f shardpix refuses)",
+    )
     p.set_defaults(handler=cmd_combine)
 
     return parser
