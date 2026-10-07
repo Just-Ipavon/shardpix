@@ -17,6 +17,11 @@ All notable changes to this project are documented here. The format follows
   file's first bytes.
 - The CLI no longer has `--method`: format 3 (matching, replacement) stays
   in the library as a benchmark baseline only.
+- **Fixed:** embedding a large payload in a flat cover, such as a
+  screenshot, failed with "no solution avoids the forbidden elements". Every
+  change in a flat area costs the maximum, and thousands of them added up
+  past the threshold that marks a forbidden sample; the coder now checks
+  each chosen change instead of their sum.
 - **Detailed help.** `shardpix -h` shows how the pieces fit, a quick start,
   how to pick covers and how passphrases work; every `shardpix COMMAND -h`
   explains what the command does and ends with examples.

@@ -101,7 +101,7 @@ def embed(bits: np.ndarray, costs: np.ndarray, message: np.ndarray, h_hat: np.nd
 
     best = int(np.argmin(cost))
     total = float(cost[best])
-    if not np.isfinite(total) or total >= WET:
+    if not np.isfinite(total):
         raise ValueError("no solution avoids the forbidden elements")
 
     y = np.empty(n, dtype=np.uint8)
@@ -115,4 +115,8 @@ def embed(bits: np.ndarray, costs: np.ndarray, message: np.ndarray, h_hat: np.nd
                 state ^= int(columns[k])
             else:
                 y[j] = 0
+    # A wet element is forbidden on its own; the total alone cannot tell, since
+    # many merely expensive changes (a flat screenshot) can add up past WET.
+    if np.any(costs[y != bits] >= WET):
+        raise ValueError("no solution avoids the forbidden elements")
     return y, total
