@@ -50,10 +50,13 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from . import costs, stc
 from .errors import CapacityError, PayloadNotFoundError
 from .images import Carrier
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
+"""Format written by :attr:`Method.ADAPTIVE`; the other methods write format 3."""
+LEGACY_VERSION = 3
 SALT_BYTES = 16
 COST_BYTES = 1
 PUBLIC_BYTES = SALT_BYTES + COST_BYTES
@@ -78,8 +81,22 @@ ELIGIBLE_MAX = 253
 MAX_FILL = 2
 """Use at most one in ``MAX_FILL`` of the eligible samples."""
 
+ADAPTIVE_FLAG = 0x80
+"""Set in the public cost byte of a format-4 image; format 3 stores the bare cost."""
+MAX_WIDTH = 128
+"""Widest syndrome-trellis code: up to 128 candidate samples per payload bit."""
+COLUMN_BUDGET = 1 << 20
+"""Most samples the trellis visits for one payload, which bounds the time to embed."""
+CHUNK_BITS = 1 << 13
+"""Payload bits coded per trellis, which bounds its memory."""
+HEADER_WIDTH = 64
+"""Width of the codes carrying the public bytes and the length in format 4."""
+LENGTH_BITS = LENGTH_BYTES * 8
+
 _DOMAIN = b"shardpix/stego/v3"
+_DOMAIN_V4 = b"shardpix/stego/v4"
 _PUBLIC_WALK_KEY = hashlib.sha256(_DOMAIN + b"|salt-walk").digest()
+_PUBLIC_CODE_SEED = hashlib.sha256(_DOMAIN_V4 + b"|public-code").digest()
 
 RandomBytes = Callable[[int], bytes]
 
@@ -93,6 +110,9 @@ class Method(str, Enum):
     REPLACEMENT = "replacement"
     """Overwrite the least significant bit (classic LSB replacement)."""
 
+    ADAPTIVE = "adaptive"
+    """+-1 changes placed by a syndrome-trellis code where HiLL costs are lowest (format 4)."""
+
 
 @dataclass(frozen=True)
 class StegoKey:
@@ -102,6 +122,8 @@ class StegoKey:
     aead: bytes
     length_mask: bytes
     keyed: bool
+    code: bytes = b""
+    """Seed of the syndrome-trellis submatrix (format 4 only)."""
 
 
 @dataclass(frozen=True)
@@ -130,14 +152,21 @@ class EmbedReport:
         return self.samples_changed / self.samples if self.samples else 0.0
 
 
-def derive_key(passphrase: str | None, salt: bytes, log_n: int | None = None) -> StegoKey:
+def derive_key(
+    passphrase: str | None,
+    salt: bytes,
+    log_n: int | None = None,
+    version: int = LEGACY_VERSION,
+) -> StegoKey:
     """Derive the walk, encryption and masking keys for one embedding.
 
     scrypt makes every passphrase guess expensive, and the per-image salt
     means guesses cannot be shared between images. Without a passphrase the
     keys depend on the salt alone: the payload is still scattered and
-    encrypted, but anyone running shardpix can read it.
+    encrypted, but anyone running shardpix can read it. Each format version
+    has its own domain, so the two never share a key.
     """
+    domain = _DOMAIN_V4 if version == FORMAT_VERSION else _DOMAIN
     if len(salt) != SALT_BYTES:
         raise ValueError(f"salt must be {SALT_BYTES} bytes")
     if log_n is None:
@@ -149,7 +178,7 @@ def derive_key(passphrase: str | None, salt: bytes, log_n: int | None = None) ->
         n = 1 << log_n
         master = hashlib.scrypt(
             secret,
-            salt=_DOMAIN + b"|" + salt,
+            salt=domain + b"|" + salt,
             n=n,
             r=SCRYPT_R,
             p=SCRYPT_P,
@@ -157,12 +186,10 @@ def derive_key(passphrase: str | None, salt: bytes, log_n: int | None = None) ->
             dklen=32,
         )
     else:
-        master = hashlib.sha256(_DOMAIN + b"|public|" + salt).digest()
+        master = hashlib.sha256(domain + b"|public|" + salt).digest()
 
     def expand(label: bytes, length: int) -> bytes:
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(), length=length, salt=None, info=_DOMAIN + b"|" + label
-        )
+        hkdf = HKDF(algorithm=hashes.SHA256(), length=length, salt=None, info=domain + b"|" + label)
         return hkdf.derive(master)
 
     return StegoKey(
@@ -170,6 +197,7 @@ def derive_key(passphrase: str | None, salt: bytes, log_n: int | None = None) ->
         aead=expand(b"aead", 32),
         length_mask=expand(b"length", LENGTH_BYTES),
         keyed=bool(passphrase),
+        code=expand(b"code", 32) if version == FORMAT_VERSION else b"",
     )
 
 
@@ -287,8 +315,9 @@ def read_bits(samples: np.ndarray, positions: np.ndarray) -> np.ndarray:
     return (samples[positions] & 1).astype(np.uint8)
 
 
-def _aad(length: int) -> bytes:
-    return _DOMAIN + bytes([FORMAT_VERSION]) + length.to_bytes(LENGTH_BYTES, "big")
+def _aad(length: int, version: int = LEGACY_VERSION) -> bytes:
+    domain = _DOMAIN_V4 if version == FORMAT_VERSION else _DOMAIN
+    return domain + bytes([version]) + length.to_bytes(LENGTH_BYTES, "big")
 
 
 def _xor(data: bytes, mask: bytes) -> bytes:
@@ -299,23 +328,102 @@ def _to_bits(data: bytes) -> np.ndarray:
     return np.unpackbits(np.frombuffer(data, dtype=np.uint8))
 
 
-def build_frame(payload: bytes, key: StegoKey, random_bytes: RandomBytes = os.urandom) -> bytes:
+def build_frame(
+    payload: bytes,
+    key: StegoKey,
+    random_bytes: RandomBytes = os.urandom,
+    version: int = LEGACY_VERSION,
+) -> bytes:
     """Seal ``payload`` and wrap it in a frame ready to be written bit by bit."""
     nonce = random_bytes(NONCE_BYTES)
     length = NONCE_BYTES + len(payload) + TAG_BYTES
-    body = AESGCM(key.aead).encrypt(nonce, payload, _aad(length))
+    body = AESGCM(key.aead).encrypt(nonce, payload, _aad(length, version))
     header = _xor(length.to_bytes(LENGTH_BYTES, "big"), key.length_mask)
     return header + nonce + body
 
 
-def _salt_positions(n_samples: int, eligible: np.ndarray) -> np.ndarray:
-    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(PUBLIC_BITS)
+def _salt_positions(n_samples: int, eligible: np.ndarray, width: int = 1) -> np.ndarray:
+    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(PUBLIC_BITS * width)
 
 
 def _keyed_order(key: StegoKey, eligible: np.ndarray, salt_positions: np.ndarray) -> SampleOrder:
     remaining = eligible.copy()
     remaining[salt_positions] = False
     return SampleOrder(key.order, eligible.size, remaining)
+
+
+def header_width(n_eligible: int) -> int:
+    """Width of the format-4 header codes: fixed by the image, read before any key."""
+    return max(1, min(HEADER_WIDTH, n_eligible // (8 * (PUBLIC_BITS + LENGTH_BITS))))
+
+
+def _length_seed(key: StegoKey) -> bytes:
+    return hashlib.sha256(b"length|" + key.code).digest()
+
+
+def code_width(free_samples: int, message_bits: int) -> int:
+    """Width of the syndrome-trellis code for ``message_bits`` bits.
+
+    As wide as the free samples, :data:`MAX_WIDTH` and :data:`COLUMN_BUDGET`
+    allow. Embedder and extractor compute it from the same two numbers.
+    """
+    if message_bits <= 0:
+        return 1
+    return max(1, min(MAX_WIDTH, free_samples // message_bits, COLUMN_BUDGET // message_bits))
+
+
+def _chunks(message_bits: int) -> list[tuple[int, int]]:
+    """``(start, stop)`` of each trellis over the message bits."""
+    return [(i, min(i + CHUNK_BITS, message_bits)) for i in range(0, message_bits, CHUNK_BITS)]
+
+
+def write_adaptive(
+    samples: np.ndarray,
+    positions: np.ndarray,
+    bits: np.ndarray,
+    sample_costs: np.ndarray,
+    seed: bytes,
+    random_bytes: RandomBytes = os.urandom,
+    *,
+    low: int = ELIGIBLE_MIN,
+    high: int = ELIGIBLE_MAX,
+) -> tuple[np.ndarray, int]:
+    """Write ``bits`` as the syndrome of the LSBs of ``samples[positions]``.
+
+    ``positions`` holds ``width`` candidates per bit, in order; the code
+    flips the LSBs whose ``sample_costs`` add up to the least. Each flip is a
+    +-1 change, in a random direction except at ``low`` and ``high``. Returns
+    the modified copy and the number of samples that changed.
+    """
+    width = positions.size // max(bits.size, 1)
+    if positions.size != width * bits.size:
+        raise ValueError("positions must hold the same number of candidates for every bit")
+    out = samples.astype(np.int16, copy=True)
+    h_hat = stc.submatrix(seed, width)
+    targets = []
+    for start, stop in _chunks(bits.size):
+        chunk = positions[start * width : stop * width]
+        cover_bits = (out[chunk] & 1).astype(np.uint8)
+        stego_bits, _ = stc.embed(cover_bits, sample_costs[chunk], bits[start:stop], h_hat)
+        targets.append(chunk[stego_bits != cover_bits])
+    flips = np.concatenate(targets) if targets else np.zeros(0, dtype=np.intp)
+    values = out[flips]
+    step = np.where(np.frombuffer(random_bytes(flips.size), dtype=np.uint8) & 1, 1, -1)
+    step = np.where(values <= low, 1, np.where(values >= high, -1, step))
+    out[flips] = values + step
+    return out.astype(np.uint8), int(flips.size)
+
+
+def read_adaptive(samples: np.ndarray, positions: np.ndarray, length: int, seed: bytes):
+    """The ``length`` bits written by :func:`write_adaptive` at ``positions``."""
+    width = positions.size // max(length, 1)
+    h_hat = stc.submatrix(seed, width)
+    lsb = (samples[positions] & 1).astype(np.uint8)
+    parts = [
+        stc.syndrome(lsb[start * width : stop * width], h_hat, stop - start)
+        for start, stop in _chunks(length)
+    ]
+    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.uint8)
 
 
 def embed(
@@ -338,17 +446,43 @@ def embed(
         )
     salt = random_bytes(SALT_BYTES)
     log_n = SCRYPT_LOG_N
-    key = derive_key(passphrase, salt, log_n)
-    frame = build_frame(payload, key, random_bytes)
+    adaptive = method is Method.ADAPTIVE
+    version = FORMAT_VERSION if adaptive else LEGACY_VERSION
+    key = derive_key(passphrase, salt, log_n, version)
+    frame = build_frame(payload, key, random_bytes, version)
+    public = salt + bytes([log_n | (ADAPTIVE_FLAG if adaptive else 0)])
 
-    salt_positions = _salt_positions(cover.size, eligible)
     frame_bits = _to_bits(frame)
-    frame_positions = _keyed_order(key, eligible, salt_positions).first(frame_bits.size)
-    positions = np.concatenate([salt_positions, frame_positions])
-    bits = np.concatenate([_to_bits(salt + bytes([log_n])), frame_bits])
-    samples, changed = write_bits(
-        cover, positions, bits, method, random_bytes, low=ELIGIBLE_MIN, high=ELIGIBLE_MAX
-    )
+    bits = np.concatenate([_to_bits(public), frame_bits])
+    if not adaptive:
+        salt_positions = _salt_positions(cover.size, eligible)
+        order = _keyed_order(key, eligible, salt_positions)
+        positions = np.concatenate([salt_positions, order.first(frame_bits.size)])
+        samples, changed = write_bits(
+            cover, positions, bits, method, random_bytes, low=ELIGIBLE_MIN, high=ELIGIBLE_MAX
+        )
+    else:
+        # Three codes, each read before the next can be located: the public
+        # bytes (fixed width, public matrix), the masked length (fixed width,
+        # keyed matrix) and the sealed body (width from the length).
+        hw = header_width(n_eligible)
+        public_positions = _salt_positions(cover.size, eligible, hw)
+        order = _keyed_order(key, eligible, public_positions)
+        body = frame_bits[LENGTH_BITS:]
+        free = order.n_samples - LENGTH_BITS * hw
+        if body.size > free:
+            raise CapacityError("this image is too small for this payload in the adaptive format")
+        width = code_width(free, body.size)
+        keyed = order.first(LENGTH_BITS * hw + width * body.size)
+        rho = costs.sample_costs(carrier.pixels, carrier.colour_channels)
+        samples, changed = cover, 0
+        for positions, part, seed in (
+            (public_positions, _to_bits(public), _PUBLIC_CODE_SEED),
+            (keyed[: LENGTH_BITS * hw], frame_bits[:LENGTH_BITS], _length_seed(key)),
+            (keyed[LENGTH_BITS * hw :], body, key.code),
+        ):
+            samples, flipped = write_adaptive(samples, positions, part, rho, seed, random_bytes)
+            changed += flipped
     report = EmbedReport(
         payload_bytes=len(payload),
         frame_bytes=len(frame),
@@ -368,31 +502,76 @@ def _not_found() -> PayloadNotFoundError:
 
 
 def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
-    """Recover and authenticate the payload hidden in ``carrier``."""
+    """Recover and authenticate the payload hidden in ``carrier`` (format 3 or 4)."""
     samples = carrier.samples()
     eligible = eligible_mask(samples)
     largest_frame = max_frame_bytes(int(np.count_nonzero(eligible)))
     if largest_frame < FRAME_OVERHEAD:
         raise _not_found()
 
-    salt_positions = _salt_positions(samples.size, eligible)
-    public = np.packbits(read_bits(samples, salt_positions)).tobytes()
-    salt, log_n = public[:SALT_BYTES], public[SALT_BYTES]
+    # The format is not stored anywhere an observer could read without
+    # trying: each format's public bytes are decoded its own way, and a
+    # format is attempted only if its cost byte is plausible.
+    n_eligible = int(np.count_nonzero(eligible))
+    for version in (FORMAT_VERSION, LEGACY_VERSION):
+        try:
+            return _extract(samples, eligible, n_eligible, largest_frame, passphrase, version)
+        except PayloadNotFoundError:
+            continue
+    raise _not_found()
+
+
+def _bytes(bits: np.ndarray) -> bytes:
+    return np.packbits(bits).tobytes()
+
+
+def _extract(
+    samples: np.ndarray,
+    eligible: np.ndarray,
+    n_eligible: int,
+    largest_frame: int,
+    passphrase: str | None,
+    version: int,
+) -> bytes:
+    adaptive = version == FORMAT_VERSION
+    hw = header_width(n_eligible) if adaptive else 1
+    public_positions = _salt_positions(samples.size, eligible, hw)
+    if adaptive:
+        public = _bytes(read_adaptive(samples, public_positions, PUBLIC_BITS, _PUBLIC_CODE_SEED))
+    else:
+        public = _bytes(read_bits(samples, public_positions))
+    salt, cost_byte = public[:SALT_BYTES], public[SALT_BYTES]
+    if bool(cost_byte & ADAPTIVE_FLAG) is not adaptive:
+        raise _not_found()
+    log_n = cost_byte & ~ADAPTIVE_FLAG
     if log_n not in SCRYPT_LOG_N_ACCEPTED:
         raise _not_found()
-    key = derive_key(passphrase, salt, log_n)
-    order = _keyed_order(key, eligible, salt_positions)
+    key = derive_key(passphrase, salt, log_n, version)
+    order = _keyed_order(key, eligible, public_positions)
 
-    header_bits = LENGTH_BYTES * 8
-    header = np.packbits(read_bits(samples, order.first(header_bits))).tobytes()
+    header_samples = LENGTH_BITS * hw
+    if adaptive:
+        keyed = order.first(header_samples)
+        header = _bytes(read_adaptive(samples, keyed, LENGTH_BITS, _length_seed(key)))
+    else:
+        header = _bytes(read_bits(samples, order.first(LENGTH_BITS)))
     length = int.from_bytes(_xor(header, key.length_mask), "big")
     if length < NONCE_BYTES + TAG_BYTES or LENGTH_BYTES + length > largest_frame:
         raise _not_found()
 
-    positions = order.first(header_bits + 8 * length)[header_bits:]
-    sealed = np.packbits(read_bits(samples, positions)).tobytes()
+    body_bits = 8 * length
+    if adaptive:
+        free = order.n_samples - header_samples
+        if body_bits > free:
+            raise _not_found()
+        width = code_width(free, body_bits)
+        positions = order.first(header_samples + width * body_bits)[header_samples:]
+        sealed = _bytes(read_adaptive(samples, positions, body_bits, key.code))
+    else:
+        positions = order.first(LENGTH_BITS + body_bits)[LENGTH_BITS:]
+        sealed = _bytes(read_bits(samples, positions))
     nonce, body = sealed[:NONCE_BYTES], sealed[NONCE_BYTES:]
     try:
-        return AESGCM(key.aead).decrypt(nonce, body, _aad(length))
+        return AESGCM(key.aead).decrypt(nonce, body, _aad(length, version))
     except InvalidTag:
         raise _not_found() from None
