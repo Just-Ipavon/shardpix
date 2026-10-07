@@ -57,6 +57,16 @@ shardpix is built around that question and measures the answer:
   <img alt="Detection error against the number of images of one vault the adversary holds: format 3 falls from 43% to 7% at 50 images, format 4 stays at 50%" src="assets/pooled-512-light.png">
 </picture>
 
+*Where the numbers come from:* BOSSbase 1.01, 10,000 photographs at
+512x512 greyscale, one vault share per image. A detector (SRM-lite features
+with an ensemble classifier) is trained on 5,000 images and scores the other
+5,000; groups of 1 to 50 images are then pooled by a likelihood ratio, over
+40 random calibration/evaluation splits. 42.6% and 7.4% are the medians,
+7.4% with a 4.5-11.5% range. Method and full table:
+[docs/05 §5.5.7](docs/05-security-analysis.md#557-several-images-of-one-vault-pooled-steganalysis);
+raw data: [docs/data/pooled_512.json](docs/data/pooled_512.json);
+reproduce with `python -m shardpix.analysis.pooled`.
+
 ## How it works
 
 ```text
