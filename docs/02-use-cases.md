@@ -170,8 +170,10 @@ the layers can be used and demonstrated independently.
 2. The system checks the capacity.
 3. The system draws a salt, derives the keys from passphrase and salt, and
    seals the payload into a frame.
-4. The system writes the salt along the public walk and the frame along the
-   keyed walk, by LSB matching.
+4. The system computes the HiLL cost of every sample and writes the salt
+   (along the public walk), the length and the sealed body (along the keyed
+   walk) as syndrome-trellis codes, changing the cheapest samples by ±1
+   (format 4, 01 ADR-12).
 5. The system writes the PNG and reports the rate and the samples changed.
 
 #### Alternative flows
@@ -181,7 +183,8 @@ the layers can be used and demonstrated independently.
 | A1 | Output is not `.png` | Error: lossy formats destroy the payload. |
 | A2 | Payload larger than capacity | Error with the capacity in bytes. |
 | A3 | Cover decoded from JPEG | Warning (as UC-01 A6). |
-| A4 | `--method replacement` | LSB replacement is used instead of matching; intended for comparisons only. |
+| A4 | `--method matching` | Format 3: one bit per sample by LSB matching, readable by shardpix 1.1. |
+| A5 | `--method replacement` | Format 3 with LSB replacement; intended for comparisons only, and warned about. |
 
 ---
 
