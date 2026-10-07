@@ -142,9 +142,12 @@ sequenceDiagram
     E-->>C: carrier stego, EmbedReport
 ```
 
-Con `--method matching` o `replacement` (formato 3) non ci sono costi né
-codici: il sale e il frame vengono scritti un bit per campione nelle prime
-136 posizioni pubbliche e nelle prime 8 × len(frame) posizioni con chiave.
+Un'immagine di copertura JPEG segue invece lo stesso percorso tramite
+`jpeg.embed` (formato 5): `media.open_cover` ne legge i coefficienti
+quantizzati senza decodificarli, i candidati sono i coefficienti AC di
+luminanza non nulli, i costi sono UERD, e il risultato viene riscritto come
+JPEG con le tabelle e i metadati originali. I metodi di base del formato 3,
+usati solo dai benchmark, scrivono un bit per campione senza costi né codici.
 
 ## 4.5 Estrazione di un carico
 

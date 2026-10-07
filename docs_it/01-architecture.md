@@ -58,10 +58,12 @@ graph TD
 
     subgraph orchestration["Livello di orchestrazione"]
         VAULT["vault.py<br/><i>seal, unseal</i>"]
+        MEDIA["media.py<br/><i>JPEG o pixel, in base al file</i>"]
     end
 
     subgraph core["Livello core"]
         STEGO["stego.py<br/><i>inserimento con chiave e adattivo</i>"]
+        JPEG["jpeg.py<br/><i>inserimento nei coefficienti JPEG</i>"]
         STC["stc.py<br/><i>codici a traliccio di sindrome</i>"]
         COSTS["costs.py<br/><i>costi di inserimento HiLL</i>"]
         SHAMIR["shamir.py<br/><i>condivisione di segreti autenticata</i>"]
@@ -81,6 +83,12 @@ graph TD
     end
 
     CLI --> VAULT
+    CLI --> MEDIA
+    VAULT --> MEDIA
+    MEDIA --> STEGO
+    MEDIA --> JPEG
+    JPEG --> STEGO
+    JPEG --> COSTS
     CLI --> STEGO
     CLI --> SHAMIR
     CLI --> CHI
@@ -132,8 +140,10 @@ delle quote del vault) per produrre i suoi esperimenti.
 | [`shardpix/cli.py`](../shardpix/cli.py) | Parsing degli argomenti, inserimento della passphrase, protezione dalla sovrascrittura, output sul terminale, codici di uscita | `vault`, `stego`, `shamir`, `images`, `analysis` |
 | [`shardpix/vault.py`](../shardpix/vault.py) | Cifra un file, ne divide la chiave, distribuisce le quote sulle immagini, ed esegue il procedimento inverso | `stego`, `shamir`, `images` |
 | [`shardpix/stego.py`](../shardpix/stego.py) | Derivazione delle chiavi, percorso con chiave, framing, inserimento adattivo (formato 4) e LSB matching/replacement (formato 3), estrazione di entrambi i formati | `images`, `stc`, `costs` |
+| [`shardpix/media.py`](../shardpix/media.py) | Apre un'immagine di copertura nel dominio usato dal suo file (coefficienti JPEG o pixel), nasconde e rivela tramite il formato corrispondente | `jpeg`, `stego`, `images` |
+| [`shardpix/jpeg.py`](../shardpix/jpeg.py) | Formato 5: carico nei coefficienti AC di luminanza non nulli, letti e scritti senza decodifica | `stego`, `costs` |
 | [`shardpix/stc.py`](../shardpix/stc.py) | Codici a traliccio di sindrome: inserimento a costo minimo con l'algoritmo di Viterbi, estrazione della sindrome | — |
-| [`shardpix/costs.py`](../shardpix/costs.py) | Costo HiLL di una modifica di ±1 su ogni campione | — |
+| [`shardpix/costs.py`](../shardpix/costs.py) | Costo HiLL di una modifica di ±1 su ogni campione; costo UERD di una modifica di ±1 su ogni coefficiente JPEG | — |
 | [`shardpix/shamir.py`](../shardpix/shamir.py) | Suddivisione di Shamir, formato delle quote, MAC, recupero robusto | `gf256` |
 | [`shardpix/gf256.py`](../shardpix/gf256.py) | Aritmetica in GF(2^8), valutazione di polinomi, interpolazione di Lagrange | — |
 | [`shardpix/images.py`](../shardpix/images.py) | Caricamento di qualsiasi immagine come supporto a 8 bit, scrittura di PNG senza perdita | — |
@@ -320,9 +330,18 @@ formati 3 e 4 non condividono mai una chiave. L'estrattore prova prima il
 formato 4, poi il formato 3; un byte di costo che non corrisponde al formato
 in prova fa terminare quel tentativo.
 
+**Formato 5 (JPEG, ADR-13).** Gli stessi tre codici del formato 4, applicati
+ai coefficienti di luminanza del JPEG anziché ai campioni dei pixel:
+l'insieme idoneo è formato dai coefficienti AC non nulli, i costi sono UERD,
+e un coefficiente a ±1 si allontana sempre da zero, così l'insieme idoneo
+non cambia mai. Le chiavi derivano dal dominio `shardpix/jpeg/v1`. L'output
+è un JPEG con le tabelle di quantizzazione e i metadati dell'immagine di
+copertura.
+
 **Formato 3 (matching, replacement).** Un bit per campione, sale e costo sul
 percorso pubblico, il resto sul percorso con chiave; dominio
-`shardpix/stego/v3`.
+`shardpix/stego/v3`. Mantenuto nella libreria come riferimento di base per i
+benchmark; la CLI non lo scrive più.
 
 In entrambi i formati i bit sono scritti a partire dal più significativo,
 vengono usati solo i campioni con valori 2–253 (ADR-06), e il percorso
@@ -515,7 +534,7 @@ migliaia. Un insieme contraffatto non viene mai accettato da `unseal`, e viene
 segnalato come tale. Il budget limita il caso peggiore al prezzo di un errore
 chiaro con input avversariali ben oltre l'uso realistico.
 
-### ADR-10 — Solo output senza perdita, e un avviso per le immagini di copertura JPEG
+### ADR-10 — Output senza perdita per le immagini di copertura in pixel (immagini di copertura JPEG: vedi ADR-13)
 
 **Contesto.** JPEG riquantizza i pixel e distrugge i carichi LSB. I pixel che
 provengono da un JPEG decodificato portano anche la struttura a blocchi 8×8
@@ -527,8 +546,10 @@ copertura decodificate da JPEG sono accettate ma provocano un avviso che
 raccomanda immagini di copertura mai compresse in JPEG.
 
 **Conseguenze.** Gli utenti non possono distruggere un carico scegliendo
-l'estensione sbagliata. Il rischio JPEG è documentato anziché nascosto
-(05 §5.6).
+l'estensione sbagliata. Superata dall'ADR-13 per le immagini di copertura
+JPEG: un JPEG non viene più decodificato in pixel ma riceve l'inserimento
+nei propri coefficienti; l'avviso resta solo per i file che Pillow decodifica
+come JPEG senza che siano file JPEG baseline.
 
 ### ADR-11 — Usare al massimo metà dei campioni idonei
 
@@ -566,6 +587,30 @@ ricevente non ha bisogno di alcuna mappa dei costi. L'inserimento è più lento
 possono essere lette da shardpix 1.1. L'effetto misurato sulla rilevabilità è
 riportato in 05 §5.5.6.
 
+### ADR-13 — Inserimento delle immagini di copertura JPEG nei loro coefficienti (formato 5)
+
+**Contesto.** Le fotocamere dei telefoni salvano in JPEG, e il progetto deve
+funzionare con le foto che le persone hanno davvero. L'inserimento nei pixel
+decodificati di un JPEG è rilevabile a qualsiasi tasso (steganalisi di
+compatibilità JPEG) e trasforma una foto del telefono in un PNG insolito.
+
+**Decisione.** Un'immagine di copertura il cui file inizia con il marcatore
+JPEG viene letta come coefficienti DCT quantizzati con `jpeglib` e mai
+decodificata. Il carico va nei coefficienti AC non nulli della luminanza con
+gli stessi codici a traliccio di sindrome del formato 4 e costi UERD (Guo et
+al.); gli zeri e i coefficienti DC non vengono mai modificati, e ±1 si
+allontana sempre da zero. Il JPEG viene riscritto con le sue tabelle di
+quantizzazione e i suoi marcatori (EXIF, ICC). `media.py` effettua la scelta
+in base ai primi byte del file, quindi né il vault né la CLI hanno più un
+`--method`.
+
+**Conseguenze.** Le foto del telefono vengono usate così come sono state
+scattate e il file stego è un JPEG della stessa qualità. Una nuova dipendenza
+(`jpeglib`, che include libjpeg). Il file viene riscritto da libjpeg, quindi
+le tabelle di Huffman e la disposizione dei marcatori possono differire da
+quelle dell'encoder della fotocamera (07 §7.6). La rilevabilità misurata è
+riportata in 05 §5.5.8.
+
 ## 1.7 Vista di deployment
 
 ```mermaid
@@ -573,10 +618,10 @@ graph TD
     subgraph host["Postazione del proprietario o del custode"]
         subgraph venv["Ambiente virtuale Python ≥ 3.10"]
             APP["shardpix<br/><i>processo singolo, offline</i>"]
-            DEP["cryptography · numpy · pillow · rich"]
+            DEP["cryptography · jpeglib · numpy · pillow · rich"]
         end
         IN["immagini di copertura · file da sigillare · file della passphrase"]
-        OUT["sealed/*.png · *.spx"]
+        OUT["sealed/*.jpg o *.png · *.spx"]
     end
 
     APP --> DEP
@@ -587,7 +632,8 @@ graph TD
 ```
 
 Non ci sono chiamate di rete, database né servizi in background. L'extra
-opzionale `bench` aggiunge matplotlib e scikit-image, solo per il benchmark.
+opzionale `bench` aggiunge matplotlib e scikit-image per i benchmark, e
+l'extra `ml` PyTorch per la CNN.
 
 ## 1.8 Requisiti non funzionali
 
@@ -601,4 +647,4 @@ opzionale `bench` aggiunge matplotlib e scikit-image, solo per il benchmark.
 | Nessun file di input viene mai sovrascritto | Controlli di identità dei percorsi nella CLI e nel vault, senza distinzione tra maiuscole e minuscole | `TestOutputCollisions`, `test_refuses_to_overwrite_the_cover` |
 | Memoria e tempo crescono con il carico, non con l'immagine | Percorso con campionamento per rifiuto (ADR-04) | 04 §4.9 |
 | La suite di test gira offline in pochi secondi | Immagini di copertura sintetiche, costo di scrypt ridotto nei test | 310 test, ~9 s |
-| Portabilità | Python 3.10–3.13, quattro dipendenze | Matrice CI |
+| Portabilità | Python 3.10–3.13, cinque dipendenze (cryptography, jpeglib, numpy, Pillow, rich) | Matrice CI |

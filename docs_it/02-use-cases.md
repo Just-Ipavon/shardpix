@@ -118,7 +118,7 @@ modo indipendente.
 | A3 | Un output sovrascriverebbe un'immagine di copertura o il file | Errore, anche con `--force`. |
 | A4 | Un output esiste già | Errore, salvo con `--force`. |
 | A5 | Un'immagine di copertura è troppo piccola o troppo satura per una quota | Errore che indica l'immagine di copertura; non viene scritto nulla. |
-| A6 | Un'immagine di copertura è stata decodificata da JPEG | La sigillatura procede; un avviso spiega il rischio di compatibilità JPEG. |
+| A6 | Un'immagine di copertura è un JPEG (una foto del telefono) | La sua quota va nei suoi coefficienti (formato 5) e l'output è un `.jpg` con le stesse tabelle e gli stessi metadati. |
 | A7 | Nessuna opzione di passphrase fornita | La sigillatura procede; un avviso segnala che chiunque abbia shardpix può leggere ogni quota, anche se ne servono comunque k. |
 | A8 | Il file è più grande di 2 GiB | Errore: AES-GCM, così come esposto da `cryptography`, è limitato a 2 GiB per chiamata. |
 
@@ -174,21 +174,21 @@ modo indipendente.
 2. Il sistema verifica la capacità.
 3. Il sistema genera un sale, deriva le chiavi da passphrase e sale, e sigilla
    il carico in un frame.
-4. Il sistema calcola il costo HiLL di ogni campione e scrive il sale (lungo il
-   percorso pubblico), la lunghezza e il corpo sigillato (lungo il percorso con
-   chiave) come codici a traliccio di sindrome (STC), modificando di ±1 i
-   campioni meno costosi (formato 4, 01 ADR-12).
-5. Il sistema scrive il PNG e riporta il tasso e i campioni modificati.
+4. Il sistema legge l'immagine di copertura nel dominio del suo file: un JPEG
+   come coefficienti quantizzati (formato 5, 01 ADR-13), qualsiasi altro file
+   come pixel (formato 4, ADR-12). Calcola il costo di ogni candidato (UERD o
+   HiLL) e scrive il sale, la lunghezza e il corpo sigillato come codici a
+   traliccio di sindrome (STC), modificando di ±1 i candidati meno costosi.
+5. Il sistema scrive un JPEG o un PNG, in base all'immagine di copertura, e
+   riporta il tasso e le modifiche.
 
 #### Flussi alternativi
 
 | Id | Condizione | Comportamento |
 | --- | --- | --- |
-| A1 | L'output non è `.png` | Errore: i formati con perdita distruggono il carico. |
+| A1 | L'estensione dell'output non corrisponde all'immagine di copertura (`.jpg` per un JPEG, `.png` altrimenti) | Errore che indica l'estensione attesa. |
 | A2 | Carico più grande della capacità | Errore con la capacità in byte. |
-| A3 | Immagine di copertura decodificata da JPEG | Avviso (come UC-01 A6). |
-| A4 | `--method matching` | Formato 3: un bit per campione tramite LSB matching, leggibile da shardpix 1.1. |
-| A5 | `--method replacement` | Formato 3 con LSB replacement; pensato solo per confronti, e segnalato con un avviso. |
+| A3 | L'immagine di copertura è un JPEG | Formato 5, output `.jpg` (come UC-01 A6). |
 
 ---
 
@@ -354,10 +354,12 @@ dietro 2 di 3 immagini: una a casa, una presso un familiare, una in un album
 fotografico nel cloud. La perdita di un luogo è sopportabile; la compromissione
 di uno è innocua.
 
-**Insegnare la steganalisi.** Un docente usa `embed --method replacement`,
-`embed` e `analyze` fianco a fianco per mostrare perché gli strumenti LSB
-ingenui vengono scoperti e che cosa cambia con LSB matching; i grafici del
-benchmark supportano la lezione con i dati.
+**Insegnare la steganalisi.** Un docente esegue i benchmark
+(`python -m shardpix.analysis.benchmark`, `ml_benchmark`, `pooled`) e
+`analyze` per mostrare perché i tool LSB ingenui vengono scoperti, cosa
+cambiano la LSB matching e l'inserimento adattivo, e perché contano più
+immagini della stessa cassaforte; i grafici di 05 §5.5 supportano la lezione
+con i dati.
 
 ## 2.6 Vincoli di legittimità
 
