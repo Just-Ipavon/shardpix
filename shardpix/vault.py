@@ -189,7 +189,7 @@ def seal(
     out_dir: Path,
     passphrase: str | None = None,
     *,
-    method: stego.Method = stego.Method.MATCHING,
+    method: stego.Method = stego.Method.ADAPTIVE,
     vault_name: str | None = None,
     force: bool = False,
     random_bytes: RandomBytes = os.urandom,

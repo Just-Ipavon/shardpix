@@ -208,3 +208,13 @@ class TestCodeWidth:
         monkeypatch.setattr(stego, "CHUNK_BITS", 256)
         stego_carrier, _ = stego.embed(carrier(9), bytes(range(200)), "pw", ADAPTIVE)
         assert stego.extract(stego_carrier, "pw") == bytes(range(200))
+
+
+def test_each_embedding_changes_different_samples():
+    """A fresh salt per embedding gives fresh keys, positions and code matrices."""
+    cover = carrier(10, 200, 200)
+    first, _ = stego.embed(cover, bytes(109), "pw", ADAPTIVE)
+    second, _ = stego.embed(cover, bytes(109), "pw", ADAPTIVE)
+    a = np.flatnonzero(first.pixels != cover.pixels)
+    b = np.flatnonzero(second.pixels != cover.pixels)
+    assert len(np.intersect1d(a, b)) < 0.2 * min(a.size, b.size)

@@ -430,7 +430,7 @@ def embed(
     carrier: Carrier,
     payload: bytes,
     passphrase: str | None = None,
-    method: Method = Method.MATCHING,
+    method: Method = Method.ADAPTIVE,
     random_bytes: RandomBytes = os.urandom,
 ) -> tuple[Carrier, EmbedReport]:
     """Hide ``payload`` in ``carrier`` and return the stego carrier."""

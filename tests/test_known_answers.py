@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import shamir, stego, vault
+from shardpix import shamir, stc, stego, vault
 from shardpix.images import from_pil, load_image
 
 from .conftest import PRODUCTION_SCRYPT
@@ -70,13 +70,36 @@ def test_share_encoding():
     )
 
 
+FORMAT_3 = stego.Method.MATCHING
+FORMAT_4 = stego.Method.ADAPTIVE
+
+
+def test_stc_submatrix():
+    """The code matrix is part of format 4: pin it, independently of NumPy."""
+    h_hat = stc.submatrix(bytes(32), 8)
+    assert sha256(np.packbits(h_hat).tobytes()) == (
+        "73c2e3d99b4282fb686765d97a0341e974a54bcc0c55449412ea9ffae39c2776"
+    )
+
+
 def test_stego_pixels(production_scrypt):
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"known answer", "pw", random_bytes=deterministic_random()
+        carrier, b"known answer", "pw", FORMAT_3, random_bytes=deterministic_random()
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "2672c59ad37c888ca2217dde3ba79532e5fa2d2856bc8bc32bc6c5703413bb48"
+    )
+    assert stego.extract(stego_carrier, "pw") == b"known answer"
+
+
+def test_stego_pixels_format_4(production_scrypt):
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"known answer", "pw", FORMAT_4, random_bytes=deterministic_random()
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "dc94896bfff08879cd7ab29dd07ed130ea7b6fcde0444c8ad9720a3eea024b7a"
     )
     assert stego.extract(stego_carrier, "pw") == b"known answer"
 
@@ -90,7 +113,13 @@ def test_vault_file_and_image(tmp_path, production_scrypt):
     source = tmp_path / "secret.txt"
     source.write_bytes(b"pinned vault content")
     result = vault.seal(
-        source, covers, 2, tmp_path / "out", "pw", random_bytes=deterministic_random(b"vault")
+        source,
+        covers,
+        2,
+        tmp_path / "out",
+        "pw",
+        method=FORMAT_3,
+        random_bytes=deterministic_random(b"vault"),
     )
     assert sha256(result.vault_path.read_bytes()) == (
         "d210c0702a3f981197e26dc7873bc312e84c46ad7be66ac4cd6a8aea2ecea969"
@@ -106,8 +135,19 @@ def test_stego_pixels_without_passphrase():
     """Public mode has its own key derivation; pin it too (found by mutation testing)."""
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"public payload", None, random_bytes=deterministic_random(b"public")
+        carrier, b"public payload", None, FORMAT_3, random_bytes=deterministic_random(b"public")
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "b33b6b23db6d180c7fb3b4a331de776148b30030ec3419dd9b1b6957aac481e1"
     )
+
+
+def test_stego_pixels_without_passphrase_format_4():
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"public payload", None, FORMAT_4, random_bytes=deterministic_random(b"public")
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "67d970a38da7f92fdfdc8cc567d31753de95cd9ec3224d7ef264325e6f47ce0a"
+    )
+    assert stego.extract(stego_carrier) == b"public payload"

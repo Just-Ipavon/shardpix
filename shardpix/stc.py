@@ -16,6 +16,8 @@ larger ``h`` gets closer to the theoretical bound at the price of time.
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 HEIGHT = 10
@@ -29,10 +31,13 @@ def submatrix(seed: bytes, width: int, height: int = HEIGHT) -> np.ndarray:
 
     The first and last rows are all ones, which every good STC submatrix
     has: each column then reaches both the current and the last message bit
-    of its window.
+    of its window. The bits come from SHAKE-256, not from a NumPy generator,
+    so the matrix - and every image written with it - does not depend on the
+    NumPy version.
     """
-    rng = np.random.default_rng(np.frombuffer(seed, dtype=np.uint32))
-    h_hat = rng.integers(0, 2, size=(height, width), dtype=np.uint8)
+    stream = hashlib.shake_256(b"shardpix/stc|" + seed).digest((height * width + 7) // 8)
+    bits = np.unpackbits(np.frombuffer(stream, dtype=np.uint8))[: height * width]
+    h_hat = bits.reshape(height, width).astype(np.uint8)
     h_hat[0, :] = 1
     h_hat[-1, :] = 1
     return h_hat
