@@ -73,6 +73,8 @@ class TestSplitCombine:
     @pytest.mark.parametrize(
         "secret,threshold,count",
         [(b"", 2, 3), (b"x", 1, 3), (b"x", 4, 3), (b"x", 2, 256), (bytes(70_000), 2, 3)],
+        # Short ids: a 70,000-byte id overflows the environment on Windows.
+        ids=["empty", "threshold-1", "threshold-above-n", "n-256", "too-long"],
     )
     def test_invalid_parameters(self, secret, threshold, count):
         with pytest.raises(ValueError):
