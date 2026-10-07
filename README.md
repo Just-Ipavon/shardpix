@@ -154,7 +154,6 @@ shardpix analyze suspicious.png
 | `-d, --directory` | Output directory (`seal`: default `./sealed`; `split`: one file per share) |
 | `-p, --passphrase` | Prompt for a passphrase |
 | `--passphrase-file` | Read the passphrase from the first line of a file |
-| `-m, --method` | `matching` (default) or `replacement`, for comparisons |
 | `-o, --output` | Output file |
 | `--name` | Vault file name (`seal`) |
 | `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
