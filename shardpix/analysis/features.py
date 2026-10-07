@@ -137,6 +137,68 @@ def srm_lite(channel: np.ndarray) -> np.ndarray:
     return np.concatenate(parts)
 
 
+# --------------------------------------------------------------------------- DCTR (JPEG)
+
+DCTR_T = 4
+DCTR_DIM = 64 * 25 * (DCTR_T + 1)
+
+
+def _dct_matrix() -> np.ndarray:
+    """Orthonormal 8-point DCT-II, the transform JPEG uses: ``F = D f D^T``."""
+    k = np.arange(8)[:, None]
+    x = np.arange(8)[None, :]
+    d = np.cos(np.pi * k * (2 * x + 1) / 16) / 2
+    d[0] /= np.sqrt(2)
+    return d
+
+
+_DCT = _dct_matrix()
+
+
+def decompress(blocks: np.ndarray, quant: np.ndarray) -> np.ndarray:
+    """Pixels of a greyscale JPEG from its quantised coefficients, as a decoder would."""
+    hb, wb = blocks.shape[:2]
+    dequantised = blocks.astype(np.float64) * quant
+    pixels = np.einsum("ux,hwuv,vy->hwxy", _DCT, dequantised, _DCT) + 128
+    image = pixels.transpose(0, 2, 1, 3).reshape(hb * 8, wb * 8)
+    return np.clip(np.round(image), 0, 255)
+
+
+def dctr_step(quality: int) -> float:
+    """DCTR quantisation step for a JPEG quality factor (4 at quality 75)."""
+    return 8 * (2 - quality / 50) if quality > 50 else 8 * 50 / quality
+
+
+def dctr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
+    """DCTR features (Holub and Fridrich, 2015) of a greyscale JPEG: 8000 values.
+
+    The decompressed image is filtered with the 64 DCT basis patterns; each
+    residual is quantised by ``step``, truncated to ``[0, 4]`` in magnitude
+    and histogrammed separately for each position within the 8x8 grid, with
+    positions merged by the symmetry ``a -> min(a, 8 - a)`` into 25 classes.
+    Steganography in the coefficients perturbs exactly these statistics.
+    """
+    image = decompress(blocks, quant).astype(np.float32)
+    h, w = image.shape
+    oh, ow = h - 7, w - 7
+    rows = np.empty((8, h, ow), dtype=np.float32)
+    for k in range(8):
+        rows[k] = sum(float(_DCT[k, t]) * image[:, t : t + ow] for t in range(8))
+    phase_r = np.minimum(np.arange(oh) % 8, 8 - np.arange(oh) % 8)
+    phase_c = np.minimum(np.arange(ow) % 8, 8 - np.arange(ow) % 8)
+    groups = (phase_r[:, None] * 5 + phase_c[None, :]).ravel()
+    per_group = np.bincount(groups, minlength=25).astype(np.float64)
+    bins = DCTR_T + 1
+    out = []
+    for v in range(8):
+        for k in range(8):
+            residual = sum(float(_DCT[v, t]) * rows[k, t : t + oh, :] for t in range(8))
+            values = np.minimum(np.round(np.abs(residual) / step), DCTR_T).astype(np.int64)
+            counts = np.bincount(groups * bins + values.ravel(), minlength=25 * bins)
+            out.append((counts.reshape(25, bins) / per_group[:, None]).ravel())
+    return np.concatenate(out)
+
+
 # --------------------------------------------------------------------------- public API
 
 EXTRACTORS: dict[str, Callable[[np.ndarray], np.ndarray]] = {
