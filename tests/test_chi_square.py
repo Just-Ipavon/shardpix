@@ -90,3 +90,40 @@ class TestSequentialAttack:
     def test_rejects_zero_steps(self):
         with pytest.raises(ValueError):
             chi_square.sequential_attack(np.zeros(10, np.uint8), steps=0)
+
+
+def _laplacian_coefficients(n: int = 200_000, seed: int = 0) -> np.ndarray:
+    """Quantised DCT coefficients shaped like a photo's: peaked at 0, two-sided."""
+    rng = np.random.default_rng(seed)
+    return np.round(rng.laplace(0, 3.0, n)).astype(np.int64)
+
+
+def _jsteg(coefficients: np.ndarray, fraction: float, seed: int = 1) -> np.ndarray:
+    """Overwrite the lowest bit of the first ``fraction`` of usable coefficients, as JSteg."""
+    out = coefficients.copy()
+    usable = np.flatnonzero((out != 0) & (out != 1))
+    chosen = usable[: int(fraction * usable.size)]
+    out[chosen] = (out[chosen] & ~1) | np.random.default_rng(seed).integers(0, 2, chosen.size)
+    return out
+
+
+class TestCoefficients:
+    def test_clean_coefficients_are_not_flagged(self):
+        assert chi_square.coefficient_pair_test(_laplacian_coefficients()).p_value < 0.01
+
+    def test_full_jsteg_embedding_is_flagged(self):
+        stego_coefficients = _jsteg(_laplacian_coefficients(), 1.0)
+        assert chi_square.coefficient_pair_test(stego_coefficients).p_value > 0.5
+
+    def test_sequential_attack_finds_the_payload_length(self):
+        # A million coefficients, as in a small photo: each step holds enough of them.
+        stego_coefficients = _jsteg(_laplacian_coefficients(1_000_000), 0.5)
+        curve = chi_square.sequential_coefficient_attack(stego_coefficients, steps=20)
+        assert 0.4 <= curve.detected_prefix() <= 0.6
+
+    def test_negative_values_pair_in_twos_complement(self):
+        # -2 and -1 form a pair, as 2 and 3 do; (0, 1) is left out.
+        values = np.array([-2] * 50 + [-1] * 50 + [0] * 900 + [1] * 10 + [2] * 50 + [3] * 50)
+        result = chi_square.coefficient_pair_test(values)
+        assert result.dof == 1
+        assert result.statistic == 0.0

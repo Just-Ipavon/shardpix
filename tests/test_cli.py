@@ -584,3 +584,31 @@ class TestLowQualityJpeg:
         out = capsys.readouterr().out
         assert "JPEG quality" in out
         assert "about 75" in out
+
+
+class TestAnalyzeJpeg:
+    def test_a_clean_photo_is_not_flagged(self, tmp_path, capsys):
+        from .conftest import phone_jpeg
+
+        photo = phone_jpeg(tmp_path / "photo.jpg", 384, 512, quality=92)
+        assert run("analyze", photo, "--steps", "20") == 0
+        out = capsys.readouterr().out
+        assert "quantised DCT" in out
+        assert "No JSteg-like embedding detected" in out
+
+    def test_jsteg_like_embedding_is_flagged(self, tmp_path, capsys):
+        import jpeglib
+
+        from .conftest import phone_jpeg
+
+        photo = phone_jpeg(tmp_path / "photo.jpg", 384, 512, quality=92)
+        image = jpeglib.read_dct(str(photo))
+        image.load()
+        y = image.Y.astype(np.int64)
+        usable = (y != 0) & (y != 1)
+        bits = np.random.default_rng(0).integers(0, 2, y.shape)
+        y = np.where(usable, (y & ~1) | bits, y)
+        image.Y = y.astype(image.Y.dtype)
+        image.write_dct(str(tmp_path / "jsteg.jpg"))
+        assert run("analyze", tmp_path / "jsteg.jpg", "--steps", "20") == 0
+        assert "Suspicious" in capsys.readouterr().out
