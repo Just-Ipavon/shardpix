@@ -441,17 +441,57 @@ coefficient (`python -m shardpix.analysis.jpeg_benchmark`). The baseline is
 the non-adaptive equivalent of format 3: one bit per coefficient at random
 non-zero AC positions, ±1 away from zero.
 
-**Status: being measured on the 10,000 images.** A preliminary run on 200
-images at quality 95 (100 test pairs, intervals of about ±7 points) gave:
+Two of the 10,000 photographs at quality 75 are too flat to hold any
+payload (shardpix refuses them as covers) and stay unchanged; eight more hold
+less than a share and carry what they can. At quality 95 every photograph
+holds a share.
 
-| 200 images, quality 95 | One share | 0.4 bits per non-zero AC (control) |
-| --- | ---: | ---: |
-| Non-adaptive baseline | 43.0% | 0.0% |
-| Format 5 | 49.0% | 15.5% |
+**One image.**
 
-This only shows that the experiment works (the control is detected) and
-which way it points; the full results and the pooled analysis replace this
-table when they are complete.
+| Payload | Quality 95, baseline | Quality 95, format 5 | Quality 75, baseline | Quality 75, format 5 |
+| --- | ---: | ---: | ---: | ---: |
+| One share | 18.6% [17.9, 19.4] | **49.6%** [48.6, 50.5] | 2.4% [2.1, 2.7] | **42.5%** [41.6, 43.5] |
+| 0.1 bits per non-zero AC (control) | 0.1% | 38.0% | 0.1% | 27.3% |
+
+AUC for one share: 0.90 and 0.51 at quality 95, 1.00 and 0.62 at quality 75.
+The controls show the detector sees format 5 once the payload is large.
+
+**Several images of one vault** (pooled as in §5.5.7, likelihood ratio, 40
+splits; raw numbers in [data/pooled_jpeg_q95.json](data/pooled_jpeg_q95.json)
+and [data/pooled_jpeg_q75.json](data/pooled_jpeg_q75.json)):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-q75-dark.png">
+  <img alt="Detection error against the number of JPEG images of one vault at quality 75: format 5 falls from 43% with one image to 8% with fifty; the baseline is near 0 from the start" src="../assets/pooled-jpeg-q75-light.png">
+</picture>
+
+| Images of one vault | Quality 95, baseline | Quality 95, format 5 | Quality 75, baseline | Quality 75, format 5 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 18.6% | 49.8% | 2.5% | 42.9% |
+| 2 | 10.1% | 49.8% | 0.3% | 38.5% |
+| 5 | 2.1% | **49.6%** [47.1, 51.5] | 0.0% | **31.8%** [29.4, 35.2] |
+| 10 | 0.2% | **50.0%** [46.4, 54.6] | 0.0% | **24.8%** [21.9, 27.4] |
+| 20 | 0.0% | 48.8% | 0.0% | 16.9% |
+| 50 | 0.0% | **50.0%** [42.5, 62.9] | 0.0% | **7.8%** [4.8, 11.4] |
+
+What this shows:
+
+1. **At quality 95 format 5 is at chance**, for one image and for fifty,
+   where the non-adaptive baseline is caught 81% of the time on one image
+   and always on ten. This is the case of phone photographs used as taken.
+2. **At quality 75 format 5 repeats what format 3 did in pixels** (§5.5.7):
+   a weak per-image signal (42.9%) that pooling turns into a strong one
+   (7.8% with fifty images, 24.8% with ten). Coarse quantisation leaves
+   fewer and larger non-zero coefficients, so each change weighs more.
+3. **The quality of the cover matters more than the method.** The same code
+   is safe on a high-quality JPEG and detectable on a heavily compressed
+   one. Covers should be original camera files; a photo saved from a
+   messaging app or a social network has usually been recompressed to
+   quality 70-85.
+
+Caveats: the covers are BOSSbase images compressed by Pillow, not files
+from phone cameras; one detector (DCTR); the detector trained at the exact
+payload. Stronger JPEG detectors (GFR, SRNet) were not run.
 
 ## 5.6 Known limitations
 

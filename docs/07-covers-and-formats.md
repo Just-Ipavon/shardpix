@@ -18,8 +18,10 @@ Four rules matter more than anything else:
 
 1. a colour photo of at least 2 megapixels with some texture (any phone
    photo qualifies);
-2. a photo nobody else has: never one from the web, and never publish the
-   original;
+2. an original photo nobody else has: never one from the web, never one
+   saved from a chat or a social network (they are recompressed, and at low
+   JPEG quality the shares become detectable once several are pooled, 05
+   §5.5.8), and never publish the original;
 3. send the result as a **file** (e-mail attachment, cloud drive, "send as
    document"), never as a "photo" in a messaging app, which re-compresses it;
 4. on iPhone, keep the camera on *Most Compatible* (JPEG) rather than *High
@@ -121,6 +123,10 @@ the output must carry the matching extension (`.jpg` or `.png`).
   share. Steganalysis of the content is a separate question (05 §5.5.8).
 - **Luminance only.** Chroma coefficients are never used: they are fewer,
   more coarsely quantised, and capacity is far beyond a share anyway.
+- **Low-quality JPEGs.** At quality 95 format 5 is at chance against DCTR,
+  for one image and for fifty pooled; at quality 75 it is weakly detectable
+  on one image (42.5%) and clearly with many (7.8% with fifty). Use original
+  camera files, which phones save at quality 90 or more (05 §5.5.8).
 - **Detectors.** Format 5 is measured against DCTR; stronger JPEG detectors
   (GFR, deep networks such as SRNet for JPEG) were not run.
 

@@ -20,8 +20,10 @@ Quattro regole contano più di tutto il resto:
 
 1. una foto a colori di almeno 2 megapixel e con un po' di texture (qualsiasi
    foto da smartphone va bene);
-2. una foto che nessun altro possiede: mai una presa dal web, e non
-   pubblicare mai l'originale;
+2. una foto originale che nessun altro possiede: mai una presa dal web, mai
+   una salvata da una chat o da un social (sono ricompresse, e a bassa
+   qualità JPEG le quote diventano rilevabili quando se ne aggregano
+   diverse, 05 §5.5.8), e non pubblicare mai l'originale;
 3. invia il risultato come **file** (allegato e-mail, archivio cloud, "invia
    come documento"), mai come "foto" in un'app di messaggistica, che la
    ricomprimerebbe;
@@ -132,6 +134,11 @@ file in uscita deve avere l'estensione corrispondente (`.jpg` o `.png`).
 - **Solo la luminanza.** I coefficienti di crominanza non vengono mai usati:
   sono meno numerosi, quantizzati in modo più grossolano, e in ogni caso la
   capacità supera di gran lunga quella necessaria per una quota.
+- **JPEG di bassa qualità.** A qualità 95 il formato 5 è al livello del caso
+  contro DCTR, con un'immagine e con cinquanta aggregate; a qualità 75 è
+  debolmente rilevabile su un'immagine (42,5%) e chiaramente con molte (7,8%
+  con cinquanta). Usa i file originali della fotocamera, che i telefoni
+  salvano a qualità 90 o più (05 §5.5.8).
 - **Rilevatori.** Il formato 5 è stato misurato contro DCTR; rilevatori JPEG
   più potenti (GFR, reti profonde come SRNet per JPEG) non sono stati provati.
 
