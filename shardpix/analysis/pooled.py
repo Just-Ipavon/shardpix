@@ -249,7 +249,7 @@ def plot(results: dict, out: Path, mode: str, size: int) -> Path:
     ax.set_xticks(results["groups"])
     ax.set_xticklabels([str(g) for g in results["groups"]])
     ax.xaxis.set_minor_locator(NullLocator())
-    ax.set_ylim(0, 56)
+    ax.set_ylim(0, 60)
     ax.text(results["groups"][0] * 1.05, 51.5, "guessing", color=theme["muted"], fontsize=8.5)
     ax.set_xlabel(
         "Images of the same vault in the adversary's hands (log scale)",
@@ -262,9 +262,9 @@ def plot(results: dict, out: Path, mode: str, size: int) -> Path:
         fig,
         ax,
         theme,
-        "Several images of one vault: pooled steganalysis",
-        f"SRM-lite scores combined by likelihood ratio; one share per image, "
-        f"{size}x{size} BOSSbase. Shaded: 2.5-97.5% over 40 splits.",
+        "One vault, many images: format 3 falls, format 4 holds",
+        f"SRM-lite, scores pooled by likelihood ratio, one share per image, BOSSbase "
+        f"{size}x{size}.\nShaded: 2.5-97.5% over 40 splits.",
         path,
         legend_at="lower left",
     )
