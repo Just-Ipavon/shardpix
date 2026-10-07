@@ -2,11 +2,11 @@
 
 | | |
 | --- | --- |
-| System | shardpix 1.1.0 |
+| System | shardpix 2.0.0 |
 | Document type | Software Design Description (SDD) |
 | Reference structure | ISO/IEC/IEEE 1016 |
 | Diagram notation | UML 2.5, rendered in Mermaid |
-| Last revised | 2026-10-06 |
+| Last revised | 2026-10-07 |
 
 ## Index
 

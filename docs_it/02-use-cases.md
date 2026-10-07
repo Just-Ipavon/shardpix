@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-02 — Specifica dei casi d'uso |
-| Sistema | shardpix 1.1.0 |
+| Sistema | shardpix 2.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-06 |
+| Ultima revisione | 2026-10-07 |
 | Lingua | Italiano (traduzione di [docs/02-use-cases.md](../docs/02-use-cases.md); in caso di differenze fa fede l'inglese) |
 
 ## 2.1 Attori
