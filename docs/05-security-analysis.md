@@ -221,8 +221,9 @@ its stego image are always on the same side.
 **The attacker is given every advantage.** The detector is trained at the
 exact rate it is tested on and on images from the same source as the test
 images. In the field a steganalyst knows neither the rate nor the camera and
-processing that produced the covers, and *cover-source mismatch* is known to
-cost trained detectors a large part of their accuracy. The numbers below are
+processing that produced the covers, and *cover-source mismatch* - training
+on one kind of image and testing on another - is known to cost trained
+detectors accuracy, often substantially. The numbers below are
 therefore an upper bound on what these detectors achieve, not an estimate of
 what they would achieve on a real holder's photo.
 
@@ -252,16 +253,26 @@ Resized to 256x256, the size most deep-learning steganalysis is evaluated
 at, a share is 1.93% of the samples (raw numbers in
 [data/ml_benchmark_256.json](data/ml_benchmark_256.json)):
 
-| Samples carrying bits | Bits | M/√N | SPAM | SRM-lite |
-| ---: | ---: | ---: | ---: | ---: |
-| 40% | 26,214 | 102 | 6.9% | 4.7% |
-| 20% | 13,107 | 51 | 13.0% | 8.1% |
-| 10% | 6,554 | 26 | 18.9% | 12.7% |
-| 5% | 3,277 | 13 | 26.2% | 19.0% |
-| 2% | 1,311 | 5.1 | 36.1% | 28.7% |
-| **1.93% (one share)** | **1,264** | **4.9** | **35.9%** [34.9, 36.8] | **29.6%** [28.7, 30.5] |
-| 1% | 655 | 2.6 | 42.2% | 37.1% |
-| 0.5% | 328 | 1.3 | 46.0% | 42.9% |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/ml-detection-256-dark.png">
+  <img alt="Detection error at 256x256 for SPAM, SRM-lite and the CNN: 5-7% at 40% embedding, 30-36% at one vault share, 43-46% at 0.5%" src="../assets/ml-detection-256-light.png">
+</picture>
+
+| Samples carrying bits | Bits | M/√N | SPAM | SRM-lite | CNN |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 40% | 26,214 | 102 | 6.9% | 4.7% | 5.2% |
+| 20% | 13,107 | 51 | 13.0% | 8.1% | 11.6% |
+| 10% | 6,554 | 26 | 18.9% | 12.7% | 15.7% |
+| 5% | 3,277 | 13 | 26.2% | 19.0% | 20.5% |
+| 2% | 1,311 | 5.1 | 36.1% | 28.7% | — |
+| **1.93% (one share)** | **1,264** | **4.9** | **35.9%** [34.9, 36.8] | **29.6%** [28.7, 30.5] | **31.6%** [30.6, 32.5] |
+| 1% | 655 | 2.6 | 42.2% | 37.1% | 37.8% |
+| 0.5% | 328 | 1.3 | 46.0% | 42.9% | — |
+
+The CNN was trained once, from 40% down to 1%, fine-tuning at each rate
+from the previous one (20 epochs at 40%, then 5 per rate, on 128x128
+windows; about two hours on four CPU cores). It is not run at 512x512, where
+training and testing would take several times longer on a CPU.
 
 What this shows:
 
@@ -275,20 +286,23 @@ What this shows:
    before this measurement, that trained detectors would not see a share at
    all, was wrong for covers this small.
 3. **Smaller covers are worse.** At 256x256 the same 158 bytes are 1.93% of
-   the samples and SRM-lite drops to 29.6%.
+   the samples and SRM-lite drops to 29.6%. The CNN reaches 31.6%: a
+   network of this size, trained on a CPU, matches the rich model rather
+   than beating it, so deep learning does not change the picture at this
+   scale.
 4. **What matters is the payload against the square root of the cover.**
    The *square-root law* of steganographic capacity (Ker et al.) says a fixed
    payload of M bits in a cover of N samples becomes harder to detect as
    M/√N decreases, not merely as M/N does. The share is fixed at 1,264 bits,
-   so the cover size alone decides. At M/√N ≈ 0.5 both detectors are at
-   chance within the interval. The two image sizes agree with the law only
+   so the cover size alone decides. At M/√N ≈ 0.5 SPAM is at chance within
+   its interval and SRM-lite is 1.5 points from it (48.5%, AUC 0.52). The two image sizes agree with the law only
    roughly (at M/√N = 1.3, SRM-lite reads 45.6% at 512 and 42.9% at 256),
    because resizing changes the noise the detectors rely on.
 
 What it means for a real cover: a share in a 512x512 greyscale image has
 M/√N ≈ 2.5; in a 1-megapixel colour photo (3 million samples) ≈ 0.7; in a
-2-megapixel colour photo ≈ 0.5; in a 12-megapixel phone photo ≈ 0.2, more
-than twice below the lowest point measured. **Use colour photos of at least
+2-megapixel colour photo ≈ 0.5, the lowest point measured; in a
+12-megapixel phone photo ≈ 0.2, more than twice below it. **Use colour photos of at least
 2 megapixels.** That threshold is an extrapolation along the square-root law
 from greyscale 512x512 images, not a measurement on large photos, which
 BOSSbase does not contain.
@@ -301,7 +315,7 @@ pip install -e ".[bench,ml]"
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --detectors spam,srm_lite
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --detectors spam,srm_lite --rates 0.0025,0.001
 python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.02,0.01,0.005 --detectors spam,srm_lite
-python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.01 --detectors cnn --fine-epochs 5
+python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0.2,0.1,0.05,0.01 --detectors cnn --fine-epochs 5 --checkpoint cnn-256
 ```
 
 ## 5.6 Known limitations
@@ -310,15 +324,16 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0
 
 **Trained steganalysis sees shares in small covers.** Measured in §5.5.5:
 in a 512x512 greyscale photo a share brings a rich-model detector to 42.5%
-error, against 50% for guessing; at 256x256 to 29.6%. In colour photos of
-2 megapixels or more the share falls below the lowest rate measured, where
-the detectors were at chance — but that is an extrapolation along the
-square-root law, not a measurement on large photos. The detectors used are
-SPAM, a 3,125-feature subset of the spatial rich model and a small CNN
-trained on a CPU; the full SRM (34,671 features) and larger networks such as
-SRNet, trained on a GPU, would likely do better. Shares are not adaptive:
-they do not prefer textured regions as HUGO, WOW or S-UNIWARD do, which
-would lower detectability further at the same payload.
+error, against 50% for guessing; at 256x256 to 29.6%, and a CNN to 31.6%.
+In colour photos of 2 megapixels or more the share falls to or below the
+lowest rate measured, where the detectors were at or within 1.5 points of
+chance — but that is an
+extrapolation along the square-root law, not a measurement on large photos.
+The detectors used are SPAM, a 3,125-feature subset of the spatial rich
+model and a small CNN trained on a CPU; the full SRM (34,671 features) and
+larger networks such as SRNet, trained on a GPU, would likely do better.
+Shares are not adaptive: they do not prefer textured regions as HUGO, WOW or
+S-UNIWARD do, which would lower detectability further at the same payload.
 
 **JPEG covers.** Pixels decoded from a JPEG obey the block quantisation of
 the original file. Changing any of them by ±1 breaks that structure, which

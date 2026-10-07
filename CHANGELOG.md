@@ -17,8 +17,9 @@ All notable changes to this project are documented here. The format follows
 
 - docs/05 §5.5.5 reports the measurement and §5.6 replaces the expectation
   that trained detectors would not see a share: in a 512x512 greyscale photo
-  they do, weakly (42.5% error against 50% for guessing). Covers should be
-  colour photos of at least 2 megapixels.
+  they do, weakly (42.5% error against 50% for guessing; 29.6% for the rich
+  model and 31.6% for the CNN at 256x256). Covers should be colour photos of
+  at least 2 megapixels.
 
 ## [1.1.0] — 2026-10-06
 

@@ -170,6 +170,86 @@
         "oob_error": 0.050699999999999995,
         "subspace_dim": 400
       }
+    ],
+    "cnn": [
+      {
+        "rate": 0.01,
+        "p_e": 0.37779999999999997,
+        "p_e_low": 0.3682971898795356,
+        "p_e_high": 0.38730281012046436,
+        "auc": 0.68291174,
+        "test_pairs": 5000,
+        "validation_error": 0.421,
+        "best_epoch": 0,
+        "epochs": 5,
+        "minutes": 11.070464551448822
+      },
+      {
+        "rate": 0.019287109375,
+        "p_e": 0.3155,
+        "p_e_low": 0.30639159193052923,
+        "p_e_high": 0.3246084080694708,
+        "auc": 0.78503416,
+        "test_pairs": 5000,
+        "validation_error": 0.39049999999999996,
+        "best_epoch": 3,
+        "epochs": 5,
+        "minutes": 11.06317242383957
+      },
+      {
+        "rate": 0.05,
+        "p_e": 0.20540000000000003,
+        "p_e_low": 0.19748172516930615,
+        "p_e_high": 0.2133182748306939,
+        "auc": 0.8891358,
+        "test_pairs": 5000,
+        "validation_error": 0.3355,
+        "best_epoch": 5,
+        "epochs": 5,
+        "minutes": 11.22530916929245
+      },
+      {
+        "rate": 0.1,
+        "p_e": 0.1566,
+        "p_e_low": 0.14947690480265777,
+        "p_e_high": 0.1637230951973422,
+        "auc": 0.91520174,
+        "test_pairs": 5000,
+        "validation_error": 0.288,
+        "best_epoch": 5,
+        "epochs": 5,
+        "minutes": 11.745705060164134
+      },
+      {
+        "rate": 0.2,
+        "p_e": 0.11560000000000002,
+        "p_e_low": 0.10933300489689039,
+        "p_e_high": 0.12186699510310965,
+        "auc": 0.94506172,
+        "test_pairs": 5000,
+        "validation_error": 0.2455,
+        "best_epoch": 3,
+        "epochs": 5,
+        "minutes": 12.700475517908732
+      },
+      {
+        "rate": 0.4,
+        "p_e": 0.05170000000000002,
+        "p_e_low": 0.04736015500534871,
+        "p_e_high": 0.056039844994651325,
+        "auc": 0.99001076,
+        "test_pairs": 5000,
+        "validation_error": 0.06,
+        "best_epoch": 5,
+        "epochs": 20,
+        "minutes": 46.126933268706004
+      }
     ]
+  },
+  "cnn_training": {
+    "first_epochs": 20,
+    "fine_epochs": 5,
+    "crop": 128,
+    "curriculum": "highest rate first, each rate fine-tuned from the previous"
   }
 }
