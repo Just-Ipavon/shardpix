@@ -27,7 +27,7 @@ are built in.
 ```text
 notes.pdf ──AES-256-GCM, random key K──────────►  notes.pdf.spx      store it anywhere
 K ─────────Shamir over GF(256), 3 of 5─────────►  5 authenticated shares
-share i ───adaptive ±1, ~0.08% of pixels──────►  photo_i.png        one per holder
+share i ───adaptive ±1, a few hundred changes─►  photo_i.jpg        one per holder
 ```
 
 - **The vault file** is ciphertext. It can sit on a shared drive or in an
@@ -155,22 +155,20 @@ Reproduce them with `pip install -e ".[bench]"` and
 `pip install -e ".[bench,ml]"` and `python -m shardpix.analysis.ml_benchmark`
 on a copy of BOSSbase.
 
-## Choosing covers: PNG, JPEG and phone photos
+## Phone photos and other covers
 
-PNG stores every pixel exactly; JPEG stores rounded frequency coefficients
-in 8x8 blocks. shardpix hides data in pixels, so:
+**Use the photos your phone takes, as they are.** shardpix reads the first
+bytes of each cover and hides the share the way that file is stored:
 
-| Cover | Result |
-| --- | --- |
-| PNG or TIFF photo, 8-bit, never JPEG-compressed (e.g. a RAW export) | Best cover |
-| Phone RAW (iPhone ProRAW, Android DNG) | Best cover, after exporting an 8-bit PNG/TIFF |
-| Phone JPEG | Works, with a warning: a ±1 change to a decoded JPEG is detectable at any rate |
-| iPhone HEIC | Not read; converting it gives the same problem as JPEG |
+| Cover | How the share is hidden | Output |
+| --- | --- | --- |
+| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 5): never decoded or recompressed, same quality tables and EXIF | `.jpg` |
+| PNG, TIFF, BMP, RAW export | In the pixels (format 4) | `.png` |
+| iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
 
-Use colour photos of at least 2 megapixels with texture, never images from
-the web, and send the results as files, not as "photos" in a messaging app.
-Embedding directly in JPEG coefficients, which would make phone JPEGs safe
-covers, is planned. Details, methods and step-by-step phone instructions:
+Choose textured photos you took yourself and never shared, and send the
+results as files, not as "photos" in a messaging app, which re-compresses
+them. Details and step-by-step instructions:
 [docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
 
 ## Design notes
@@ -217,6 +215,8 @@ would make existing images unreadable fails the build first.
 shardpix/
 ├── cli.py              commands, passphrase input, overwrite protection, exit codes
 ├── vault.py            seal and unseal: AES-256-GCM + Shamir + steganography
+├── media.py            JPEG or pixels: picks the format from the file
+├── jpeg.py             format 5: embedding in JPEG coefficients
 ├── stego.py            key derivation, keyed walk, formats v4 (adaptive) and v3, framing
 ├── stc.py              syndrome-trellis codes (Viterbi)
 ├── costs.py            HiLL embedding costs

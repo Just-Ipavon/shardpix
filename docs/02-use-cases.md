@@ -114,7 +114,7 @@ the layers can be used and demonstrated independently.
 | A3 | An output would overwrite a cover or the file | Error, even with `--force`. |
 | A4 | An output exists | Error unless `--force`. |
 | A5 | A cover is too small or too saturated for a share | Error naming the cover; nothing is written. |
-| A6 | A cover was decoded from JPEG | Sealing proceeds; a warning explains the JPEG-compatibility risk. |
+| A6 | A cover is a JPEG (a phone photo) | Its share goes into its coefficients (format 5) and the output is a `.jpg` with the same tables and metadata. |
 | A7 | No passphrase option given | Sealing proceeds; a warning says anyone with shardpix can read each share, though k are still needed. |
 | A8 | The file is larger than 2 GiB | Error: AES-GCM as exposed by `cryptography` is limited to 2 GiB per call. |
 
@@ -170,21 +170,21 @@ the layers can be used and demonstrated independently.
 2. The system checks the capacity.
 3. The system draws a salt, derives the keys from passphrase and salt, and
    seals the payload into a frame.
-4. The system computes the HiLL cost of every sample and writes the salt
-   (along the public walk), the length and the sealed body (along the keyed
-   walk) as syndrome-trellis codes, changing the cheapest samples by ±1
-   (format 4, 01 ADR-12).
-5. The system writes the PNG and reports the rate and the samples changed.
+4. The system reads the cover in the domain of its file: a JPEG as
+   quantised coefficients (format 5, 01 ADR-13), anything else as pixels
+   (format 4, ADR-12). It computes the cost of every candidate (UERD or
+   HiLL) and writes the salt, the length and the sealed body as
+   syndrome-trellis codes, changing the cheapest candidates by ±1.
+5. The system writes a JPEG or a PNG, matching the cover, and reports the
+   rate and the changes.
 
 #### Alternative flows
 
 | Id | Condition | Behaviour |
 | --- | --- | --- |
-| A1 | Output is not `.png` | Error: lossy formats destroy the payload. |
+| A1 | Output extension does not match the cover (`.jpg` for a JPEG, `.png` otherwise) | Error naming the expected extension. |
 | A2 | Payload larger than capacity | Error with the capacity in bytes. |
-| A3 | Cover decoded from JPEG | Warning (as UC-01 A6). |
-| A4 | `--method matching` | Format 3: one bit per sample by LSB matching, readable by shardpix 1.1. |
-| A5 | `--method replacement` | Format 3 with LSB replacement; intended for comparisons only, and warned about. |
+| A3 | Cover is a JPEG | Format 5, output `.jpg` (as UC-01 A6). |
 
 ---
 

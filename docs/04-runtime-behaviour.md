@@ -138,9 +138,12 @@ sequenceDiagram
     E-->>C: stego carrier, EmbedReport
 ```
 
-With `--method matching` or `replacement` (format 3) there are no costs and
-no codes: the salt and the frame are written one bit per sample at the
-first 136 public and 8 × len(frame) keyed positions.
+A JPEG cover takes the same path through `jpeg.embed` instead (format 5):
+`media.open_cover` reads its quantised coefficients without decoding them,
+the candidates are the non-zero AC luminance coefficients, the costs are
+UERD, and the result is written back as a JPEG with the original tables and
+metadata. The baseline methods of format 3, used only by the benchmarks,
+write one bit per sample with no costs and no codes.
 
 ## 4.5 Extracting a payload
 

@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Phone photos are used as taken.** A JPEG cover is embedded in its own
+  quantised coefficients (**stego format 5**, `shardpix/jpeg.py`): non-zero
+  AC luminance coefficients, UERD costs, the same syndrome-trellis codes as
+  format 4; never decoded or recompressed, written back with the same
+  quantisation tables and EXIF/ICC metadata. The output is a `.jpg`. Other
+  covers still give PNG (format 4). `media.py` picks the format from the
+  file's first bytes.
+- The CLI no longer has `--method`: format 3 (matching, replacement) stays
+  in the library as a benchmark baseline only.
+
 - **Stego format v4, adaptive embedding, is the default** for `seal`,
   `embed` and the library (`Method.ADAPTIVE`). The salt, the length and the
   sealed body are written as syndrome-trellis codes (Filler, Judas and
@@ -23,7 +33,9 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - `shardpix/stc.py` (syndrome-trellis codes) and `shardpix/costs.py`
-  (HiLL costs).
+  (HiLL and UERD costs); `shardpix/media.py`; new dependency `jpeglib`.
+- DCTR features and a JPEG steganalysis benchmark
+  (`python -m shardpix.analysis.jpeg_benchmark`).
 - docs/07: PNG and JPEG, the embedding methods, and how to get good covers
   from a phone.
 - `ml_benchmark --strategy adaptive`.

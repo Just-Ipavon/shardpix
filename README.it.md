@@ -28,7 +28,7 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 ```text
 notes.pdf ──AES-256-GCM, chiave casuale K──────►  notes.pdf.spx      conservalo dove vuoi
 K ─────────Shamir su GF(256), 3 su 5───────────►  5 quote autenticate
-quota i ───±1 adattivo, ~0,08% dei pixel───────►  photo_i.png        una per custode
+quota i ───±1 adattivo, poche centinaia di modifiche►  photo_i.jpg   una per custode
 ```
 
 - **Il file vault** è testo cifrato. Può stare su un disco condiviso o in una
@@ -162,24 +162,21 @@ Per riprodurli: `pip install -e ".[bench]"` e poi
 `pip install -e ".[bench,ml]"` e `python -m shardpix.analysis.ml_benchmark`
 su una copia di BOSSbase.
 
-## Scegliere le foto: PNG, JPEG e foto del telefono
+## Foto del telefono e altre immagini
 
-Il PNG conserva ogni pixel esattamente; il JPEG conserva coefficienti di
-frequenza arrotondati, a blocchi di 8x8. shardpix nasconde i dati nei pixel,
-quindi:
+**Usa le foto scattate dal telefono così come sono.** shardpix legge i primi
+byte di ogni immagine e nasconde la quota nel modo in cui quel file è
+memorizzato:
 
-| Foto | Risultato |
-| --- | --- |
-| Foto PNG o TIFF a 8 bit, mai compressa in JPEG (ad esempio un'esportazione da RAW) | La scelta migliore |
-| RAW del telefono (ProRAW su iPhone, DNG su Android) | La scelta migliore, dopo averla esportata in PNG/TIFF a 8 bit |
-| JPEG del telefono | Funziona, con un avviso: una modifica di ±1 a un JPEG decodificato si rileva a qualunque tasso |
-| HEIC dell'iPhone | Non viene letto; convertirlo porta allo stesso problema del JPEG |
+| Immagine | Come viene nascosta la quota | Risultato |
+| --- | --- | --- |
+| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 5): mai decodificato né ricompresso, stesse tabelle di qualità ed EXIF | `.jpg` |
+| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 4) | `.png` |
+| HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
 
-Usa foto a colori di almeno 2 megapixel, con texture, mai immagini prese da
-internet, e invia i risultati come file, non come "foto" in un'app di
-messaggistica. L'inserimento direttamente nei coefficienti JPEG, che
-renderebbe sicure le foto JPEG del telefono, è in programma. Dettagli,
-metodi e istruzioni passo passo per il telefono:
+Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
+come file, non come "foto" in un'app di messaggistica, che le ricomprime.
+Dettagli e istruzioni passo passo:
 [docs_it/07-covers-and-formats.md](docs_it/07-covers-and-formats.md).
 
 ## Scelte progettuali
@@ -232,6 +229,8 @@ immagini esistenti fa fallire prima la build.
 shardpix/
 ├── cli.py              comandi, passphrase, protezione da sovrascritture, codici di uscita
 ├── vault.py            seal e unseal: AES-256-GCM + Shamir + steganografia
+├── media.py            JPEG o pixel: sceglie il formato dal file
+├── jpeg.py             formato 5: inserimento nei coefficienti JPEG
 ├── stego.py            derivazione delle chiavi, percorso, formati v4 (adattivo) e v3, framing
 ├── stc.py              codici a traliccio di sindrome (Viterbi)
 ├── costs.py            costi HiLL delle modifiche
