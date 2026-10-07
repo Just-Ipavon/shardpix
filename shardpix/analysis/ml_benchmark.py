@@ -417,6 +417,83 @@ def plot(results: dict, out: Path, mode: str) -> Path:
     return path
 
 
+def plot_comparison(legacy: dict, adaptive: dict, out: Path, mode: str) -> Path:
+    """Format 3 against format 4: the same detectors, the same images."""
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import NullLocator
+
+    theme = THEMES[mode]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    fig.subplots_adjust(left=0.1, right=0.95, top=0.8, bottom=0.13)
+    _style_axes(ax, theme)
+    ax.set_xscale("log")
+    share = adaptive["share_rate"]
+    ax.axhline(50, color=theme["axis"], linewidth=1, linestyle="--", zorder=1)
+    ax.axvline(share * 100, color=theme["axis"], linewidth=1, zorder=1)
+    ax.text(
+        share * 100 * 1.06,
+        14,
+        f"one vault share ({share:.2%})",
+        color=theme["muted"],
+        fontsize=8.5,
+        rotation=90,
+        va="bottom",
+    )
+    series = (
+        (legacy, "srm_lite", "format 3 (matching), SRM-lite", theme["series"]["replacement"], "-"),
+        (legacy, "spam", "format 3 (matching), SPAM", theme["series"]["replacement"], ":"),
+        (adaptive, "srm_lite", "format 4 (adaptive), SRM-lite", theme["series"]["shardpix"], "-"),
+        (adaptive, "spam", "format 4 (adaptive), SPAM", theme["series"]["shardpix"], ":"),
+    )
+    for results, key, label, colour, style in series:
+        rows = results["detectors"].get(key)
+        if not rows:
+            continue
+        rates = np.array([r["rate"] for r in rows]) * 100
+        p_e = np.array([r["p_e"] for r in rows]) * 100
+        low = np.array([r["p_e_low"] for r in rows]) * 100
+        high = np.array([r["p_e_high"] for r in rows]) * 100
+        ax.fill_between(rates, low, high, color=colour, alpha=0.12, linewidth=0, zorder=2)
+        ax.plot(
+            rates,
+            p_e,
+            color=colour,
+            linestyle=style,
+            linewidth=2,
+            marker="o",
+            markersize=5,
+            markeredgecolor=theme["surface"],
+            label=label,
+            zorder=3,
+        )
+    ax.set_xlim(0.08, 45)
+    ax.set_ylim(0, 56)
+    ticks = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 40]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([f"{t:g}%" for t in ticks])
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.text(0.085, 51.5, "guessing", color=theme["muted"], fontsize=8.5)
+    ax.set_xlabel(
+        "Samples carrying payload bits (log scale)", color=theme["secondary"], fontsize=9.5
+    )
+    ax.set_ylabel(
+        "Detection error P_E on unseen images (%)", color=theme["secondary"], fontsize=9.5
+    )
+    path = out / f"ml-format-comparison-{adaptive['size']}-{mode}.png"
+    _finish(
+        fig,
+        ax,
+        theme,
+        "Adaptive embedding: a share at chance, 10% as visible as format 3 at 0.5%",
+        f"{adaptive['dataset']}: {adaptive['images']} images at {adaptive['size']}x"
+        f"{adaptive['size']}, half for training, half for testing. Shaded: 95% interval.",
+        path,
+        legend_at="lower left",
+    )
+    plt.close(fig)
+    return path
+
+
 def markdown_table(results: dict) -> str:
     detectors = [k for k in ("spam", "srm_lite", "cnn") if results["detectors"].get(k)]
     rates = sorted({r["rate"] for k in detectors for r in results["detectors"][k]})
@@ -534,8 +611,12 @@ def main(argv: list[str] | None = None) -> int:
 
     matplotlib.use("Agg")
     args.out.mkdir(parents=True, exist_ok=True)
+    legacy_path = args.data.with_name(f"ml_benchmark_{args.size}.json")
     for mode in THEMES:
         print(f"  wrote {plot(results, args.out, mode)}")
+        if args.strategy == "adaptive" and legacy_path.exists():
+            legacy = json.loads(legacy_path.read_text("utf-8"))
+            print(f"  wrote {plot_comparison(legacy, results, args.out, mode)}")
     print()
     print(markdown_table(results))
     return 0

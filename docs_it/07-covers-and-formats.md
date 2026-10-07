@@ -50,7 +50,7 @@ pulita.
 
 | Metodo | Formato | Come viene scritta una quota | Campioni modificati da una quota (BOSSbase 512x512, media di 60) | Contro rilevatori addestrati (05 §5.5) | Uso |
 | --- | --- | --- | ---: | --- | --- |
-| `adaptive` (predefinito) | v4 | Modifiche di ±1 collocate da un codice a traliccio di sindrome dove il costo HiLL è più basso: nelle texture e nel rumore, lontano dalle zone uniformi | 208 | Vedi 05 §5.5.6 | Sempre, a meno che non serva il formato 3 |
+| `adaptive` (predefinito) | v4 | Modifiche di ±1 collocate da un codice a traliccio di sindrome dove il costo HiLL è più basso: nelle texture e nel rumore, lontano dalle zone uniformi | 208 | Al livello del caso: 49,9% per SPAM e SRM-lite a 512x512 (05 §5.5.6) | Sempre, a meno che non serva il formato 3 |
 | `matching` | v3 | Modifiche di ±1 in posizioni pseudo-casuali derivate dalla chiave, un bit per campione | 633 | SRM-lite: errore del 42,5% a 512x512 | Compatibilità con shardpix 1.1 |
 | `replacement` | v3 | LSB sovrascritto in posizioni derivate dalla chiave | circa 630 | Violato da RS e chi-quadro | Solo per dimostrazioni |
 

@@ -135,12 +135,17 @@ photographs, a rich-model classifier trained under ideal conditions for the
 attacker brings a share in a 512x512 greyscale photo to 42.5% detection
 error, against 50% for guessing: weak, but not zero. The signal shrinks with
 the square root of the cover size: at the lowest rate measured the
-detectors were within 1.5 points of chance. **Use colour photos of at least
-2 megapixels**, which puts a share at or below that point.
+detectors were within 1.5 points of chance.
+
+That was format 3. **Format 4, adaptive embedding, is at chance**: the same
+detectors on the same 10,000 images are wrong 49.9% of the time on a share,
+and only start to see the embedding at 10% of the samples, where format 3
+was caught nine times out of ten. Colour photos of 2 megapixels or more
+remain the safer choice.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-detection-512-dark.png">
-  <img alt="Detection error of trained SPAM and SRM-lite detectors against embedding rate: 4-8% at 40% embedding, 42-45% at one vault share in a 512x512 photo, 48-49% at 0.1%" src="assets/ml-detection-512-light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/ml-format-comparison-512-dark.png">
+  <img alt="Detection error against embedding rate for format 3 and format 4: format 4 is at 50% at one share and at 43-46% at 10%, where format 3 is at 12-19%" src="assets/ml-format-comparison-512-light.png">
 </picture>
 
 The full results, the chi-square attack, the trained detectors and the known

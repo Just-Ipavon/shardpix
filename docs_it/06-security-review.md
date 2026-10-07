@@ -337,9 +337,9 @@ Esempi di mutanti che sopravvivono perché equivalenti:
 ## 6.10 Rischi accettati
 
 Oltre a SR-06–SR-08, restano accettate le limitazioni elencate in 05 §5.6: la
-debole rilevabilità delle quote in immagini di copertura piccole da parte della
-steganalisi addestrata (misurata in 05 §5.5.5; mitigata usando immagini di
-copertura a colori di almeno 2 megapixel), le immagini di copertura JPEG, la
+steganalisi addestrata misurata solo contro SPAM e SRM-lite (formato 4 al
+livello del caso, 05 §5.5.6; formato 3 debolmente rilevabile in immagini
+piccole, §5.5.5), le immagini di copertura JPEG, la
 disponibilità delle immagini di copertura, la ricompressione durante il
 trasporto, i metadati visibili del vault, una sola passphrase per vault,
 l'aritmetica non a tempo costante e la memoria che non può essere cancellata, e
