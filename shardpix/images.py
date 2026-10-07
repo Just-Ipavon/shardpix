@@ -134,6 +134,10 @@ def write_new(path: str | Path, data: bytes, *, overwrite: bool = False) -> None
     link planted at the destination, even a dangling one.
     """
     path = Path(path)
+    # Windows follows a dangling link even with exclusive creation, which
+    # would redirect the write to wherever the link points: refuse it first.
+    if not overwrite and path.is_symlink():
+        raise ShardpixError(f"{path} already exists; use --force to overwrite it")
     try:
         with open(path, "wb" if overwrite else "xb") as handle:
             handle.write(data)
