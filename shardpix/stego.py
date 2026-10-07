@@ -93,8 +93,12 @@ HEADER_WIDTH = 64
 """Width of the codes carrying the public bytes and the length in format 4."""
 LENGTH_BITS = LENGTH_BYTES * 8
 
+JPEG_VERSION = 5
+"""Format of payloads in JPEG coefficients (:mod:`shardpix.jpeg`)."""
+
 _DOMAIN = b"shardpix/stego/v3"
 _DOMAIN_V4 = b"shardpix/stego/v4"
+_DOMAINS = {LEGACY_VERSION: _DOMAIN, FORMAT_VERSION: _DOMAIN_V4, JPEG_VERSION: b"shardpix/jpeg/v1"}
 _PUBLIC_WALK_KEY = hashlib.sha256(_DOMAIN + b"|salt-walk").digest()
 _PUBLIC_CODE_SEED = hashlib.sha256(_DOMAIN_V4 + b"|public-code").digest()
 
@@ -166,7 +170,7 @@ def derive_key(
     encrypted, but anyone running shardpix can read it. Each format version
     has its own domain, so the two never share a key.
     """
-    domain = _DOMAIN_V4 if version == FORMAT_VERSION else _DOMAIN
+    domain = _DOMAINS[version]
     if len(salt) != SALT_BYTES:
         raise ValueError(f"salt must be {SALT_BYTES} bytes")
     if log_n is None:
@@ -197,7 +201,7 @@ def derive_key(
         aead=expand(b"aead", 32),
         length_mask=expand(b"length", LENGTH_BYTES),
         keyed=bool(passphrase),
-        code=expand(b"code", 32) if version == FORMAT_VERSION else b"",
+        code=expand(b"code", 32) if version != LEGACY_VERSION else b"",
     )
 
 
@@ -316,7 +320,7 @@ def read_bits(samples: np.ndarray, positions: np.ndarray) -> np.ndarray:
 
 
 def _aad(length: int, version: int = LEGACY_VERSION) -> bytes:
-    domain = _DOMAIN_V4 if version == FORMAT_VERSION else _DOMAIN
+    domain = _DOMAINS[version]
     return domain + bytes([version]) + length.to_bytes(LENGTH_BYTES, "big")
 
 
@@ -377,6 +381,33 @@ def _chunks(message_bits: int) -> list[tuple[int, int]]:
     return [(i, min(i + CHUNK_BITS, message_bits)) for i in range(0, message_bits, CHUNK_BITS)]
 
 
+def choose_flips(
+    samples: np.ndarray,
+    positions: np.ndarray,
+    bits: np.ndarray,
+    sample_costs: np.ndarray,
+    seed: bytes,
+) -> np.ndarray:
+    """Indices among ``positions`` whose LSB must flip so they carry ``bits``.
+
+    ``positions`` holds ``width`` candidates per bit, in order; the
+    syndrome-trellis code picks the flips whose ``sample_costs`` add up to
+    the least. Works on any integer samples (pixels or JPEG coefficients):
+    only their parity is read.
+    """
+    width = positions.size // max(bits.size, 1)
+    if positions.size != width * bits.size:
+        raise ValueError("positions must hold the same number of candidates for every bit")
+    h_hat = stc.submatrix(seed, width)
+    targets = []
+    for start, stop in _chunks(bits.size):
+        chunk = positions[start * width : stop * width]
+        cover_bits = (samples[chunk] & 1).astype(np.uint8)
+        stego_bits, _ = stc.embed(cover_bits, sample_costs[chunk], bits[start:stop], h_hat)
+        targets.append(chunk[stego_bits != cover_bits])
+    return np.concatenate(targets) if targets else np.zeros(0, dtype=np.intp)
+
+
 def write_adaptive(
     samples: np.ndarray,
     positions: np.ndarray,
@@ -390,23 +421,12 @@ def write_adaptive(
 ) -> tuple[np.ndarray, int]:
     """Write ``bits`` as the syndrome of the LSBs of ``samples[positions]``.
 
-    ``positions`` holds ``width`` candidates per bit, in order; the code
-    flips the LSBs whose ``sample_costs`` add up to the least. Each flip is a
-    +-1 change, in a random direction except at ``low`` and ``high``. Returns
-    the modified copy and the number of samples that changed.
+    The flips come from :func:`choose_flips`; each is a +-1 change, in a
+    random direction except at ``low`` and ``high``. Returns the modified
+    copy and the number of samples that changed.
     """
-    width = positions.size // max(bits.size, 1)
-    if positions.size != width * bits.size:
-        raise ValueError("positions must hold the same number of candidates for every bit")
     out = samples.astype(np.int16, copy=True)
-    h_hat = stc.submatrix(seed, width)
-    targets = []
-    for start, stop in _chunks(bits.size):
-        chunk = positions[start * width : stop * width]
-        cover_bits = (out[chunk] & 1).astype(np.uint8)
-        stego_bits, _ = stc.embed(cover_bits, sample_costs[chunk], bits[start:stop], h_hat)
-        targets.append(chunk[stego_bits != cover_bits])
-    flips = np.concatenate(targets) if targets else np.zeros(0, dtype=np.intp)
+    flips = choose_flips(out, positions, bits, sample_costs, seed)
     values = out[flips]
     step = np.where(np.frombuffer(random_bytes(flips.size), dtype=np.uint8) & 1, 1, -1)
     step = np.where(values <= low, 1, np.where(values >= high, -1, step))

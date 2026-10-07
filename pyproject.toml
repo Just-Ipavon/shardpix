@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Pasquale Ruotolo" }]
 dependencies = [
     "cryptography>=42",
+    "jpeglib>=1.0",
     "numpy>=1.24",
     "pillow>=10.0",
     "rich>=13.7",

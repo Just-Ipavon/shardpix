@@ -9,12 +9,12 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import shamir, stego, vault
+from shardpix import jpeg, shamir, stego, vault
 from shardpix.errors import VaultError
 from shardpix.images import load_image, save_png
 from shardpix.vault import Status
 
-from .conftest import processed_image
+from .conftest import phone_jpeg, processed_image
 
 PASSPHRASE = "correct horse battery staple"
 
@@ -74,15 +74,33 @@ class TestRoundTrip:
         opened = vault.unseal(result.vault_path, images_of(result))
         assert opened.data == secret_file.read_bytes()
 
-    def test_jpeg_covers_become_png(self, tmp_path, secret_file):
-        jpegs = []
-        for i in range(2):
-            path = tmp_path / f"cover{i}.jpg"
-            Image.fromarray(processed_image(64, 80, seed=10 + i)).save(path, quality=90)
-            jpegs.append(path)
-        result = vault.seal(secret_file, jpegs, 2, tmp_path / "out")
-        assert all(image.output.suffix == ".png" for image in result.images)
-        assert vault.unseal(result.vault_path, images_of(result)).data == secret_file.read_bytes()
+    def test_phone_jpegs_stay_jpeg(self, tmp_path, secret_file):
+        jpegs = [phone_jpeg(tmp_path / f"cover{i}.jpg", seed=10 + i) for i in range(3)]
+        result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
+        assert [image.output.suffix for image in result.images] == [".jpg"] * 3
+        assert {image.format for image in result.images} == {"JPEG (format 5)"}
+        assert not any(image.from_jpeg for image in result.images)
+        opened = vault.unseal(result.vault_path, images_of(result)[1:], PASSPHRASE)
+        assert opened.data == secret_file.read_bytes()
+
+    def test_jpeg_output_keeps_tables_and_metadata(self, tmp_path, secret_file):
+        jpegs = [phone_jpeg(tmp_path / f"cover{i}.jpg", seed=20 + i) for i in range(2)]
+        result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
+        for image in result.images:
+            before, after = jpeg.load(image.cover), jpeg.load(image.output)
+            assert np.array_equal(before.quant, after.quant)
+            assert before.blocks.shape == after.blocks.shape
+            changed = before.coefficients() != after.coefficients()
+            assert 0 < changed.sum() == image.report.samples_changed
+            with Image.open(image.output) as stego_image:
+                assert stego_image.getexif()[0x010F] == "ShardpixTestPhone"
+
+    def test_jpeg_and_png_covers_mix(self, tmp_path, covers, secret_file):
+        photo = phone_jpeg(tmp_path / "phone.jpg", seed=30)
+        result = vault.seal(secret_file, [covers[0], photo], 2, tmp_path / "out", PASSPHRASE)
+        assert [i.output.suffix for i in result.images] == [".png", ".jpg"]
+        opened = vault.unseal(result.vault_path, images_of(result), PASSPHRASE)
+        assert opened.data == secret_file.read_bytes()
 
     def test_embedding_is_tiny(self, sealed):
         for image in sealed.images:
@@ -289,7 +307,7 @@ class TestOutputCollisions:
             vault.seal(secret_file, covers, 2, tmp_path / "out", vault_name="photo0.png")
 
     def test_cover_names_differing_only_in_case(self, tmp_path, covers, secret_file):
-        upper = tmp_path / "upper" / "PHOTO0.jpg"
+        upper = tmp_path / "upper" / "PHOTO0.png"
         upper.parent.mkdir()
         Image.fromarray(processed_image(64, 80, seed=40)).save(upper)
         with pytest.raises(VaultError, match="collide"):
@@ -395,15 +413,14 @@ class TestOutcomeDetails:
         assert (result.outcomes[0].path, result.outcomes[0].status) == (bad, Status.REJECTED)
         assert "truncated" in result.outcomes[0].detail
 
-    def test_jpeg_flag_and_method_are_recorded(self, tmp_path, secret_file):
-        jpeg = tmp_path / "a.jpg"
-        Image.fromarray(processed_image(64, 80, seed=50)).save(jpeg, quality=90)
+    def test_format_and_baseline_method_are_recorded(self, tmp_path, secret_file):
+        photo = phone_jpeg(tmp_path / "a.jpg", seed=50)
         png = tmp_path / "b.png"
         Image.fromarray(processed_image(64, 80, seed=51)).save(png)
         result = vault.seal(
-            secret_file, [jpeg, png], 2, tmp_path / "out", method=stego.Method.REPLACEMENT
+            secret_file, [photo, png], 2, tmp_path / "out", method=stego.Method.REPLACEMENT
         )
-        assert [i.from_jpeg for i in result.images] == [True, False]
+        assert [i.format for i in result.images] == ["JPEG (format 5)", "PNG (format 4)"]
         original = load_image(png).pixels
         sealed_png = load_image(result.images[1].output).pixels
         assert np.array_equal(original >> 1, sealed_png >> 1)  # replacement only touches the LSB

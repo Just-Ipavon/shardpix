@@ -35,7 +35,7 @@ from pathlib import Path, PurePath
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from . import shamir, stego
+from . import media, shamir, stego
 from .errors import (
     PayloadNotFoundError,
     ShareError,
@@ -43,7 +43,7 @@ from .errors import (
     UnsupportedImageError,
     VaultError,
 )
-from .images import Carrier, load_image, save_png, write_new
+from .images import write_new
 
 MAGIC = b"SPXV"
 VERSION = 1
@@ -119,6 +119,9 @@ class SealedImage:
     share_index: int
     report: stego.EmbedReport
     from_jpeg: bool = False
+    """The cover was a JPEG decoded to pixels (only for formats Pillow reads as JPEG
+    but that are not baseline JPEG files); JPEG files are embedded natively."""
+    format: str = "PNG (format 4)"
 
 
 @dataclass(frozen=True)
@@ -224,7 +227,8 @@ def seal(
     if len(name) > MAX_NAME_BYTES:
         raise VaultError("the file name is too long to store in the vault")
 
-    outputs = [out_dir / f"{cover.stem}.png" for cover in covers]
+    # Each image keeps its kind: a phone JPEG gives a JPEG, anything else a PNG.
+    outputs = [out_dir / f"{cover.stem}{media.kind_suffix(cover)}" for cover in covers]
     vault_path = out_dir / (vault_name or f"{source.name}{VAULT_SUFFIX}")
     if len({_identity(p) for p in [*outputs, vault_path]}) != count + 1:
         raise VaultError(
@@ -235,15 +239,15 @@ def seal(
     for path in [*outputs, vault_path]:
         _check_new_file(path, force, protected)
 
-    carriers: list[Carrier] = []
+    opened: list[media.Cover] = []
     for cover in covers:
-        carrier = load_image(cover)
-        room = stego.carrier_capacity(carrier)
+        opened_cover = media.open_cover(cover)
+        room = opened_cover.capacity()
         if room < SHARE_BYTES:
             raise VaultError(
                 f"{cover} is too small: it holds {room} bytes, a share needs {SHARE_BYTES}"
             )
-        carriers.append(carrier)
+        opened.append(opened_cover)
 
     key = random_bytes(KEY_BYTES)
     header = VaultHeader(
@@ -260,12 +264,15 @@ def seal(
 
     _write(out_dir, lambda: out_dir.mkdir(parents=True, exist_ok=True))
     sealed = []
-    for cover, carrier, share, output in zip(covers, carriers, shares, outputs, strict=True):
-        stego_carrier, report = stego.embed(
-            carrier, share.to_bytes(), passphrase, method, random_bytes
+    for cover, opened_cover, share, output in zip(covers, opened, shares, outputs, strict=True):
+        stego_file, report = media.hide(
+            opened_cover, share.to_bytes(), passphrase, random_bytes, method
         )
-        save_png(stego_carrier, output, overwrite=force)
-        sealed.append(SealedImage(cover, output, share.index, report, carrier.from_jpeg))
+        write_new(output, stego_file, overwrite=force)
+        decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
+        sealed.append(
+            SealedImage(cover, output, share.index, report, decoded_jpeg, opened_cover.format_name)
+        )
     write_new(vault_path, header.to_bytes() + ciphertext, overwrite=force)
 
     return SealResult(vault_path, header, len(data), tuple(sealed))
@@ -300,7 +307,7 @@ def safe_filename(name: str) -> str:
 
 def _read_share(path: Path, passphrase: str | None) -> shamir.Share | ImageOutcome:
     try:
-        payload = stego.extract(load_image(path), passphrase)
+        payload = media.reveal(path, passphrase)
     except UnsupportedImageError as exc:
         return ImageOutcome(path, Status.UNREADABLE, str(exc))
     except PayloadNotFoundError:

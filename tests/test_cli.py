@@ -57,7 +57,7 @@ class TestEmbedExtract:
 
     def test_refuses_lossy_output(self, cover_png, tmp_path, capsys):
         assert run("embed", cover_png, "-o", tmp_path / "s.jpg", "-t", "x") == 1
-        assert "must be a .png" in capsys.readouterr().err
+        assert "gives a .png file" in capsys.readouterr().err
 
     def test_refuses_to_overwrite_without_force(self, cover_png, tmp_path):
         out = tmp_path / "s.png"
@@ -350,13 +350,17 @@ class TestCleanErrors:
         assert run("split", "-t", "x", "-k", "2", "-n", "2", "-d", file) == 1
         assert "error:" in capsys.readouterr().err
 
-    def test_jpeg_cover_warning(self, tmp_path, capsys):
-        from .conftest import processed_image
+    def test_jpeg_cover_gives_a_jpeg(self, tmp_path, capsys):
+        from .conftest import phone_jpeg
 
-        jpeg = tmp_path / "photo.jpg"
-        Image.fromarray(processed_image()).save(jpeg, quality=90)
-        assert run("embed", jpeg, "-o", tmp_path / "s.png", "-t", "x") == 0
-        assert "JPEG-compatibility" in capsys.readouterr().out
+        photo = phone_jpeg(tmp_path / "photo.jpg")
+        assert run("embed", photo, "-o", tmp_path / "s.png", "-t", "x") == 1
+        assert "gives a .jpg file" in capsys.readouterr().err
+        assert run("embed", photo, "-o", tmp_path / "s.jpg", "-t", "hello") == 0
+        out = capsys.readouterr().out
+        assert "JPEG (format 5)" in out and "JPEG-compatibility" not in out
+        assert run("extract", tmp_path / "s.jpg") == 0
+        assert capsys.readouterr().out.endswith("hello")
 
 
 class TestOutputSafety:
@@ -371,8 +375,7 @@ class TestOutputSafety:
         assert not target.exists()
         assert "already exists" in capsys.readouterr().err
 
-    def test_replacement_mode_warns(self, cover_png, tmp_path, capsys):
-        assert (
-            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "-m", "replacement") == 0
-        )
-        assert "--method replacement is detectable" in capsys.readouterr().out
+    def test_method_is_not_a_user_option(self, cover_png, tmp_path):
+        """Formats other than adaptive exist for the benchmarks, not for users."""
+        with pytest.raises(SystemExit):
+            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "-m", "replacement")
