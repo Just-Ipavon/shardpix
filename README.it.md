@@ -60,6 +60,17 @@ shardpix è costruito attorno a quella domanda e ne misura la risposta:
   <img alt="Errore di rilevazione in funzione del numero di immagini della stessa cassaforte in mano all'avversario: il formato 3 scende dal 43% al 7% con 50 immagini, il formato 4 resta al 50%" src="assets/pooled-512-light.png">
 </picture>
 
+*Da dove vengono i numeri:* BOSSbase 1.01, 10.000 fotografie 512x512 in
+scala di grigi, una quota di cassaforte per immagine. Un rilevatore
+(caratteristiche SRM-lite con un classificatore ensemble) viene addestrato
+su 5.000 immagini e assegna un punteggio alle altre 5.000; gruppi da 1 a 50
+immagini vengono poi aggregati con un rapporto di verosimiglianza, su 40
+suddivisioni casuali tra calibrazione e valutazione. 42,6% e 7,4% sono le
+mediane, il 7,4% con un intervallo 4,5-11,5%. Metodo e tabella completa:
+[docs_it/05 §5.5.7](docs_it/05-security-analysis.md#557-più-immagini-della-stessa-cassaforte-steganalisi-aggregata);
+dati grezzi: [docs/data/pooled_512.json](docs/data/pooled_512.json);
+per riprodurli: `python -m shardpix.analysis.pooled`.
+
 ## Come funziona
 
 ```text
