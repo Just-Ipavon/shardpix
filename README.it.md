@@ -96,6 +96,33 @@ chiave vera.
 
 ## Installazione
 
+shardpix richiede Python 3.10 o successivo. Installalo con
+[pipx](https://pipx.pypa.io), che lo mette in un ambiente tutto suo e aggiunge
+il comando `shardpix` al `PATH`: funziona in ogni terminale e in ogni
+cartella.
+
+```bash
+# 1. pipx, una volta sola
+sudo apt install pipx            # Debian, Ubuntu, Kali
+brew install pipx                # macOS
+py -m pip install --user pipx    # Windows
+pipx ensurepath                  # poi apri un nuovo terminale
+
+# 2. shardpix, direttamente da GitHub
+pipx install git+https://github.com/Just-Ipavon/shardpix.git
+shardpix --version
+```
+
+Aggiornalo all'ultima versione con `pipx reinstall shardpix`, rimuovilo con
+`pipx uninstall shardpix`.
+
+### Per lo sviluppo
+
+Per lavorare sul codice usa invece un ambiente virtuale. In questo caso il
+comando `shardpix` esiste solo finché l'ambiente è attivo: in un nuovo
+terminale riesegui `source .venv/bin/activate` (`.venv\Scripts\activate` su
+Windows).
+
 ```bash
 git clone https://github.com/Just-Ipavon/shardpix.git
 cd shardpix
