@@ -5,7 +5,7 @@
   "preprocessing": "resize",
   "share_rate": 0.00482177734375,
   "seed": 0,
-  "strategy": "shardpix: LSB matching on samples 2-253, keyed positions, random bits",
+  "strategy": "shardpix: format 3: LSB matching on samples 2-253, keyed positions, random bits",
   "detectors": {
     "spam": [
       {
