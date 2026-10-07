@@ -127,6 +127,9 @@ def embed(cover: np.ndarray, rate: float, rng: np.random.Generator) -> np.ndarra
     payload = int(round(rate * cover.size / 8)) - stego.PUBLIC_BYTES - stego.FRAME_OVERHEAD
     if payload < 0:
         raise ValueError(f"rate {rate:.3%} is below the frame overhead for this size")
+    # A few covers are mostly clipped and cannot hold high rates; like the
+    # format-3 strategy, they carry as much as fits.
+    payload = min(payload, stego.carrier_capacity(carrier))
     out, _ = stego.embed(carrier, rng.bytes(payload), "benchmark", stego.Method.ADAPTIVE, rng.bytes)
     return out.pixels[..., 0]
 
