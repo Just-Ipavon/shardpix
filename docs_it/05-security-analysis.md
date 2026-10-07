@@ -464,6 +464,31 @@ Cosa mostra:
 Valgono le stesse cautele di §5.5.5–5.5.6: due rilevatori, una sola
 sorgente di immagini, rilevatore addestrato al tasso esatto.
 
+### 5.5.8 Immagini di copertura JPEG (formato 5)
+
+Il formato 5 (01 ADR-13) viene misurato come i formati 3 e 4, ma nel dominio
+JPEG: BOSSbase compresso con Pillow a qualità 95 (vicina a quella dei
+telefoni) e 75 (lo standard dei benchmark), caratteristiche DCTR (Holub e
+Fridrich, 2015; 8.000 caratteristiche dai residui delle 64 funzioni di base
+DCT dell'immagine decompressa) con il classificatore a ensemble, metà delle
+immagini per l'addestramento e metà per il test, con una quota e con 0,1 bit
+per coefficiente AC diverso da zero (`python -m shardpix.analysis.jpeg_benchmark`).
+Il riferimento è l'equivalente non adattivo del formato 3: un bit per
+coefficiente in posizioni AC non nulle casuali, ±1 lontano da zero.
+
+**Stato: misura in corso sulle 10.000 immagini.** Una prova preliminare su
+200 immagini a qualità 95 (100 coppie di test, intervalli di circa ±7 punti)
+ha dato:
+
+| 200 immagini, qualità 95 | Una quota | 0,4 bit per coefficiente AC non nullo (controllo) |
+| --- | ---: | ---: |
+| Riferimento non adattivo | 43,0% | 0,0% |
+| Formato 5 | 49,0% | 15,5% |
+
+Mostra soltanto che l'esperimento funziona (il controllo viene rilevato) e in
+che direzione va; i risultati completi e l'analisi aggregata sostituiranno
+questa tabella quando saranno pronti.
+
 ## 5.6 Limiti noti
 
 **Nessun audit indipendente.** Si vedano il §5.1 e lo 06.
