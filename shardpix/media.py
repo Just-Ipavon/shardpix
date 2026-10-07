@@ -23,6 +23,7 @@ from pathlib import Path
 
 from . import jpeg, stego
 from .images import Carrier, load_image, to_pil
+from .progress import Progress, span
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,7 @@ def hide(
     passphrase: str | None = None,
     random_bytes: stego.RandomBytes = os.urandom,
     method: stego.Method = stego.Method.ADAPTIVE,
+    progress: Progress | None = None,
 ) -> tuple[bytes, stego.EmbedReport]:
     """Embed ``payload``; return the stego file's bytes and a report.
 
@@ -94,8 +96,12 @@ def hide(
     kept for the benchmarks that compare against them, not for real use.
     """
     if cover.coefficients is not None:
-        return jpeg.embed(cover.coefficients, payload, passphrase, random_bytes)
-    stego_carrier, report = stego.embed(cover._pixels(), payload, passphrase, method, random_bytes)
+        return jpeg.embed(cover.coefficients, payload, passphrase, random_bytes, progress)
+    # Writing a large PNG takes about as long as embedding: give it its share.
+    stego_carrier, report = stego.embed(
+        cover._pixels(), payload, passphrase, method, random_bytes, span(progress, 0.0, 0.6)
+    )
+    span(progress, 0.0, 1.0)(0.6, "writing the PNG")
     return encode_png(stego_carrier), report
 
 

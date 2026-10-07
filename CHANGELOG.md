@@ -17,6 +17,15 @@ All notable changes to this project are documented here. The format follows
   file's first bytes.
 - The CLI no longer has `--method`: format 3 (matching, replacement) stays
   in the library as a benchmark baseline only.
+- **Progress bar.** `seal`, `unseal`, `embed` and `extract` show a bar
+  with the current step (deriving the key, measuring the texture, choosing
+  the changes, writing the image) on a terminal; nothing changes when the
+  output is piped.
+- `extract` and `combine` no longer print a binary payload on a terminal:
+  they say what it looks like (PNG, JPEG, PDF, ZIP...) and ask for `-o`.
+- **PowerShell.** Wildcards such as `photos\*.jpg`, which PowerShell and
+  cmd.exe pass unexpanded, are expanded by shardpix; CI also runs the tests
+  on Windows.
 - **Fixed:** embedding a large payload in a flat cover, such as a
   screenshot, failed with "no solution avoids the forbidden elements". Every
   change in a flat area costs the maximum, and thousands of them added up

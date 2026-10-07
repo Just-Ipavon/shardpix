@@ -30,6 +30,23 @@ jobs:
       - name: Test
         run: pytest -q
 
+  windows:
+    # The CLI is used from PowerShell too: paths, wildcards, temporary files.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
+
   security:
     runs-on: ubuntu-latest
     steps:

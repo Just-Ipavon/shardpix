@@ -34,6 +34,7 @@ import numpy as np
 
 from . import costs, stego
 from .errors import CapacityError, PayloadNotFoundError, UnsupportedImageError
+from .progress import Progress, span
 
 VERSION = stego.JPEG_VERSION
 MAX_COEFFICIENT = 1023
@@ -122,11 +123,19 @@ def embed(
     payload: bytes,
     passphrase: str | None = None,
     random_bytes: stego.RandomBytes = os.urandom,
+    progress: Progress | None = None,
 ) -> tuple[bytes, stego.EmbedReport]:
     """Hide ``payload`` in ``cover``; return the stego JPEG file and a report."""
     coefficients, report = embed_coefficients(
-        cover.coefficients(), cover.blocks.shape, cover.quant, payload, passphrase, random_bytes
+        cover.coefficients(),
+        cover.blocks.shape,
+        cover.quant,
+        payload,
+        passphrase,
+        random_bytes,
+        span(progress, 0.0, 0.9),
     )
+    span(progress, 0.0, 1.0)(0.9, "writing the JPEG")
     return _encode(cover, coefficients), report
 
 
@@ -137,6 +146,7 @@ def embed_coefficients(
     payload: bytes,
     passphrase: str | None = None,
     random_bytes: stego.RandomBytes = os.urandom,
+    progress: Progress | None = None,
 ) -> tuple[np.ndarray, stego.EmbedReport]:
     """The core of :func:`embed`, on a flat array of luminance coefficients.
 
@@ -155,6 +165,8 @@ def embed_coefficients(
         )
     salt = random_bytes(stego.SALT_BYTES)
     log_n = stego.SCRYPT_LOG_N
+    report_step = span(progress, 0.0, 1.0)
+    report_step(0.0, "deriving the key")
     key = stego.derive_key(passphrase, salt, log_n, VERSION)
     frame = stego.build_frame(payload, key, random_bytes, VERSION)
     public = salt + bytes([log_n | stego.ADAPTIVE_FLAG])
@@ -169,15 +181,17 @@ def embed_coefficients(
         raise CapacityError("this JPEG is too small for this payload")
     width = stego.code_width(free, body.size)
     keyed = order.first(stego.LENGTH_BITS * hw + width * body.size)
+    report_step(0.2, "measuring the texture")
     rho = costs.uerd(coefficients.reshape(shape), quant).reshape(-1)
 
     out, changed = coefficients, 0
-    for positions, part, seed in (
-        (public_positions, stego._to_bits(public), stego._PUBLIC_CODE_SEED),
-        (keyed[: stego.LENGTH_BITS * hw], frame_bits[: stego.LENGTH_BITS], stego._length_seed(key)),
-        (keyed[stego.LENGTH_BITS * hw :], body, key.code),
+    length_positions = keyed[: stego.LENGTH_BITS * hw]
+    for positions, part, seed, steps in (
+        (public_positions, stego._to_bits(public), stego._PUBLIC_CODE_SEED, None),
+        (length_positions, frame_bits[: stego.LENGTH_BITS], stego._length_seed(key), None),
+        (keyed[stego.LENGTH_BITS * hw :], body, key.code, span(progress, 0.35, 1.0)),
     ):
-        flips = stego.choose_flips(out, positions, part, rho, seed)
+        flips = stego.choose_flips(out, positions, part, rho, seed, steps)
         out = _apply(out, flips, random_bytes)
         changed += int(flips.size)
 
