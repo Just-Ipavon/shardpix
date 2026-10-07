@@ -1,0 +1,22 @@
+{
+  "dataset": "BOSSbase 1.01, 512x512, JPEG",
+  "quality": 75,
+  "images": 10000,
+  "seed": 0,
+  "detector": "DCTR + ensemble classifier",
+  "strategies": {
+    "jpeg": "format 5: syndrome-trellis codes with UERD costs on non-zero AC coefficients",
+    "naive": "one bit per coefficient at random non-zero AC positions, +-1 away from zero"
+  },
+  "rows": [
+    {
+      "strategy": "naive",
+      "payload": "share",
+      "p_e": 0.023999999999999987,
+      "p_e_low": 0.021000239369549617,
+      "p_e_high": 0.026999760630450356,
+      "auc": 0.9972408,
+      "test_pairs": 5000
+    }
+  ]
+}
