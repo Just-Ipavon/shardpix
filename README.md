@@ -27,18 +27,25 @@ are built in.
 Splitting a key with Shamir's scheme and hiding the shares in pictures is not
 a new idea, and neither is asking whether several images, taken together,
 give away what each one hides: that is *pooled steganalysis* (Ker, 2006).
-What, as far as we found, had not been measured is the two together. Schemes that combine secret
-sharing and steganography are judged image by image, typically with
-off-the-shelf tools, and most hide the shares by LSB embedding; the work on
-pooled steganalysis lets the steganographer choose how to spread a payload,
-which a threshold scheme does not allow - **every image must carry a whole
-share, and whoever finds one share often finds others of the same vault**:
-the holders know each other, use the same cloud, send to the same people.
-([docs/05 §5.7](docs/05-security-analysis.md#57-related-work) compares
-shardpix with this work.)
+What, as far as we found, had not been measured is the two together - and
+together they put the steganographer in the worst case. Studies of pooled
+steganalysis let the steganographer choose how to spread a payload, leaving
+some images clean. A threshold scheme forbids it: **every image must carry a
+whole share, and whoever finds one share often finds others of the same
+vault** - the holders know each other, use the same cloud, send to the same
+people. Each image adds evidence, and nothing can be done about it.
+Schemes that combine secret sharing and steganography ignore the problem:
+they are judged image by image, typically with off-the-shelf tools, and most
+hide the shares by LSB embedding.
 
-shardpix applies the pooled question to the shares of a vault and measures
-the answer:
+shardpix shows how bad that constraint is and **implements the defence
+against it**: only the key is split, so each image carries a share of about
+160 bytes whatever the size of the file, and that share is placed by
+adaptive embedding where the photo is textured, so the evidence each image
+adds is close to nothing: pooled over fifty images it still gives nothing
+the detectors used can measure.
+([docs/05 §5.7](docs/05-security-analysis.md#57-related-work) compares
+shardpix with this work.) The measurements:
 
 - **One image is the wrong test.** With LSB-style embedding (format 3, kept
   as a baseline) a trained detector is wrong 42.6% of the time on a single

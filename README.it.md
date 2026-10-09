@@ -28,21 +28,26 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 Dividere una chiave con lo schema di Shamir e nascondere le quote nelle
 immagini non è un'idea nuova, e non lo è nemmeno chiedersi se più immagini,
 prese insieme, tradiscono ciò che ognuna nasconde: è la *steganalisi
-aggregata* (Ker, 2006). Quello che, per quanto abbiamo trovato, non era stato misurato sono le due
-cose insieme.
-Gli schemi che uniscono condivisione del segreto e steganografia vengono
+aggregata* (Ker, 2006). Quello che, per quanto abbiamo trovato, non era stato
+misurato sono le due cose insieme - e insieme mettono chi nasconde nel caso
+peggiore. Gli studi sulla steganalisi aggregata lasciano a chi nasconde la
+scelta di come distribuire il carico, lasciando pulite alcune immagini. Uno
+schema a soglia lo vieta: **ogni immagine deve portare una quota intera, e
+chi trova una quota spesso ne trova altre della stessa cassaforte** - i
+custodi si conoscono, usano lo stesso cloud, scrivono alle stesse persone.
+Ogni immagine aggiunge indizi, e non si può evitare. Gli schemi che uniscono
+condivisione del segreto e steganografia ignorano il problema: vengono
 valutati un'immagine alla volta, di solito con strumenti generici, e quasi
-sempre nascondono le quote nei bit meno significativi (LSB); gli studi sulla
-steganalisi aggregata lasciano a chi nasconde la scelta di come distribuire
-il carico, cosa che uno schema a soglia non permette - **ogni immagine deve
-portare una quota intera, e chi trova una quota spesso ne trova altre della
-stessa cassaforte**: i custodi si conoscono, usano lo stesso cloud, scrivono
-alle stesse persone.
-([docs_it/05 §5.7](docs_it/05-security-analysis.md#57-lavori-correlati)
-confronta shardpix con questi lavori.)
+sempre nascondono le quote nei bit meno significativi (LSB).
 
-shardpix applica la domanda della steganalisi aggregata alle quote di una
-cassaforte e ne misura la risposta:
+shardpix mostra quanto pesa questo vincolo e **implementa la difesa**: si
+divide solo la chiave, quindi ogni immagine porta una quota di circa 160
+byte qualunque sia la dimensione del file, e quella quota viene collocata
+con un inserimento adattivo dove la foto è ricca di dettagli, così gli
+indizi che ogni immagine aggiunge sono quasi nulli: aggregati su cinquanta
+immagini non danno ancora nulla che i rilevatori usati possano misurare.
+([docs_it/05 §5.7](docs_it/05-security-analysis.md#57-lavori-correlati)
+confronta shardpix con questi lavori.) Le misure:
 
 - **Una sola immagine è il test sbagliato.** Con un inserimento di tipo LSB
   (il formato 3, tenuto come termine di confronto) un rilevatore addestrato
