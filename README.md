@@ -25,15 +25,20 @@ are built in.
 ## Why it matters
 
 Splitting a key with Shamir's scheme and hiding the shares in pictures is not
-a new idea. What is usually missing is the question an adversary would
-actually ask: **not "does this one photo hide something?", but "do these
-photos, taken together, hide something?"** Whoever finds one share often
-finds others of the same vault - the holders know each other, use the same
-cloud, send to the same people. Schemes that combine secret sharing and
-steganography are judged image by image, typically with off-the-shelf tools,
-and most hide the shares by LSB embedding.
+a new idea, and neither is asking whether several images, taken together,
+give away what each one hides: that is *pooled steganalysis* (Ker, 2006).
+What, as far as we found, had not been measured is the two together. Schemes that combine secret
+sharing and steganography are judged image by image, typically with
+off-the-shelf tools, and most hide the shares by LSB embedding; the work on
+pooled steganalysis lets the steganographer choose how to spread a payload,
+which a threshold scheme does not allow - **every image must carry a whole
+share, and whoever finds one share often finds others of the same vault**:
+the holders know each other, use the same cloud, send to the same people.
+([docs/05 §5.7](docs/05-security-analysis.md#57-related-work) compares
+shardpix with this work.)
 
-shardpix is built around that question and measures the answer:
+shardpix applies the pooled question to the shares of a vault and measures
+the answer:
 
 - **One image is the wrong test.** With LSB-style embedding (format 3, kept
   as a baseline) a trained detector is wrong 42.6% of the time on a single

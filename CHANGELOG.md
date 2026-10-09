@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Documentation
+
+- docs/05 §5.7 **Related work** (EN and IT): secret sharing hidden in
+  images (Thien–Lin, Lin–Tsai, Woźniak–Ogiela–Ogiela, sssteg) and pooled
+  steganalysis (Ker, steganographer identification, content-adaptive batch
+  steganography), and what shardpix adds. The README credits pooled
+  steganalysis to Ker instead of presenting the question as new.
+- docs/05 says that the chi-square attack of `analyze` on JPEG is no
+  evidence of security (DCTR is), and §5.6 lists the detectors that were
+  not run (full SRM, maxSRM, GFR, SRNet); its paragraphs on JPEG covers and
+  metadata no longer describe the behaviour before format 5.
+- CHANGELOG 2.0.0 no longer says that `--method matching` writes format 3.
+
 ## [2.0.0] — 2026-10-07
 
 Major version: the CLI no longer has `--method`, and new images are written
@@ -66,8 +79,7 @@ in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
   texture rather than in smooth areas. Against SPAM and SRM-lite on 10,000
   BOSSbase images a share is at chance (49.9%, against 42.5% for format 3),
   and the detectors only start to see it at 10% of the samples
-  (docs/05 §5.5.6). Format 3 images are still read;
-  `--method matching` still writes format 3. shardpix 1.1 cannot read
+  (docs/05 §5.5.6). Format 3 images are still read. shardpix 1.1 cannot read
   format 4.
 
 ### Added
