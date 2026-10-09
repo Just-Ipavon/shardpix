@@ -649,18 +649,27 @@ strategie di distribuzione contro rilevatori aggregati con inserimento
 adattivo, nel dominio dei pixel [20] e in quello JPEG [25]. In tutti questi
 lavori è chi nasconde a scegliere come distribuire il carico.
 
-**Cosa aggiunge shardpix.** Uno schema a soglia toglie questa scelta: ogni
-immagine deve portare una quota intera - un carico fisso di 1.264 bit - e il
-gruppo di immagini dell'avversario è l'insieme delle quote di una
-cassaforte, che i rapporti tra i custodi rendono facile da raccogliere.
-shardpix misura la steganalisi aggregata in questo scenario, per
-l'inserimento di tipo LSB degli schemi citati sopra e per l'inserimento
-adattivo in PNG e nei JPEG delle fotocamere, su 10.000 immagini con
-controlli positivi e intervalli di confidenza. La domanda della steganalisi
-aggregata è di Ker; il contributo è applicarla alle quote di uno schema di
-condivisione del segreto e misurarla su un sistema completo. Per quanto
-mostrano i lavori citati qui - non si tratta di una rassegna sistematica -
-questa combinazione non era stata misurata.
+**Cosa aggiunge shardpix.** Uno schema a soglia toglie questa scelta e mette
+chi nasconde nel caso peggiore della batch steganography: ogni immagine deve
+portare una quota intera - un carico fisso di 1.264 bit, senza immagini
+pulite - e il gruppo di immagini dell'avversario è l'insieme delle quote di
+una cassaforte, che i rapporti tra i custodi rendono facile da raccogliere.
+shardpix misura quanto costa questo vincolo e implementa la difesa. Il
+costo: l'inserimento di tipo LSB degli schemi citati sopra, debolmente
+visibile su un'immagine, cade quando le quote vengono aggregate (formato 3,
+§5.5.7), e lo stesso accade all'inserimento adattivo nei JPEG molto
+ricompressi (§5.5.8). La difesa: dividere solo la chiave (01 ADR-01), così
+il carico per immagine è il più piccolo possibile qualunque sia il file, e
+collocarlo con un inserimento adattivo (formati 4 e 5), così ogni immagine
+aggiunge indizi quasi nulli; aggregando fino a cinquanta immagini resta al
+livello del caso per i rilevatori usati (§5.5.7, §5.5.8), e la CLI avvisa
+per le copertine in cui non regge (JPEG ricompressi). Tutto è misurato su
+10.000 immagini con controlli positivi e intervalli di confidenza. La
+domanda della steganalisi aggregata è di Ker; il contributo è applicarla
+alle quote di uno schema di condivisione del segreto, mostrare il costo del
+vincolo e costruire e misurare la contromisura. Per quanto mostrano i lavori
+citati qui - non si tratta di una rassegna sistematica - questa
+combinazione non era stata misurata.
 
 ## 5.8 Riferimenti
 

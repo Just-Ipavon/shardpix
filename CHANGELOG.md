@@ -12,7 +12,10 @@ All notable changes to this project are documented here. The format follows
   images (Thien–Lin, Lin–Tsai, Woźniak–Ogiela–Ogiela, sssteg) and pooled
   steganalysis (Ker, steganographer identification, content-adaptive batch
   steganography), and what shardpix adds. The README credits pooled
-  steganalysis to Ker instead of presenting the question as new.
+  steganalysis to Ker instead of presenting the question as new, and frames
+  the threshold constraint (a whole share in every image) as the worst case
+  for the steganographer, with key splitting and adaptive embedding as the
+  defence shardpix implements and measures.
 - docs/05 says that the chi-square attack of `analyze` on JPEG is no
   evidence of security (DCTR is), and §5.6 lists the detectors that were
   not run (full SRM, maxSRM, GFR, SRNet); its paragraphs on JPEG covers and

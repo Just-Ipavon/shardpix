@@ -598,17 +598,26 @@ against pooled detectors with content-adaptive embedding, in the spatial
 [20] and JPEG [25] domains. In all of it the steganographer chooses how to
 spread the payload.
 
-**What shardpix adds.** A threshold scheme removes that choice: every image
-must carry a whole share - a fixed payload of 1,264 bits - and the
-adversary's batch is the set of shares of one vault, which the holders'
-relations make easy to gather. shardpix measures pooled steganalysis in
-that setting, for the LSB-type embedding of the schemes above and for
-adaptive embedding in PNG and in camera JPEG, on 10,000 images with
-positive controls and confidence intervals. The pooled-steganalysis
-question is Ker's; the contribution is applying it to the shares of a
-secret-sharing scheme and measuring it on a complete system. As far as the
-work cited here shows - this is not a systematic survey - that combination
-had not been measured.
+**What shardpix adds.** A threshold scheme removes that choice and puts the
+steganographer in the worst case of batch steganography: every image must
+carry a whole share - a fixed payload of 1,264 bits, with no clean images
+allowed - and the adversary's batch is the set of shares of one vault,
+which the holders' relations make easy to gather. shardpix measures what
+this constraint costs and implements the defence against it. The cost: the
+LSB-type embedding of the schemes above, weakly visible on one image, is
+broken once the shares are pooled (format 3, §5.5.7), and so is adaptive
+embedding in heavily recompressed JPEG (§5.5.8). The defence: split only the
+key (01 ADR-01), so the payload per image is the smallest possible whatever
+the file, and place it by adaptive embedding (formats 4 and 5), so that each
+image adds almost no evidence; pooled up to fifty images it stays at chance
+for the detectors used (§5.5.7, §5.5.8), and the CLI warns about the covers
+where it does not hold (recompressed JPEGs). All of it is measured on
+10,000 images with positive controls and confidence intervals. The
+pooled-steganalysis question is Ker's; the contribution is applying it to
+the shares of a secret-sharing scheme, showing the constraint's cost and
+building and measuring the countermeasure. As far as the work cited here
+shows - this is not a systematic survey - that combination had not been
+measured.
 
 ## 5.8 References
 
