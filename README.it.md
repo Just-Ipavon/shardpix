@@ -26,16 +26,23 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 ## Perché è importante
 
 Dividere una chiave con lo schema di Shamir e nascondere le quote nelle
-immagini non è un'idea nuova. Quello che di solito manca è la domanda che un
-avversario si farebbe davvero: **non "questa foto nasconde qualcosa?", ma
-"queste foto, prese insieme, nascondono qualcosa?"** Chi trova una quota
-spesso ne trova altre della stessa cassaforte: i custodi si conoscono, usano
-lo stesso cloud, scrivono alle stesse persone. Gli schemi che uniscono
-condivisione del segreto e steganografia vengono valutati un'immagine alla
-volta, di solito con strumenti generici, e quasi sempre nascondono le quote
-nei bit meno significativi (LSB).
+immagini non è un'idea nuova, e non lo è nemmeno chiedersi se più immagini,
+prese insieme, tradiscono ciò che ognuna nasconde: è la *steganalisi
+aggregata* (Ker, 2006). Quello che, per quanto abbiamo trovato, non era stato misurato sono le due
+cose insieme.
+Gli schemi che uniscono condivisione del segreto e steganografia vengono
+valutati un'immagine alla volta, di solito con strumenti generici, e quasi
+sempre nascondono le quote nei bit meno significativi (LSB); gli studi sulla
+steganalisi aggregata lasciano a chi nasconde la scelta di come distribuire
+il carico, cosa che uno schema a soglia non permette - **ogni immagine deve
+portare una quota intera, e chi trova una quota spesso ne trova altre della
+stessa cassaforte**: i custodi si conoscono, usano lo stesso cloud, scrivono
+alle stesse persone.
+([docs_it/05 §5.7](docs_it/05-security-analysis.md#57-lavori-correlati)
+confronta shardpix con questi lavori.)
 
-shardpix è costruito attorno a quella domanda e ne misura la risposta:
+shardpix applica la domanda della steganalisi aggregata alle quote di una
+cassaforte e ne misura la risposta:
 
 - **Una sola immagine è il test sbagliato.** Con un inserimento di tipo LSB
   (il formato 3, tenuto come termine di confronto) un rilevatore addestrato

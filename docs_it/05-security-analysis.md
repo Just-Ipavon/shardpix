@@ -411,7 +411,8 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 512 --strategy ad
 Di solito la steganalisi si valuta un'immagine alla volta, come in
 §5.5.5–5.5.6. Una cassaforte però non è un'immagine sola: le sue n quote
 stanno in n fotografie, e ADV-5 può averne in mano diverse e combinare gli
-indizi (*pooled steganalysis*, Ker). Il problema è specifico degli schemi a
+indizi (*pooled steganalysis*, Ker [18]; il §5.7 colloca questa misura tra i
+lavori correlati). Il problema è specifico degli schemi a
 soglia, e i risultati per singola immagine non rispondono a questa domanda.
 
 **Metodo** (`python -m shardpix.analysis.pooled`, dati grezzi in
@@ -468,7 +469,7 @@ sorgente di immagini, rilevatore addestrato al tasso esatto.
 Il formato 5 (01 ADR-13) viene misurato come i formati 3 e 4, ma nel dominio
 JPEG: BOSSbase compresso con Pillow a qualità 95 (vicina a quella dei
 telefoni) e 75 (lo standard dei benchmark), caratteristiche DCTR (Holub e
-Fridrich, 2015; 8.000 caratteristiche dai residui delle 64 funzioni di base
+Fridrich [26]; 8.000 caratteristiche dai residui delle 64 funzioni di base
 DCT dell'immagine decompressa) con il classificatore a ensemble, metà delle
 immagini per l'addestramento e metà per il test, con una quota e con 0,1 bit
 per coefficiente AC diverso da zero (`python -m shardpix.analysis.jpeg_benchmark`).
@@ -529,32 +530,44 @@ Cosa mostra:
 
 Avvertenze: le copertine sono immagini di BOSSbase compresse da Pillow, non
 file di fotocamere di telefoni; un solo rilevatore (DCTR); rilevatore
-addestrato al carico esatto. Rilevatori JPEG più potenti (GFR, SRNet) non
-sono stati provati.
+addestrato al carico esatto. Rilevatori JPEG più potenti (GFR [27], SRNet
+[8] o altre reti per JPEG) non sono stati provati.
+
+**Che cosa questa valutazione non è.** L'attacco del chi-quadro che
+`analyze` esegue sui coefficienti di un JPEG (03 §3.10) scopre solo gli
+strumenti che sovrascrivono il bit meno significativo dei coefficienti, come
+JSteg; il formato 5 lo supera per costruzione, e non è una prova di
+sicurezza. La prova per il formato 5 è la misura con DCTR qui sopra.
 
 ## 5.6 Limiti noti
 
 **Nessun audit indipendente.** Si vedano il §5.1 e lo 06.
 
-**Steganalisi addestrata: misurata contro due rilevatori, non contro tutti.**
-Una quota nel formato 4 su BOSSbase 512x512 è al livello del caso per SPAM e
-SRM-lite (§5.5.6); il formato 3 era debolmente visibile (42,5% per SRM-lite,
-§5.5.5) ed è ancora ciò che scrive `--method matching`. I rilevatori usati
-sono SPAM, un sottoinsieme di 3.125 caratteristiche dello spatial rich model
-e, per il formato 3, una piccola CNN addestrata su una CPU. L'SRM completo
-(34.671 caratteristiche, compresi i residui min-max progettati contro
-l'inserimento adattivo) e reti più grandi come SRNet, addestrate su una GPU,
-probabilmente farebbero meglio e non sono state eseguite. Tutte le misure
-usano un'unica sorgente di immagini (BOSSbase); sul campo, il mismatch della
+**Steganalisi addestrata: misurata contro alcuni rilevatori, non contro lo
+stato dell'arte.** Una quota nel formato 4 su BOSSbase 512x512 è al livello
+del caso per SPAM e SRM-lite (§5.5.6), e una quota nel formato 5 a qualità
+JPEG 95 è al livello del caso per DCTR (§5.5.8). I rilevatori usati sono
+SPAM, un sottoinsieme di 3.125 caratteristiche dello spatial rich model, una
+piccola CNN addestrata su una CPU (solo per il formato 3) e DCTR. L'SRM
+completo (34.671 caratteristiche), maxSRM e gli altri modelli che conoscono
+il canale di selezione, GFR per i JPEG e reti profonde come SRNet,
+addestrate su una GPU, sono più potenti e non sono stati eseguiti: "al
+livello del caso" qui significa al livello del caso per questi rilevatori. I
+controlli positivi (§5.5.6, §5.5.8) mostrano che gli stessi rilevatori
+vedono i formati 4 e 5 con carichi maggiori, e i risultati negativi - il
+formato 3 e i JPEG a qualità 75 che cadono con l'aggregazione - con
+rilevatori più potenti diventerebbero solo più netti. Tutte le misure usano
+un'unica sorgente di immagini (BOSSbase); sul campo, il mismatch della
 sorgente delle immagini gioca contro il rilevatore.
 
-**Immagini di copertura JPEG.** I pixel decodificati da un JPEG rispettano la
-quantizzazione a blocchi del file originale. Modificarne uno qualsiasi di ±1
-rompe questa struttura, cosa che la steganalisi di compatibilità JPEG
-(Fridrich, Goljan e Du) può rilevare a qualsiasi tasso di inserimento. Anche
-un PNG derivato da un JPEG è di per sé insolito. La CLI avvisa quando
-un'immagine di copertura è stata decodificata da un JPEG; usare foto che non
-sono mai state compresse in JPEG (esportazioni da RAW, screenshot PNG).
+**Immagini di copertura JPEG.** I file JPEG vengono inseriti nei loro
+stessi coefficienti (formato 5) e mai decodificati in pixel, quindi la
+steganalisi di compatibilità JPEG (Fridrich, Goljan e Du [4]) non si applica
+a essi. Si applicherebbe a una copertina in pixel che in passato era un JPEG
+(per esempio un JPEG convertito in PNG): i pixel decodificati rispettano la
+quantizzazione a blocchi dell'originale, e una modifica di ±1 la rompe. I
+JPEG ricompressi sono copertine deboli (§5.5.8); `embed` e `seal` avvisano
+quando la qualità stimata di un JPEG è inferiore a 90.
 
 **Disponibilità dell'immagine di copertura.** Se l'avversario possiede
 l'immagine di copertura originale, un confronto pixel per pixel rivela ogni
@@ -565,9 +578,11 @@ immagini trovate online: una ricerca inversa per immagini trova l'originale.
 ridimensionano le immagini, il che distrugge il carico. Le immagini devono
 viaggiare come file.
 
-**Metadati.** I PNG prodotti conservano il profilo ICC ma non i dati EXIF.
-Una foto da smartphone che arriva come PNG privo di metadati può essere di per
-sé insolita in alcuni contesti.
+**Metadati.** I JPEG prodotti conservano i metadati EXIF e ICC; i PNG
+prodotti conservano il profilo ICC ma non i dati EXIF. Il file JPEG viene
+riscritto da libjpeg, quindi le sue tabelle di Huffman o l'ordine dei
+marcatori possono differire da quelli che scrive un certo telefono (07
+§7.6).
 
 **Il file del vault non è nascosto.** Il suo magic number, l'id del gruppo, la
 soglia e il numero di quote sono in chiaro (autenticati, non cifrati).
@@ -602,7 +617,52 @@ dalla 0.x o dalla 1.0 non possono essere lette dalla 1.1. Poiché il costo è
 ora memorizzato in ogni immagine, futuri aumenti non romperanno la
 compatibilità.
 
-## 5.7 Riferimenti
+## 5.7 Lavori correlati
+
+**Condivisione del segreto nascosta nelle immagini.** Unire condivisione del
+segreto e steganografia non è nuovo. Thien e Lin [21] dividono un'immagine
+segreta in ombre simili a rumore; Lin e Tsai [22] nascondono le ombre in
+immagini di copertura e aggiungono l'autenticazione, e i lavori successivi
+di questo filone distribuiscono le quote su copertine diverse. Gli schemi
+recenti mantengono la stessa impostazione: Woźniak, Ogiela e Ogiela [23]
+dividono un messaggio con lo schema di Shamir, scrivono ogni quota con un
+inserimento LSB lungo un percorso pseudo-casuale con chiave nel proprio
+contenitore e valutano la rilevabilità con strumenti generici (StegExpose,
+Aletheia), un'immagine alla volta. Strumenti come sssteg [24] collegano
+`ssss` e `steghide`, senza una valutazione di steganalisi.
+
+Il formato 3 è proprio questa impostazione: una quota per immagine, LSB
+matching in posizioni pseudo-casuali con chiave (la sostituzione LSB, usata
+dalla maggior parte di questi schemi, è ancora più debole: §5.5.1). Le sue
+misure valgono quindi per questa famiglia di schemi: debolmente visibile a
+un rilevatore addestrato su una sola immagine (42,6%) e rotto quando si
+aggregano più quote della stessa cassaforte (7,4% con cinquanta immagini,
+§5.5.7).
+
+**Batch steganography e steganalisi aggregata.** La domanda di un
+avversario che possiede più oggetti è di Ker [18]: la steganalisi aggregata
+combina gli indizi di molti oggetti, la batch steganography si chiede come
+distribuire un carico su di essi, e la legge della radice quadrata [17]
+limita quanto si può nascondere. I lavori successivi individuano l'utente
+colpevole tra molti (steganographer identification [19]) e studiano le
+strategie di distribuzione contro rilevatori aggregati con inserimento
+adattivo, nel dominio dei pixel [20] e in quello JPEG [25]. In tutti questi
+lavori è chi nasconde a scegliere come distribuire il carico.
+
+**Cosa aggiunge shardpix.** Uno schema a soglia toglie questa scelta: ogni
+immagine deve portare una quota intera - un carico fisso di 1.264 bit - e il
+gruppo di immagini dell'avversario è l'insieme delle quote di una
+cassaforte, che i rapporti tra i custodi rendono facile da raccogliere.
+shardpix misura la steganalisi aggregata in questo scenario, per
+l'inserimento di tipo LSB degli schemi citati sopra e per l'inserimento
+adattivo in PNG e nei JPEG delle fotocamere, su 10.000 immagini con
+controlli positivi e intervalli di confidenza. La domanda della steganalisi
+aggregata è di Ker; il contributo è applicarla alle quote di uno schema di
+condivisione del segreto e misurarla su un sistema completo. Per quanto
+mostrano i lavori citati qui - non si tratta di una rassegna sistematica -
+questa combinazione non era stata misurata.
+
+## 5.8 Riferimenti
 
 1. A. Shamir, "How to share a secret", *Communications of the ACM*, 1979.
 2. A. Westfeld e A. Pfitzmann, "Attacks on steganographic systems",
@@ -640,3 +700,26 @@ compatibilità.
     for spatial steganalysis", *IEEE ICASSP*, 2018.
 17. A. Ker, T. Pevný, J. Kodovský e J. Fridrich, "The square root law of
     steganographic capacity", *ACM Workshop on Multimedia and Security*, 2008.
+18. A. Ker, "Batch steganography and pooled steganalysis", *Information
+    Hiding*, 2006 (LNCS 4437, 2007).
+19. A. Ker e T. Pevný, "A new paradigm for steganalysis via clustering",
+    *SPIE Media Watermarking, Security, and Forensics*, 2011.
+20. R. Cogranne, V. Sedighi e J. Fridrich, "Practical strategies for
+    content-adaptive batch steganography and pooled steganalysis", *IEEE
+    ICASSP*, 2017.
+21. C.-C. Thien e J.-C. Lin, "Secret image sharing", *Computers &
+    Graphics*, 2002.
+22. C.-C. Lin e W.-H. Tsai, "Secret image sharing with steganography and
+    authentication", *Journal of Systems and Software*, 2004.
+23. K. Woźniak, M. R. Ogiela e L. Ogiela, "A two-phase embedding approach
+    for secure distributed steganography", *Sensors*, 2025.
+24. sssteg, condivisione del segreto di Shamir con steghide,
+    https://github.com/BertalanD/sssteg.
+25. A. Zakaria, M. Chaumont e G. Subsol, "Pooled steganalysis in JPEG: how
+    to deal with the spreading strategy?", *IEEE WIFS*, 2019.
+26. V. Holub e J. Fridrich, "Low-complexity features for JPEG steganalysis
+    using undecimated DCT" (DCTR), *IEEE Transactions on Information
+    Forensics and Security*, 2015.
+27. X. Song, F. Liu, C. Yang, X. Luo e Y. Zhang, "Steerable Gaussian
+    filters for JPEG steganalysis" (GFR), *ACM Workshop on Information
+    Hiding and Multimedia Security*, 2015.
