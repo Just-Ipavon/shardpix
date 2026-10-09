@@ -213,12 +213,12 @@ def run(sources: dict[str, Path], rate: float, groups=GROUP_SIZES, seed: int = 0
     return results
 
 
-def run_jpeg(path: Path, groups=GROUP_SIZES, seed: int = 0) -> dict:
-    """The same for JPEG covers, from the DCTR scores of :mod:`.jpeg_benchmark`."""
+def run_jpeg(path: Path, groups=GROUP_SIZES, seed: int = 0, detector: str = "dctr") -> dict:
+    """The same for JPEG covers, from the scores of :mod:`.jpeg_benchmark`."""
     data = np.load(path)
     results: dict = {"payload": "share", "groups": list(groups), "strategies": {}}
     for strategy in ("naive", "jpeg"):
-        key = f"dctr@{strategy}@share"
+        key = f"{detector}@{strategy}@share"
         if key not in data:
             raise SystemExit(f"{path} has no scores for {key}: run jpeg_benchmark first")
         covers, stegos = data[key]
@@ -228,10 +228,10 @@ def run_jpeg(path: Path, groups=GROUP_SIZES, seed: int = 0) -> dict:
                 r = pooled(covers, stegos, g, method, seed=seed)
                 rows.append(asdict(r))
                 print(
-                    f"  {strategy:6s} dctr {method:4s} g={g:3d}: "
+                    f"  {strategy:6s} {detector} {method:4s} g={g:3d}: "
                     f"P_E {r.p_e:.3f} [{r.p_e_low:.3f}, {r.p_e_high:.3f}] AUC {r.auc:.3f}"
                 )
-        results["strategies"][strategy] = {"dctr": rows}
+        results["strategies"][strategy] = {detector: rows}
     return results
 
 
@@ -347,6 +347,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path("assets"))
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--jpeg", type=int, default=None, help="pool JPEG scores at this quality")
+    parser.add_argument("--detector", default="dctr", help="JPEG detector: dctr or gfr")
+    parser.add_argument("--tag", default="", help="JPEG cover set, as given to jpeg_benchmark")
+    parser.add_argument(
+        "--dataset-name", default="BOSSbase 512x512", help="cover set named in the chart"
+    )
     args = parser.parse_args(argv)
     if args.jpeg is not None:
         return _main_jpeg(args)
@@ -379,12 +384,20 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _main_jpeg(args: argparse.Namespace) -> int:
-    source = args.data / f"jpeg_benchmark_q{args.jpeg}.scores.npz"
+    stem = f"jpeg_benchmark_{args.tag}" if args.tag else "jpeg_benchmark"
+    source = args.data / f"{stem}_q{args.jpeg}.scores.npz"
     if not source.exists():
         raise SystemExit(f"{source} not found: run jpeg_benchmark first")
-    results = run_jpeg(source, seed=args.seed)
+    results = run_jpeg(source, seed=args.seed, detector=args.detector)
     results["quality"] = args.jpeg
-    path = args.data / f"pooled_jpeg_q{args.jpeg}.json"
+    results["detector"] = args.detector
+    # The first JPEG results (BOSSbase, DCTR) keep their original file names.
+    suffix = "".join(
+        f"_{part}"
+        for part in (args.tag, args.detector if args.tag or args.detector != "dctr" else "")
+        if part
+    )
+    path = args.data / f"pooled_jpeg{suffix}_q{args.jpeg}.json"
     path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     print(f"  wrote {path}")
 
@@ -397,12 +410,13 @@ def _main_jpeg(args: argparse.Namespace) -> int:
             args.out,
             mode,
             512,
-            detector="dctr",
-            name=f"pooled-jpeg-q{args.jpeg}",
+            detector=args.detector,
+            name=f"pooled-jpeg{suffix.replace('_', '-')}-q{args.jpeg}",
             title="One vault, many JPEG photos",
             subtitle=(
-                f"DCTR, scores pooled by likelihood ratio, one share per image, BOSSbase "
-                f"512x512 at JPEG quality {args.jpeg}.\nShaded: 2.5-97.5% over 40 splits."
+                f"{args.detector.upper()}, scores pooled by likelihood ratio, one share per "
+                f"image, {args.dataset_name} at JPEG quality {args.jpeg}.\n"
+                "Shaded: 2.5-97.5% over 40 splits."
             ),
         )
         print(f"  wrote {chart}")

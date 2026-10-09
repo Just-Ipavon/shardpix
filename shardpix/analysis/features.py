@@ -21,6 +21,7 @@ each channel (:func:`extract`).
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 
 import numpy as np
@@ -196,6 +197,85 @@ def dctr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
             values = np.minimum(np.round(np.abs(residual) / step), DCTR_T).astype(np.int64)
             counts = np.bincount(groups * bins + values.ravel(), minlength=25 * bins)
             out.append((counts.reshape(25, bins) / per_group[:, None]).ravel())
+    return np.concatenate(out)
+
+
+GFR_SIGMAS = (0.5, 0.75, 1.0, 1.25)
+GFR_ORIENTATIONS = 32
+GFR_T = 4
+GFR_DIM = 4 * 2 * 17 * 25 * (GFR_T + 1)
+"""17,000: 4 scales x 2 phases x 17 merged orientations x 25 grid classes x 5 bins."""
+
+
+def _gabor(sigma: float, theta: float, phi: float) -> np.ndarray:
+    """An 8x8 Gabor kernel of GFR: zero mean, unit L2 norm (as the DCT patterns)."""
+    grid = np.arange(8) - 3.5
+    y, x = np.meshgrid(grid, grid, indexing="ij")
+    u = x * np.cos(theta) + y * np.sin(theta)
+    v = -x * np.sin(theta) + y * np.cos(theta)
+    wavelength = sigma / 0.56
+    kernel = np.exp(-(u**2 + (0.5 * v) ** 2) / (2 * sigma**2)) * np.cos(
+        2 * np.pi * u / wavelength + phi
+    )
+    kernel -= kernel.mean()
+    return kernel / np.linalg.norm(kernel)
+
+
+_GFR_KERNELS = np.array(
+    [
+        [
+            [_gabor(s, np.pi * k / GFR_ORIENTATIONS, phi) for k in range(GFR_ORIENTATIONS)]
+            for phi in (0.0, np.pi / 2)
+        ]
+        for s in GFR_SIGMAS
+    ]
+)
+"""Shape 4 x 2 x 32 x 8 x 8: scale, phase, orientation."""
+
+
+@functools.lru_cache(maxsize=2)
+def _gabor_spectra(h: int, w: int) -> np.ndarray:
+    """Spectra of the 256 Gabor kernels for an ``h x w`` transform, computed once per size."""
+    return np.fft.rfft2(_GFR_KERNELS, s=(h, w)).astype(np.complex64)
+
+
+def gfr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
+    """GFR features (Song et al., 2015) of a greyscale JPEG: 17,000 values.
+
+    The decompressed image is filtered with 256 Gabor kernels (4 scales,
+    32 orientations, 2 phases). Each residual is quantised by ``step``
+    times the scale (the coarser the filter, the larger its response),
+    truncated to ``[0, 4]`` in magnitude and histogrammed per position in
+    the 8x8 grid, merged into 25 classes as in :func:`dctr`. Orientations
+    ``k`` and ``32 - k`` are merged, as the image statistics are symmetric,
+    leaving 17 per scale and phase. Stronger than DCTR against content-
+    adaptive JPEG steganography.
+    """
+    image = decompress(blocks, quant).astype(np.float32)
+    h, w = image.shape
+    oh, ow = h - 7, w - 7
+    spectrum = np.fft.rfft2(image, s=(h + 7, w + 7)).astype(np.complex64)
+    kernel_spectra = _gabor_spectra(h + 7, w + 7)
+    phase_r = np.minimum(np.arange(oh) % 8, 8 - np.arange(oh) % 8)
+    phase_c = np.minimum(np.arange(ow) % 8, 8 - np.arange(ow) % 8)
+    groups = (phase_r[:, None] * 5 + phase_c[None, :]).ravel()
+    per_group = np.bincount(groups, minlength=25).astype(np.float64)
+    bins = GFR_T + 1
+    out = []
+    for si, sigma in enumerate(GFR_SIGMAS):
+        q = step * sigma / GFR_SIGMAS[0]
+        for pi in range(2):
+            histograms = []
+            for k in range(GFR_ORIENTATIONS):
+                full = np.fft.irfft2(spectrum * kernel_spectra[si, pi, k], s=(h + 7, w + 7))
+                residual = full[7:h, 7:w]
+                values = np.minimum(np.round(np.abs(residual) / q), GFR_T).astype(np.int64)
+                counts = np.bincount(groups * bins + values.ravel(), minlength=25 * bins)
+                histograms.append(counts.reshape(25, bins) / per_group[:, None])
+            merged = [histograms[0]]
+            merged += [(histograms[k] + histograms[GFR_ORIENTATIONS - k]) / 2 for k in range(1, 16)]
+            merged.append(histograms[16])
+            out.extend(m.ravel() for m in merged)
     return np.concatenate(out)
 
 
