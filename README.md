@@ -7,11 +7,13 @@
 
 **English** · [Italiano](README.it.md)
 
-Encrypt a file and hide the key in ordinary-looking photos: split it into
-*n* shares, one per image, so that any *k* images open the file and fewer
-reveal nothing. The images carry no visible change and pass classical
-steganalysis — and the attacks that check it, chi-square and RS analysis,
-are built in.
+Encrypt a file and split its key among ordinary-looking photos. shardpix
+gives you two things: the encrypted file (`.spx`), which you can store
+anywhere, and *n* photos, one for each person you trust, each hiding a share
+of the key. To open the file you need the `.spx`, any *k* of the photos and
+the passphrase, if you set one; with fewer than *k* photos the key cannot be
+rebuilt. The photos look unchanged, and how well they hide the shares is
+measured, not assumed: see [Why it matters](#why-it-matters).
 
 > **Learning project: internally reviewed, not independently audited.** The
 > cryptography comes from the `cryptography` library; secret sharing, the
@@ -22,6 +24,180 @@ are built in.
 > use established tools such as [age](https://age-encryption.org).
 
 ![shardpix sealing a file behind 3 of 5 photos, opening it with three of them, and analysing one image](assets/demo.svg)
+
+## How it works
+
+**Sealing** a file behind 3 of 5 photos:
+
+```mermaid
+flowchart LR
+    F["notes.pdf"] --> E["AES-256-GCM"]
+    K["random key K"] --> E
+    E --> V["notes.pdf.spx<br/>encrypted file"]
+    K --> S["Shamir, 3 of 5"]
+    S --> P["5 photos, one share each<br/>one per holder"]
+```
+
+**Opening** it:
+
+```mermaid
+flowchart LR
+    V["notes.pdf.spx"] --> U["shardpix unseal"]
+    P["any 3 of the 5 photos"] --> U
+    W["the passphrase, if one was set"] --> U
+    U --> F["notes.pdf"]
+```
+
+- **The vault file** (`.spx`) is ciphertext. It can sit on a shared drive or
+  in an e-mail: without the key it is useless. Without it, the photos are
+  useless too, so keep a copy.
+- **The key** exists only as shares. Any 3 of the 5 rebuild it; 2 say nothing
+  about it, not even with unlimited computing power.
+- **Each share** is about 160 bytes, whatever the size of the file, hidden in
+  a photo among candidate positions only the passphrase can find, with its
+  few changes placed where the photo is textured, and encrypted so the
+  hidden bits look like noise.
+- **The passphrase** is one for the whole vault. Without one, anyone running
+  shardpix can find the shares, but still needs *k* of them and the `.spx`.
+
+To hide a short message or a file in a single image, with no vault file,
+use `embed` and `extract`.
+
+## Install
+
+shardpix needs Python 3.10 or later. Install it with
+[pipx](https://pipx.pypa.io), which puts it in its own environment and the
+`shardpix` command on your `PATH`, so it works in every terminal and every
+folder:
+
+```bash
+# 1. pipx, once
+sudo apt install pipx            # Debian, Ubuntu, Kali
+brew install pipx                # macOS
+py -m pip install --user pipx    # Windows
+pipx ensurepath                  # Linux, macOS; then open a new terminal
+py -m pipx ensurepath            # Windows; then open a new PowerShell
+
+# 2. shardpix, straight from GitHub
+pipx install git+https://github.com/Just-Ipavon/shardpix.git
+shardpix --version
+```
+
+Update to the latest version with `pipx reinstall shardpix`, remove it with
+`pipx uninstall shardpix`.
+
+### Windows and PowerShell
+
+shardpix runs the same in PowerShell (Windows 10 and 11, Python 3.10 or
+later; every dependency ships ready-made for Windows). Install pipx with
+`py -m pip install --user pipx`, run `py -m pipx ensurepath`, open a new
+PowerShell window and continue as above (the first `pipx` command works only
+in a new window; until then use `py -m pipx`). If `py` is not found, install
+Python first: `winget install Python.Python.3.13`. Two things differ from bash:
+
+- PowerShell does not expand `*.jpg` for other programs; shardpix does it
+  itself, so `shardpix seal notes.pdf photos\*.jpg -k 3 -p` works as in bash.
+- Never redirect a file with `>` (`shardpix extract out.jpg > file.pdf`):
+  Windows PowerShell 5 rewrites the bytes as text and corrupts the file. Use
+  `-o file.pdf`, which works everywhere.
+
+### For development
+
+To work on the code, use a virtual environment instead. The `shardpix`
+command then exists only while that environment is active: in a new
+terminal, run `source .venv/bin/activate` again (`.venv\Scripts\activate` on
+Windows).
+
+```bash
+git clone https://github.com/Just-Ipavon/shardpix.git
+cd shardpix
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Quick start
+
+```bash
+# Seal a file behind 3 of 5 photos (prompts for a passphrase)
+shardpix seal minutes.pdf photos/*.png -k 3 -p
+
+# Open it with any three of the images
+shardpix unseal sealed/minutes.pdf.spx sealed/beach.png sealed/cat.png sealed/street.png -p
+
+# Hide a short message in one image, and read it back
+shardpix embed photo.png -o holiday.png -t "meet me at noon" -p
+shardpix extract holiday.png -p
+
+# Split a secret into printable shares, any 2 of 3 recover it
+shardpix split -t "safe code 4815" -k 2 -n 3 -d shares/
+shardpix combine shares/share-*-1.txt shares/share-*-3.txt
+
+# Look for the statistical fingerprints of LSB embedding
+shardpix analyze suspicious.png
+```
+
+### Options
+
+| Flag | Meaning |
+| --- | --- |
+| `-k, --threshold` | Images (or shares) needed to recover |
+| `-n, --shares` | Shares to create (`split`) |
+| `-d, --directory` | Output directory (`seal`: default `./sealed`; `split`: one file per share) |
+| `-p, --passphrase` | Prompt for a passphrase |
+| `--passphrase-file` | Read the passphrase from the first line of a file |
+| `-o, --output` | Output file |
+| `--name` | Vault file name (`seal`) |
+| `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
+
+Passphrases are never accepted as command line arguments, which would leave
+them in the shell history and the process list.
+
+### When something is wrong
+
+`unseal` reports what happened to every image — here one holder cropped their
+photo and another sent the wrong one — so even a failed recovery tells you
+which holder to call:
+
+```text
+  Image                Share    Status        Detail
+  sealed/cat.png          #3    used
+  sealed/street.png       #5    used
+  sealed/beach.png        #2    used
+  sealed/rocket.png             no payload    no share: wrong passphrase or edited image
+  old/photo.png                 no payload    no share: wrong passphrase or edited image
+Recovered minutes.pdf (47.1 KiB) to minutes.pdf
+```
+
+## Features
+
+| Command | What it does |
+| --- | --- |
+| `seal` | Encrypts a file and hides one key share in each cover image |
+| `unseal` | Opens a vault from any *k* of its images and reports on every image |
+| `embed` / `extract` | Hides or recovers a message or file in a single image |
+| `split` / `combine` | Shamir secret sharing with printable, authenticated shares |
+| `inspect` | Shows whether an image holds a share, and of which vault |
+| `analyze` | Runs classical attacks: chi-square and RS on pixels, chi-square on a JPEG's DCT coefficients |
+| `capacity` | Shows how many bytes an image can hold |
+
+Damaged images are identified rather than silently breaking the recovery, and
+a forged set of shares can never pass for the real key.
+
+## Phone photos and other covers
+
+**Use the photos your phone takes, as they are.** shardpix reads the first
+bytes of each cover and hides the share the way that file is stored:
+
+| Cover | How the share is hidden | Output |
+| --- | --- | --- |
+| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 5): never decoded or recompressed, same quality tables and EXIF | `.jpg` |
+| PNG, TIFF, BMP, RAW export | In the pixels (format 4) | `.png` |
+| iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
+
+Choose textured photos you took yourself and never shared, and send the
+results as files, not as "photos" in a messaging app, which re-compresses
+them. Details and step-by-step instructions:
+[docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
 
 ## Why it matters
 
@@ -84,142 +260,6 @@ with an ensemble classifier) is trained on 5,000 images and scores the other
 raw data: [docs/data/pooled_512.json](docs/data/pooled_512.json);
 reproduce with `python -m shardpix.analysis.pooled`.
 
-## How it works
-
-```text
-notes.pdf ──AES-256-GCM, random key K──────────►  notes.pdf.spx      store it anywhere
-K ─────────Shamir over GF(256), 3 of 5─────────►  5 authenticated shares
-share i ───adaptive ±1, a few hundred changes─►  photo_i.jpg        one per holder
-```
-
-- **The vault file** is ciphertext. It can sit on a shared drive or in an
-  e-mail: without the key it is useless.
-- **The key** exists only as shares. Any 3 of the 5 rebuild it; 2 say nothing
-  about it, not even with unlimited computing power.
-- **Each share** is hidden in a photo, among candidate positions only the
-  passphrase can find, with its few changes placed where the photo is
-  textured, and encrypted so the hidden bits look like noise.
-
-## Features
-
-| Command | What it does |
-| --- | --- |
-| `seal` | Encrypts a file and hides one key share in each cover image |
-| `unseal` | Opens a vault from any *k* of its images and reports on every image |
-| `embed` / `extract` | Hides or recovers a message or file in a single image |
-| `split` / `combine` | Shamir secret sharing with printable, authenticated shares |
-| `inspect` | Shows whether an image holds a share, and of which vault |
-| `analyze` | Runs classical attacks: chi-square and RS on pixels, chi-square on a JPEG's DCT coefficients |
-| `capacity` | Shows how many bytes an image can hold |
-
-Damaged images are identified rather than silently breaking the recovery, and
-a forged set of shares can never pass for the real key.
-
-## Install
-
-shardpix needs Python 3.10 or later. Install it with
-[pipx](https://pipx.pypa.io), which puts it in its own environment and the
-`shardpix` command on your `PATH`, so it works in every terminal and every
-folder:
-
-```bash
-# 1. pipx, once
-sudo apt install pipx            # Debian, Ubuntu, Kali
-brew install pipx                # macOS
-py -m pip install --user pipx    # Windows
-pipx ensurepath                  # Linux, macOS; then open a new terminal
-py -m pipx ensurepath            # Windows; then open a new PowerShell
-
-# 2. shardpix, straight from GitHub
-pipx install git+https://github.com/Just-Ipavon/shardpix.git
-shardpix --version
-```
-
-Update to the latest version with `pipx reinstall shardpix`, remove it with
-`pipx uninstall shardpix`.
-
-### Windows and PowerShell
-
-shardpix runs the same in PowerShell (Windows 10 and 11, Python 3.10 or
-later; every dependency ships ready-made for Windows). Install pipx with
-`py -m pip install --user pipx`, run `py -m pipx ensurepath`, open a new
-PowerShell window and continue as above (the first `pipx` command works only
-in a new window; until then use `py -m pipx`). If `py` is not found, install
-Python first: `winget install Python.Python.3.13`. Two things differ from bash:
-
-- PowerShell does not expand `*.jpg` for other programs; shardpix does it
-  itself, so `shardpix seal notes.pdf photos\*.jpg -k 3 -p` works as in bash.
-- Never redirect a file with `>` (`shardpix extract out.jpg > file.pdf`):
-  Windows PowerShell 5 rewrites the bytes as text and corrupts the file. Use
-  `-o file.pdf`, which works everywhere.
-
-### For development
-
-To work on the code, use a virtual environment instead. The `shardpix`
-command then exists only while that environment is active: in a new
-terminal, run `source .venv/bin/activate` again (`.venv\Scripts\activate` on
-Windows).
-
-```bash
-git clone https://github.com/Just-Ipavon/shardpix.git
-cd shardpix
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-## Usage
-
-```bash
-# Seal a file behind 3 of 5 photos (prompts for a passphrase)
-shardpix seal minutes.pdf photos/*.png -k 3 -p
-
-# Open it with any three of the images
-shardpix unseal sealed/minutes.pdf.spx sealed/beach.png sealed/cat.png sealed/street.png -p
-
-# Hide a short message in one image, and read it back
-shardpix embed photo.png -o holiday.png -t "meet me at noon" -p
-shardpix extract holiday.png -p
-
-# Split a secret into printable shares, any 2 of 3 recover it
-shardpix split -t "safe code 4815" -k 2 -n 3 -d shares/
-shardpix combine shares/share-*-1.txt shares/share-*-3.txt
-
-# Look for the statistical fingerprints of LSB embedding
-shardpix analyze suspicious.png
-```
-
-### Options
-
-| Flag | Meaning |
-| --- | --- |
-| `-k, --threshold` | Images (or shares) needed to recover |
-| `-n, --shares` | Shares to create (`split`) |
-| `-d, --directory` | Output directory (`seal`: default `./sealed`; `split`: one file per share) |
-| `-p, --passphrase` | Prompt for a passphrase |
-| `--passphrase-file` | Read the passphrase from the first line of a file |
-| `-o, --output` | Output file |
-| `--name` | Vault file name (`seal`) |
-| `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
-
-Passphrases are never accepted as command line arguments, which would leave
-them in the shell history and the process list.
-
-### When something is wrong
-
-`unseal` reports what happened to every image — here one holder cropped their
-photo and another sent the wrong one — so even a failed recovery tells you
-which holder to call:
-
-```text
-  Image                Share    Status        Detail
-  sealed/cat.png          #3    used
-  sealed/street.png       #5    used
-  sealed/beach.png        #2    used
-  sealed/rocket.png             no payload    no share: wrong passphrase or edited image
-  old/photo.png                 no payload    no share: wrong passphrase or edited image
-Recovered minutes.pdf (47.1 KiB) to minutes.pdf
-```
-
 ## Detectability
 
 <picture>
@@ -258,22 +298,6 @@ Reproduce them with `pip install -e ".[bench]"` and
 `python -m shardpix.analysis.benchmark`, and for the trained detectors
 `pip install -e ".[bench,ml]"` and `python -m shardpix.analysis.ml_benchmark`
 on a copy of BOSSbase.
-
-## Phone photos and other covers
-
-**Use the photos your phone takes, as they are.** shardpix reads the first
-bytes of each cover and hides the share the way that file is stored:
-
-| Cover | How the share is hidden | Output |
-| --- | --- | --- |
-| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 5): never decoded or recompressed, same quality tables and EXIF | `.jpg` |
-| PNG, TIFF, BMP, RAW export | In the pixels (format 4) | `.png` |
-| iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
-
-Choose textured photos you took yourself and never shared, and send the
-results as files, not as "photos" in a messaging app, which re-compresses
-them. Details and step-by-step instructions:
-[docs/07-covers-and-formats.md](docs/07-covers-and-formats.md).
 
 ## Design notes
 
@@ -323,7 +347,7 @@ shardpix/
 ├── jpeg.py             format 5: embedding in JPEG coefficients
 ├── stego.py            key derivation, keyed walk, formats v4 (adaptive) and v3, framing
 ├── stc.py              syndrome-trellis codes (Viterbi)
-├── costs.py            HiLL embedding costs
+├── costs.py            HiLL and UERD embedding costs
 ├── shamir.py           secret sharing, share format, MACs, robust recovery
 ├── gf256.py            GF(2^8) arithmetic and Lagrange interpolation
 ├── images.py           any image in, lossless PNG out
@@ -332,10 +356,11 @@ shardpix/
     ├── chi_square.py   Westfeld–Pfitzmann chi-square attack
     ├── rs.py           Fridrich–Goljan–Du RS analysis
     ├── benchmark.py    detectability experiments and charts
-    ├── features.py     SPAM and SRM-lite steganalysis features
+    ├── features.py     SPAM, SRM-lite, DCTR and GFR steganalysis features
     ├── ensemble.py     Kodovský–Fridrich–Holub ensemble classifier
     ├── cnn.py          convolutional steganalysis network (PyTorch)
     ├── ml_benchmark.py trained-detector experiments on BOSSbase
+    ├── jpeg_benchmark.py the same for JPEG covers (format 5)
     └── pooled.py       an adversary holding several images of one vault
 ```
 
@@ -349,7 +374,7 @@ see [SECURITY.md](SECURITY.md).
 
 | Document | Contents |
 | --- | --- |
-| [01 — Architecture](docs/01-architecture.md) | Context, packages, data model, on-disk formats, eleven architectural decisions |
+| [01 — Architecture](docs/01-architecture.md) | Context, packages, data model, on-disk formats, thirteen architectural decisions |
 | [02 — Use cases](docs/02-use-cases.md) | Actors, use case diagram, nine detailed specifications, operational scenarios |
 | [03 — Function reference](docs/03-function-reference.md) | Every function: behaviour, edge cases, errors, covering tests |
 | [04 — Runtime behaviour](docs/04-runtime-behaviour.md) | Sequence diagrams, the share recovery algorithm, exit codes, timing |
@@ -359,4 +384,5 @@ see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GNU General Public License v3.0 or later (GPL-3.0-or-later) — see
+[LICENSE](LICENSE).

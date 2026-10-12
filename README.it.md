@@ -7,11 +7,14 @@
 
 [English](README.md) · **Italiano**
 
-Cifra un file e nasconde la chiave in foto dall'aspetto del tutto normale: la
-divide in *n* quote, una per immagine, in modo che *k* immagini qualsiasi
-aprano il file e un numero minore non riveli nulla. Le immagini non hanno
-modifiche visibili e superano la steganalisi classica; gli attacchi che lo
-verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
+Cifra un file e divide la sua chiave tra foto dall'aspetto del tutto
+normale. shardpix produce due cose: il file cifrato (`.spx`), che puoi
+conservare dove vuoi, e *n* foto, una per ogni persona di fiducia, ognuna
+con una quota della chiave nascosta dentro. Per aprire il file servono il
+`.spx`, *k* foto qualsiasi e la passphrase, se l'hai impostata; con meno di
+*k* foto la chiave non si può ricostruire. Le foto sembrano invariate, e
+quanto bene nascondono le quote è misurato, non dato per scontato: vedi
+[Perché è importante](#perché-è-importante).
 
 > **Progetto didattico: revisione di sicurezza interna, nessun audit
 > indipendente.** La crittografia viene dalla libreria `cryptography`; la
@@ -23,6 +26,186 @@ verificano, il test del chi-quadro e l'analisi RS, sono inclusi nel tool.
 > usa strumenti consolidati come [age](https://age-encryption.org).
 
 ![shardpix che sigilla un file dietro 3 foto su 5, lo riapre con tre di esse e analizza un'immagine](assets/demo.svg)
+
+## Come funziona
+
+**Sigillare** un file dietro 3 foto su 5:
+
+```mermaid
+flowchart LR
+    F["notes.pdf"] --> E["AES-256-GCM"]
+    K["chiave casuale K"] --> E
+    E --> V["notes.pdf.spx<br/>file cifrato"]
+    K --> S["Shamir, 3 su 5"]
+    S --> P["5 foto, una quota ciascuna<br/>una per custode"]
+```
+
+**Aprirlo**:
+
+```mermaid
+flowchart LR
+    V["notes.pdf.spx"] --> U["shardpix unseal"]
+    P["3 foto qualsiasi delle 5"] --> U
+    W["la passphrase, se impostata"] --> U
+    U --> F["notes.pdf"]
+```
+
+- **Il file vault** (`.spx`) è testo cifrato. Può stare su un disco
+  condiviso o in una e-mail: senza la chiave è inutilizzabile. Senza di lui
+  sono inutilizzabili anche le foto, quindi conservane una copia.
+- **La chiave** esiste solo sotto forma di quote. Tre quote qualsiasi su cinque
+  la ricostruiscono; due non dicono nulla, nemmeno con potenza di calcolo
+  illimitata.
+- **Ogni quota** occupa circa 160 byte, qualunque sia la dimensione del
+  file, ed è nascosta in una foto tra posizioni candidate che solo la
+  passphrase permette di trovare, con le poche modifiche messe dove la foto
+  ha più texture, e cifrata in modo che i bit nascosti sembrino rumore.
+- **La passphrase** è una sola per tutto il vault. Senza passphrase
+  chiunque usi shardpix può trovare le quote, ma gliene servono comunque *k*
+  e il `.spx`.
+
+Per nascondere un breve messaggio o un file in una sola immagine, senza file
+vault, usa `embed` ed `extract`.
+
+## Installazione
+
+shardpix richiede Python 3.10 o successivo. Installalo con
+[pipx](https://pipx.pypa.io), che lo mette in un ambiente tutto suo e aggiunge
+il comando `shardpix` al `PATH`: funziona in ogni terminale e in ogni
+cartella.
+
+```bash
+# 1. pipx, una volta sola
+sudo apt install pipx            # Debian, Ubuntu, Kali
+brew install pipx                # macOS
+py -m pip install --user pipx    # Windows
+pipx ensurepath                  # Linux, macOS; poi apri un nuovo terminale
+py -m pipx ensurepath            # Windows; poi apri un nuovo PowerShell
+
+# 2. shardpix, direttamente da GitHub
+pipx install git+https://github.com/Just-Ipavon/shardpix.git
+shardpix --version
+```
+
+Aggiornalo all'ultima versione con `pipx reinstall shardpix`, rimuovilo con
+`pipx uninstall shardpix`.
+
+### Windows e PowerShell
+
+shardpix funziona allo stesso modo in PowerShell (Windows 10 e 11, Python
+3.10 o successivo; tutte le dipendenze sono già pronte per Windows).
+Installa pipx con `py -m pip install --user pipx`, esegui
+`py -m pipx ensurepath`, apri una nuova finestra di PowerShell e prosegui
+come sopra (`pipx` funziona solo in una nuova finestra; fino ad allora usa
+`py -m pipx`). Se `py` non viene trovato, installa prima Python:
+`winget install Python.Python.3.13`. Due cose cambiano rispetto a bash:
+
+- PowerShell non espande `*.jpg` per gli altri programmi; shardpix lo fa da
+  sé, quindi `shardpix seal notes.pdf foto\*.jpg -k 3 -p` funziona come in
+  bash.
+- Non salvare mai un file con `>` (`shardpix extract out.jpg > file.pdf`):
+  Windows PowerShell 5 riscrive i byte come testo e rovina il file. Usa
+  `-o file.pdf`, che funziona ovunque.
+
+### Per lo sviluppo
+
+Per lavorare sul codice usa invece un ambiente virtuale. In questo caso il
+comando `shardpix` esiste solo finché l'ambiente è attivo: in un nuovo
+terminale riesegui `source .venv/bin/activate` (`.venv\Scripts\activate` su
+Windows).
+
+```bash
+git clone https://github.com/Just-Ipavon/shardpix.git
+cd shardpix
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Guida rapida
+
+```bash
+# Sigilla un file dietro 3 foto su 5 (chiede una passphrase)
+shardpix seal verbale.pdf foto/*.png -k 3 -p
+
+# Aprilo con tre immagini qualsiasi
+shardpix unseal sealed/verbale.pdf.spx sealed/spiaggia.png sealed/gatto.png sealed/strada.png -p
+
+# Nascondi un breve messaggio in un'immagine e rileggilo
+shardpix embed foto.png -o vacanze.png -t "ci vediamo a mezzogiorno" -p
+shardpix extract vacanze.png -p
+
+# Dividi un segreto in quote stampabili: 2 qualsiasi su 3 lo ricostruiscono
+shardpix split -t "codice cassaforte 4815" -k 2 -n 3 -d quote/
+shardpix combine quote/share-*-1.txt quote/share-*-3.txt
+
+# Cerca le impronte statistiche dell'inserimento nei bit meno significativi
+shardpix analyze sospetta.png
+```
+
+### Opzioni
+
+| Opzione | Significato |
+| --- | --- |
+| `-k, --threshold` | Immagini (o quote) necessarie per il recupero |
+| `-n, --shares` | Quote da creare (`split`) |
+| `-d, --directory` | Cartella di output (`seal`: predefinita `./sealed`; `split`: un file per quota) |
+| `-p, --passphrase` | Chiede una passphrase |
+| `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
+| `-o, --output` | File di output |
+| `--name` | Nome del file vault (`seal`) |
+| `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
+
+Le passphrase non sono mai accettate come argomenti della riga di comando:
+finirebbero nella cronologia della shell e nell'elenco dei processi.
+
+### Quando qualcosa va storto
+
+`unseal` riporta cosa è successo a ogni immagine — qui un custode ha ritagliato
+la propria foto e un altro ha mandato quella sbagliata — così anche un
+recupero fallito ti dice quale custode chiamare:
+
+```text
+  Image                Share    Status        Detail
+  sealed/cat.png          #3    used
+  sealed/street.png       #5    used
+  sealed/beach.png        #2    used
+  sealed/rocket.png             no payload    no share: wrong passphrase or edited image
+  old/photo.png                 no payload    no share: wrong passphrase or edited image
+Recovered minutes.pdf (47.1 KiB) to minutes.pdf
+```
+
+## Funzionalità
+
+| Comando | Cosa fa |
+| --- | --- |
+| `seal` | Cifra un file e nasconde una quota della chiave in ciascuna immagine |
+| `unseal` | Apre un vault con *k* immagini qualsiasi e fa un resoconto su ognuna |
+| `embed` / `extract` | Nasconde o recupera un messaggio o un file in una singola immagine |
+| `split` / `combine` | Condivisione del segreto di Shamir con quote stampabili e autenticate |
+| `inspect` | Mostra se un'immagine contiene una quota, e di quale vault |
+| `analyze` | Esegue attacchi classici: chi-quadro e RS sui pixel, chi-quadro sui coefficienti DCT di un JPEG |
+| `capacity` | Mostra quanti byte può contenere un'immagine |
+
+Le immagini danneggiate vengono individuate invece di far fallire in silenzio
+il recupero, e un insieme di quote contraffatte non può mai passare per la
+chiave vera.
+
+## Foto del telefono e altre immagini
+
+**Usa le foto scattate dal telefono così come sono.** shardpix legge i primi
+byte di ogni immagine e nasconde la quota nel modo in cui quel file è
+memorizzato:
+
+| Immagine | Come viene nascosta la quota | Risultato |
+| --- | --- | --- |
+| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 5): mai decodificato né ricompresso, stesse tabelle di qualità ed EXIF | `.jpg` |
+| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 4) | `.png` |
+| HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
+
+Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
+come file, non come "foto" in un'app di messaggistica, che le ricomprime.
+Dettagli e istruzioni passo passo:
+[docs_it/07-covers-and-formats.md](docs_it/07-covers-and-formats.md).
 
 ## Perché è importante
 
@@ -90,147 +273,6 @@ mediane, il 7,4% con un intervallo 4,5-11,5%. Metodo e tabella completa:
 dati grezzi: [docs/data/pooled_512.json](docs/data/pooled_512.json);
 per riprodurli: `python -m shardpix.analysis.pooled`.
 
-## Come funziona
-
-```text
-notes.pdf ──AES-256-GCM, chiave casuale K──────►  notes.pdf.spx      conservalo dove vuoi
-K ─────────Shamir su GF(256), 3 su 5───────────►  5 quote autenticate
-quota i ───±1 adattivo, poche centinaia di modifiche►  photo_i.jpg   una per custode
-```
-
-- **Il file vault** è testo cifrato. Può stare su un disco condiviso o in una
-  e-mail: senza la chiave è inutilizzabile.
-- **La chiave** esiste solo sotto forma di quote. Tre quote qualsiasi su cinque
-  la ricostruiscono; due non dicono nulla, nemmeno con potenza di calcolo
-  illimitata.
-- **Ogni quota** è nascosta in una foto, tra posizioni candidate che solo la
-  passphrase permette di trovare, con le poche modifiche messe dove la foto
-  ha più texture, e cifrata in modo che i bit nascosti
-  sembrino rumore.
-
-## Funzionalità
-
-| Comando | Cosa fa |
-| --- | --- |
-| `seal` | Cifra un file e nasconde una quota della chiave in ciascuna immagine |
-| `unseal` | Apre un vault con *k* immagini qualsiasi e fa un resoconto su ognuna |
-| `embed` / `extract` | Nasconde o recupera un messaggio o un file in una singola immagine |
-| `split` / `combine` | Condivisione del segreto di Shamir con quote stampabili e autenticate |
-| `inspect` | Mostra se un'immagine contiene una quota, e di quale vault |
-| `analyze` | Esegue attacchi classici: chi-quadro e RS sui pixel, chi-quadro sui coefficienti DCT di un JPEG |
-| `capacity` | Mostra quanti byte può contenere un'immagine |
-
-Le immagini danneggiate vengono individuate invece di far fallire in silenzio
-il recupero, e un insieme di quote contraffatte non può mai passare per la
-chiave vera.
-
-## Installazione
-
-shardpix richiede Python 3.10 o successivo. Installalo con
-[pipx](https://pipx.pypa.io), che lo mette in un ambiente tutto suo e aggiunge
-il comando `shardpix` al `PATH`: funziona in ogni terminale e in ogni
-cartella.
-
-```bash
-# 1. pipx, una volta sola
-sudo apt install pipx            # Debian, Ubuntu, Kali
-brew install pipx                # macOS
-py -m pip install --user pipx    # Windows
-pipx ensurepath                  # Linux, macOS; poi apri un nuovo terminale
-py -m pipx ensurepath            # Windows; poi apri un nuovo PowerShell
-
-# 2. shardpix, direttamente da GitHub
-pipx install git+https://github.com/Just-Ipavon/shardpix.git
-shardpix --version
-```
-
-Aggiornalo all'ultima versione con `pipx reinstall shardpix`, rimuovilo con
-`pipx uninstall shardpix`.
-
-### Windows e PowerShell
-
-shardpix funziona allo stesso modo in PowerShell (Windows 10 e 11, Python
-3.10 o successivo; tutte le dipendenze sono già pronte per Windows).
-Installa pipx con `py -m pip install --user pipx`, esegui
-`py -m pipx ensurepath`, apri una nuova finestra di PowerShell e prosegui
-come sopra (`pipx` funziona solo in una nuova finestra; fino ad allora usa
-`py -m pipx`). Se `py` non viene trovato, installa prima Python:
-`winget install Python.Python.3.13`. Due cose cambiano rispetto a bash:
-
-- PowerShell non espande `*.jpg` per gli altri programmi; shardpix lo fa da
-  sé, quindi `shardpix seal notes.pdf foto\*.jpg -k 3 -p` funziona come in
-  bash.
-- Non salvare mai un file con `>` (`shardpix extract out.jpg > file.pdf`):
-  Windows PowerShell 5 riscrive i byte come testo e rovina il file. Usa
-  `-o file.pdf`, che funziona ovunque.
-
-### Per lo sviluppo
-
-Per lavorare sul codice usa invece un ambiente virtuale. In questo caso il
-comando `shardpix` esiste solo finché l'ambiente è attivo: in un nuovo
-terminale riesegui `source .venv/bin/activate` (`.venv\Scripts\activate` su
-Windows).
-
-```bash
-git clone https://github.com/Just-Ipavon/shardpix.git
-cd shardpix
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-## Utilizzo
-
-```bash
-# Sigilla un file dietro 3 foto su 5 (chiede una passphrase)
-shardpix seal verbale.pdf foto/*.png -k 3 -p
-
-# Aprilo con tre immagini qualsiasi
-shardpix unseal sealed/verbale.pdf.spx sealed/spiaggia.png sealed/gatto.png sealed/strada.png -p
-
-# Nascondi un breve messaggio in un'immagine e rileggilo
-shardpix embed foto.png -o vacanze.png -t "ci vediamo a mezzogiorno" -p
-shardpix extract vacanze.png -p
-
-# Dividi un segreto in quote stampabili: 2 qualsiasi su 3 lo ricostruiscono
-shardpix split -t "codice cassaforte 4815" -k 2 -n 3 -d quote/
-shardpix combine quote/share-*-1.txt quote/share-*-3.txt
-
-# Cerca le impronte statistiche dell'inserimento nei bit meno significativi
-shardpix analyze sospetta.png
-```
-
-### Opzioni
-
-| Opzione | Significato |
-| --- | --- |
-| `-k, --threshold` | Immagini (o quote) necessarie per il recupero |
-| `-n, --shares` | Quote da creare (`split`) |
-| `-d, --directory` | Cartella di output (`seal`: predefinita `./sealed`; `split`: un file per quota) |
-| `-p, --passphrase` | Chiede una passphrase |
-| `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
-| `-o, --output` | File di output |
-| `--name` | Nome del file vault (`seal`) |
-| `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
-
-Le passphrase non sono mai accettate come argomenti della riga di comando:
-finirebbero nella cronologia della shell e nell'elenco dei processi.
-
-### Quando qualcosa va storto
-
-`unseal` riporta cosa è successo a ogni immagine — qui un custode ha ritagliato
-la propria foto e un altro ha mandato quella sbagliata — così anche un
-recupero fallito ti dice quale custode chiamare:
-
-```text
-  Image                Share    Status        Detail
-  sealed/cat.png          #3    used
-  sealed/street.png       #5    used
-  sealed/beach.png        #2    used
-  sealed/rocket.png             no payload    no share: wrong passphrase or edited image
-  old/photo.png                 no payload    no share: wrong passphrase or edited image
-Recovered minutes.pdf (47.1 KiB) to minutes.pdf
-```
-
 ## Rilevabilità
 
 <picture>
@@ -272,23 +314,6 @@ Per riprodurli: `pip install -e ".[bench]"` e poi
 `python -m shardpix.analysis.benchmark`; per i rilevatori addestrati
 `pip install -e ".[bench,ml]"` e `python -m shardpix.analysis.ml_benchmark`
 su una copia di BOSSbase.
-
-## Foto del telefono e altre immagini
-
-**Usa le foto scattate dal telefono così come sono.** shardpix legge i primi
-byte di ogni immagine e nasconde la quota nel modo in cui quel file è
-memorizzato:
-
-| Immagine | Come viene nascosta la quota | Risultato |
-| --- | --- | --- |
-| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 5): mai decodificato né ricompresso, stesse tabelle di qualità ed EXIF | `.jpg` |
-| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 4) | `.png` |
-| HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
-
-Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
-come file, non come "foto" in un'app di messaggistica, che le ricomprime.
-Dettagli e istruzioni passo passo:
-[docs_it/07-covers-and-formats.md](docs_it/07-covers-and-formats.md).
 
 ## Scelte progettuali
 
@@ -344,7 +369,7 @@ shardpix/
 ├── jpeg.py             formato 5: inserimento nei coefficienti JPEG
 ├── stego.py            derivazione delle chiavi, percorso, formati v4 (adattivo) e v3, framing
 ├── stc.py              codici a traliccio di sindrome (Viterbi)
-├── costs.py            costi HiLL delle modifiche
+├── costs.py            costi HiLL e UERD delle modifiche
 ├── shamir.py           condivisione del segreto, formato delle quote, MAC, recupero robusto
 ├── gf256.py            aritmetica in GF(2^8) e interpolazione di Lagrange
 ├── images.py           qualsiasi immagine in ingresso, PNG senza perdita in uscita
@@ -353,10 +378,11 @@ shardpix/
     ├── chi_square.py   attacco del chi-quadro di Westfeld–Pfitzmann
     ├── rs.py           analisi RS di Fridrich–Goljan–Du
     ├── benchmark.py    esperimenti di rilevabilità e grafici
-    ├── features.py     caratteristiche SPAM e SRM-lite per la steganalisi
+    ├── features.py     caratteristiche SPAM, SRM-lite, DCTR e GFR per la steganalisi
     ├── ensemble.py     classificatore a ensemble di Kodovský–Fridrich–Holub
     ├── cnn.py          rete convoluzionale per la steganalisi (PyTorch)
     ├── ml_benchmark.py esperimenti con rilevatori addestrati su BOSSbase
+    ├── jpeg_benchmark.py lo stesso per le immagini JPEG (formato 5)
     └── pooled.py       un avversario con più immagini della stessa cassaforte
 ```
 
@@ -372,7 +398,7 @@ differenze fa fede la versione inglese. Per segnalare una vulnerabilità vedi
 
 | Documento | Contenuto |
 | --- | --- |
-| [01 — Architettura](docs_it/01-architecture.md) | Contesto, pacchetti, modello dei dati, formati su disco, dodici decisioni architetturali |
+| [01 — Architettura](docs_it/01-architecture.md) | Contesto, pacchetti, modello dei dati, formati su disco, tredici decisioni architetturali |
 | [02 — Casi d'uso](docs_it/02-use-cases.md) | Attori, diagramma dei casi d'uso, nove specifiche dettagliate, scenari operativi |
 | [03 — Riferimento delle funzioni](docs_it/03-function-reference.md) | Ogni funzione: comportamento, casi limite, errori, test che la coprono |
 | [04 — Comportamento a runtime](docs_it/04-runtime-behaviour.md) | Diagrammi di sequenza, algoritmo di recupero delle quote, codici di uscita, tempi |
@@ -382,4 +408,5 @@ differenze fa fede la versione inglese. Per segnalare una vulnerabilità vedi
 
 ## Licenza
 
-MIT — vedi [LICENSE](LICENSE).
+GNU General Public License v3.0 o successive (GPL-3.0-or-later) — vedi
+[LICENSE](LICENSE).

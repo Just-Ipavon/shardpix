@@ -105,7 +105,8 @@ modo indipendente.
 6. Il sistema genera una chiave, un id di gruppo e un nonce casuali, e cifra il
    file insieme al suo nome nel vault.
 7. Il sistema suddivide la chiave in n quote (UC-05) e inserisce la quota *i*
-   nell'immagine di copertura *i* (UC-03), scrivendo ciascuna in PNG.
+   nell'immagine di copertura *i* (UC-03), scrivendo ciascuna in PNG, o in
+   JPEG se l'immagine di copertura è un JPEG (A6).
 8. Il sistema scrive il file vault e stampa, per ogni immagine, l'indice della
    quota, il tasso di inserimento e il numero di campioni modificati.
 
@@ -165,7 +166,7 @@ modo indipendente.
 | --- | --- |
 | **Attore primario** | Proprietario |
 | **Precondizioni** | Un'immagine di copertura e un carico non più grande della sua capacità. |
-| **Postcondizioni** | Un PNG che appare come l'immagine di copertura e trasporta il carico sigillato. |
+| **Postcondizioni** | Un'immagine che appare come l'immagine di copertura e trasporta il carico sigillato: un PNG, o un JPEG se l'immagine di copertura è un JPEG (A3). |
 | **Evento scatenante** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
 
 #### Flusso principale

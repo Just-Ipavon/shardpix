@@ -6,7 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **License: GPL-3.0-or-later.** `pyproject.toml` and the License sections
+  of both READMEs said MIT while `LICENSE` and the badge were GPLv3; they
+  now all say GPL-3.0-or-later.
+
 ### Documentation
+
+- The README (EN and IT) starts from the product: what shardpix gives you
+  and what opening a file takes (the `.spx`, any *k* photos and the
+  passphrase), diagrams of sealing and opening, install and quick start;
+  the research (why it matters, detectability) follows. Thirteen
+  architectural decisions, not eleven (EN) or twelve (IT); the package
+  tree lists UERD, DCTR, GFR and `jpeg_benchmark`.
+- UC-01 and UC-03 say the output is a JPEG when the cover is a JPEG.
 
 - docs/05 §5.7 **Related work** (EN and IT): secret sharing hidden in
   images (Thien–Lin, Lin–Tsai, Woźniak–Ogiela–Ogiela, sssteg) and pooled
