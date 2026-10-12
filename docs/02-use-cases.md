@@ -101,7 +101,8 @@ the layers can be used and demonstrated independently.
 6. The system draws a random key, group id and nonce, and encrypts the file
    with its name into the vault.
 7. The system splits the key into n shares (UC-05) and embeds share *i* into
-   cover *i* (UC-03), writing each as PNG.
+   cover *i* (UC-03), writing each as a PNG, or as a JPEG if the cover is a
+   JPEG (A6).
 8. The system writes the vault file and prints, per image, the share index,
    the embedding rate and the number of samples changed.
 
@@ -161,7 +162,7 @@ the layers can be used and demonstrated independently.
 | --- | --- |
 | **Primary actor** | Owner |
 | **Preconditions** | A cover image and a payload no larger than its capacity. |
-| **Postconditions** | A PNG that looks like the cover and carries the sealed payload. |
+| **Postconditions** | An image that looks like the cover and carries the sealed payload: a PNG, or a JPEG if the cover is a JPEG (A3). |
 | **Trigger** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
 
 #### Main flow
