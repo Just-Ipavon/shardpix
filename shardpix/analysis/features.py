@@ -156,12 +156,20 @@ def _dct_matrix() -> np.ndarray:
 _DCT = _dct_matrix()
 
 
-def decompress(blocks: np.ndarray, quant: np.ndarray) -> np.ndarray:
-    """Pixels of a greyscale JPEG from its quantised coefficients, as a decoder would."""
+def decompress(blocks: np.ndarray, quant: np.ndarray, rounded: bool = True) -> np.ndarray:
+    """Pixels of a greyscale JPEG from its quantised coefficients.
+
+    ``rounded`` gives what a decoder shows: integers clipped to 0-255. JPEG
+    steganalysis features (DCTR, GFR) use the pixels *before* rounding: a
+    change of one coefficient moves them by fractions of a grey level, and
+    rounding would erase most of it.
+    """
     hb, wb = blocks.shape[:2]
     dequantised = blocks.astype(np.float64) * quant
     pixels = np.einsum("ux,hwuv,vy->hwxy", _DCT, dequantised, _DCT) + 128
     image = pixels.transpose(0, 2, 1, 3).reshape(hb * 8, wb * 8)
+    if not rounded:
+        return image
     return np.clip(np.round(image), 0, 255)
 
 
@@ -173,13 +181,13 @@ def dctr_step(quality: int) -> float:
 def dctr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
     """DCTR features (Holub and Fridrich, 2015) of a greyscale JPEG: 8000 values.
 
-    The decompressed image is filtered with the 64 DCT basis patterns; each
-    residual is quantised by ``step``, truncated to ``[0, 4]`` in magnitude
+    The decompressed image, not rounded, is filtered with the 64 DCT basis
+    patterns; each residual is quantised by ``step``, truncated to ``[0, 4]`` in magnitude
     and histogrammed separately for each position within the 8x8 grid, with
     positions merged by the symmetry ``a -> min(a, 8 - a)`` into 25 classes.
     Steganography in the coefficients perturbs exactly these statistics.
     """
-    image = decompress(blocks, quant).astype(np.float32)
+    image = decompress(blocks, quant, rounded=False).astype(np.float32)
     h, w = image.shape
     oh, ow = h - 7, w - 7
     rows = np.empty((8, h, ow), dtype=np.float32)
@@ -233,6 +241,17 @@ _GFR_KERNELS = np.array(
 """Shape 4 x 2 x 32 x 8 x 8: scale, phase, orientation."""
 
 
+def gfr_step(quality: int) -> float:
+    """GFR quantisation unit for a JPEG quality factor: 2 at 75, 0.5 at 95.
+
+    The residuals of the four scales are quantised with steps 1, 2, 3 and 4
+    times this unit: 2, 4, 6, 8 at quality 75 and 0.5, 1, 1.5, 2 at quality
+    95, the values of Song et al. (as reported by Xia, Guan and Zhao, 2017).
+    Other qualities are interpolated linearly between the two.
+    """
+    return max(0.1, 2 - 0.075 * (quality - 75))
+
+
 @functools.lru_cache(maxsize=2)
 def _gabor_spectra(h: int, w: int) -> np.ndarray:
     """Spectra of the 256 Gabor kernels for an ``h x w`` transform, computed once per size."""
@@ -242,16 +261,16 @@ def _gabor_spectra(h: int, w: int) -> np.ndarray:
 def gfr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
     """GFR features (Song et al., 2015) of a greyscale JPEG: 17,000 values.
 
-    The decompressed image is filtered with 256 Gabor kernels (4 scales,
-    32 orientations, 2 phases). Each residual is quantised by ``step``
-    times the scale (the coarser the filter, the larger its response),
-    truncated to ``[0, 4]`` in magnitude and histogrammed per position in
-    the 8x8 grid, merged into 25 classes as in :func:`dctr`. Orientations
-    ``k`` and ``32 - k`` are merged, as the image statistics are symmetric,
-    leaving 17 per scale and phase. Stronger than DCTR against content-
-    adaptive JPEG steganography.
+    The decompressed image, not rounded, is filtered with 256 Gabor kernels
+    (4 scales, 32 orientations, 2 phases). The residuals of scale ``i`` are
+    quantised by ``(i + 1) * step``, ``step`` from :func:`gfr_step` (the
+    coarser the filter, the larger its response), truncated to ``[0, 4]`` in
+    magnitude and histogrammed per position in the 8x8 grid, merged into 25
+    classes as in :func:`dctr`. Orientations ``k`` and ``32 - k`` are merged,
+    as the image statistics are symmetric, leaving 17 per scale and phase.
+    Stronger than DCTR against content-adaptive JPEG steganography.
     """
-    image = decompress(blocks, quant).astype(np.float32)
+    image = decompress(blocks, quant, rounded=False).astype(np.float32)
     h, w = image.shape
     oh, ow = h - 7, w - 7
     spectrum = np.fft.rfft2(image, s=(h + 7, w + 7)).astype(np.complex64)
@@ -262,8 +281,8 @@ def gfr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
     per_group = np.bincount(groups, minlength=25).astype(np.float64)
     bins = GFR_T + 1
     out = []
-    for si, sigma in enumerate(GFR_SIGMAS):
-        q = step * sigma / GFR_SIGMAS[0]
+    for si in range(len(GFR_SIGMAS)):
+        q = step * (si + 1)
         for pi in range(2):
             histograms = []
             for k in range(GFR_ORIENTATIONS):

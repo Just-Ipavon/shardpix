@@ -43,7 +43,7 @@ STRATEGIES = {
 }
 
 _PATHS: list[Path] = []
-_STEP = 4.0
+_QUALITY = 75
 CHUNK = 1000
 """Images per checkpoint of a feature matrix."""
 
@@ -87,9 +87,14 @@ def stego_blocks(
 
 
 DETECTORS = {
-    "dctr": (features.dctr, "DCTR (8,000 features)"),
-    "gfr": (features.gfr, "GFR (17,000 features)"),
+    "dctr": (features.dctr, features.dctr_step, "DCTR (8,000 features)"),
+    "gfr": (features.gfr, features.gfr_step, "GFR (17,000 features)"),
 }
+FEATURES_VERSION = 2
+"""Bumped when the features change, so that cached features and stored results
+of an earlier version are never mixed with new ones. Version 2: DCTR and GFR
+on the decompressed image before rounding, GFR with the published
+quantisation steps."""
 
 
 def _worker(args: tuple[int, str, str, int, tuple[str, ...]]) -> list[np.ndarray]:
@@ -99,12 +104,15 @@ def _worker(args: tuple[int, str, str, int, tuple[str, ...]]) -> list[np.ndarray
     if payload != "clean":
         rng = np.random.default_rng([seed, index, sum(map(ord, strategy + payload))])
         blocks = stego_blocks(blocks, quant, strategy, payload, rng)
-    return [DETECTORS[d][0](blocks, quant, _STEP).astype(np.float32) for d in detectors]
+    return [
+        DETECTORS[d][0](blocks, quant, DETECTORS[d][1](_QUALITY)).astype(np.float32)
+        for d in detectors
+    ]
 
 
 def _cache_path(cache: Path, detector: str, tag: str, quality: int, name: str, seed: int) -> Path:
     prefix = f"{detector}-{tag}-" if tag else f"{detector}-"
-    return cache / f"{prefix}q{quality}-{name}-{len(_PATHS)}-seed{seed}.npy"
+    return cache / f"{prefix}v{FEATURES_VERSION}-q{quality}-{name}-{len(_PATHS)}-seed{seed}.npy"
 
 
 def feature_matrices(
@@ -198,30 +206,37 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         raise SystemExit(f"unknown detectors: {', '.join(unknown)}")
 
-    global _PATHS, _STEP
+    global _PATHS, _QUALITY
     _PATHS = sorted(args.covers.glob("*.jpg"))[: args.limit]
-    _STEP = features.dctr_step(args.quality)
+    _QUALITY = args.quality
     if not _PATHS:
         raise SystemExit("no JPEG covers found")
     stem = f"jpeg_benchmark_{args.tag}" if args.tag else "jpeg_benchmark"
     data_path = args.data / f"{stem}_q{args.quality}.json"
     scores_path = data_path.with_suffix(".scores.npz")
     results = json.loads(data_path.read_text("utf-8")) if data_path.exists() else {}
-    if results.get("images") != len(_PATHS):
+    # Results of other covers or of an earlier version of the features are
+    # measured again from scratch, never mixed with new ones.
+    fresh = (results.get("images"), results.get("features_version")) == (
+        len(_PATHS),
+        FEATURES_VERSION,
+    )
+    if not fresh:
         results = {}
     results.update(
         {
             "dataset": args.dataset_name,
+            "features_version": FEATURES_VERSION,
             "quality": args.quality,
             "images": len(_PATHS),
             "seed": args.seed,
             "detector": "ensemble classifier on "
-            + ", ".join(DETECTORS[d][1] for d in sorted({*detectors, *_detectors_in(results)})),
+            + ", ".join(DETECTORS[d][2] for d in sorted({*detectors, *_detectors_in(results)})),
             "strategies": STRATEGIES,
         }
     )
     rows = results.setdefault("rows", [])
-    scores = dict(np.load(scores_path)) if scores_path.exists() else {}
+    scores = dict(np.load(scores_path)) if fresh and scores_path.exists() else {}
     train_idx, test_idx = split(len(_PATHS), args.seed)
 
     start = time.time()

@@ -33,6 +33,12 @@ class TestDecompress:
         decoded = jpeglib.read_spatial(str(path), jpeglib.JCS_GRAYSCALE).spatial[..., 0]
         assert np.abs(ours - decoded.astype(np.float64)).max() <= 2
 
+    def test_features_see_the_pixels_before_rounding(self, photo):
+        _, blocks, quant = photo
+        exact = features.decompress(blocks, quant, rounded=False)
+        assert not np.array_equal(exact, np.round(exact))
+        assert np.array_equal(np.clip(np.round(exact), 0, 255), features.decompress(blocks, quant))
+
 
 class TestDCTR:
     def test_dimension_and_normalisation(self, photo):
@@ -45,9 +51,15 @@ class TestDCTR:
 class TestGFR:
     def test_dimension_and_normalisation(self, photo):
         _, blocks, quant = photo
-        values = features.gfr(blocks, quant, features.dctr_step(90))
+        values = features.gfr(blocks, quant, features.gfr_step(90))
         assert values.shape == (features.GFR_DIM,) == (17000,)
         assert np.allclose(values.reshape(-1, 25, features.GFR_T + 1).sum(-1), 1)
+
+    def test_published_quantisation_steps(self):
+        # Song et al.: scale steps 2, 4, 6, 8 at quality 75 and 0.5, 1, 1.5, 2 at 95.
+        assert features.gfr_step(75) == 2
+        assert features.gfr_step(95) == 0.5
+        assert features.gfr_step(75) > features.gfr_step(90) > features.gfr_step(95)
 
     def test_kernels_are_zero_mean_and_unit_norm(self):
         kernels = features._GFR_KERNELS.reshape(-1, 8, 8)
@@ -58,7 +70,7 @@ class TestGFR:
         # Orientations k and 32 - k are merged and the 8x8 grid classes are
         # symmetric, so mirroring the image must not change the features.
         _, blocks, quant = photo
-        step = features.dctr_step(90)
+        step = features.gfr_step(90)
         original = features.gfr(blocks, quant, step)
         mirrored = features.gfr(_mirrored(blocks), quant, step)
         # Equal up to residuals that fall exactly on a rounding boundary, where
@@ -69,7 +81,7 @@ class TestGFR:
 
     def test_sees_a_change_in_the_coefficients(self, photo):
         _, blocks, quant = photo
-        step = features.dctr_step(90)
+        step = features.gfr_step(90)
         changed = blocks.copy()
         changed[2, 3, 1, 2] += 1
         assert not np.array_equal(
@@ -81,10 +93,14 @@ class TestBenchmarkDetectors:
     def test_one_embedding_feeds_every_detector(self, photo):
         path, _, _ = photo
         jpeg_benchmark._PATHS = [path]
-        jpeg_benchmark._STEP = features.dctr_step(90)
+        jpeg_benchmark._QUALITY = 90
         dctr, gfr = jpeg_benchmark._worker((0, "naive", "share", 0, ("dctr", "gfr")))
         assert dctr.shape == (8000,)
         assert gfr.shape == (17000,)
+
+    def test_cache_names_carry_the_features_version(self, tmp_path):
+        path = jpeg_benchmark._cache_path(tmp_path, "gfr", "alaska", 95, "clean", 0)
+        assert f"-v{jpeg_benchmark.FEATURES_VERSION}-" in path.name
 
     def test_rows_without_a_detector_are_dctr(self):
         row = {"strategy": "jpeg", "payload": "share"}
