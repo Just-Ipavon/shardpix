@@ -29,6 +29,16 @@
       "p_e_high": 0.0006394310321700123,
       "auc": 0.99999996,
       "test_pairs": 5000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "jpeg",
+      "payload": "share",
+      "p_e": 0.4946,
+      "p_e_low": 0.4848005715526669,
+      "p_e_high": 0.504399428447333,
+      "auc": 0.51382616,
+      "test_pairs": 5000
     }
   ]
 }
