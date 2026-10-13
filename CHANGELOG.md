@@ -12,8 +12,25 @@ All notable changes to this project are documented here. The format follows
   of both READMEs said MIT while `LICENSE` and the badge were GPLv3; they
   now all say GPL-3.0-or-later.
 
+### Fixed
+
+- **DCTR and GFR as published.** Both JPEG feature sets filtered the
+  decompressed image after rounding it to integers, and GFR used other
+  quantisation steps than the published ones; both detectors were slightly
+  weaker than in the literature. `features.decompress(..., rounded=False)`
+  and `features.gfr_step` fix it; `jpeg_benchmark` stores a features version
+  (2) and never reuses features or results of version 1.
+
 ### Documentation
 
+- docs/05 §5.5.8 (EN and IT): every JPEG measurement again with the
+  corrected detectors, and a second cover source, ALASKA2 (real camera
+  photographs at quality 75, 90 and 95), measured with DCTR and GFR. One
+  image at quality 90-95 stays at chance; over fifty BOSSbase images at
+  quality 95 DCTR shows a weak trend (43.6%, interval 35.5-54.5%), which the
+  README and docs/07 now say; at quality 75 format 5 falls to 7% with fifty
+  images on both sources. The GFR reference is corrected; ALASKA2 and the
+  source of GFR's steps are cited.
 - The README (EN and IT) starts from the product: what shardpix gives you
   and what opening a file takes (the `.spx`, any *k* photos and the
   passphrase), diagrams of sealing and opening, install and quick start;
@@ -32,7 +49,7 @@ All notable changes to this project are documented here. The format follows
   defence shardpix implements and measures.
 - docs/05 says that the chi-square attack of `analyze` on JPEG is no
   evidence of security (DCTR is), and §5.6 lists the detectors that were
-  not run (full SRM, maxSRM, GFR, SRNet); its paragraphs on JPEG covers and
+  not run (full SRM, maxSRM, SRNet); its paragraphs on JPEG covers and
   metadata no longer describe the behaviour before format 5.
 - CHANGELOG 2.0.0 no longer says that `--method matching` writes format 3.
 

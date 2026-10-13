@@ -123,14 +123,15 @@ the output must carry the matching extension (`.jpg` or `.png`).
   share. Steganalysis of the content is a separate question (05 §5.5.8).
 - **Luminance only.** Chroma coefficients are never used: they are fewer,
   more coarsely quantised, and capacity is far beyond a share anyway.
-- **Low-quality JPEGs.** At quality 95 format 5 is at chance against DCTR,
-  for one image and for fifty pooled; at quality 75 it is weakly detectable
-  on one image (42.5%) and clearly with many (7.8% with fifty). Use original
+- **Low-quality JPEGs.** At quality 90-95 format 5 is at chance against
+  DCTR and GFR on one image, with at most a weak trend over fifty pooled
+  (43.6% at quality 95 on BOSSbase); at quality 75 it is weakly detectable
+  on one image (42.5%) and clearly with many (7% with fifty). Use original
   camera files, which phones save at quality 90 or more (05 §5.5.8).
   `embed` and `seal` estimate each JPEG's quality from its quantisation
   table and warn below 90; `capacity` shows the estimate.
-- **Detectors.** Format 5 is measured against DCTR; stronger JPEG detectors
-  (GFR, deep networks such as SRNet for JPEG) were not run.
+- **Detectors.** Format 5 is measured against DCTR and GFR, on BOSSbase and
+  ALASKA2; deep networks such as SRNet are being measured.
 
 ## 7.7 Summary: which cover should I use?
 

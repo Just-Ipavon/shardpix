@@ -433,73 +433,118 @@ detector trained at the exact rate.
 ### 5.5.8 JPEG covers (format 5)
 
 Format 5 (01 ADR-13) is measured the way formats 3 and 4 are, in the JPEG
-domain: BOSSbase compressed with Pillow at quality 95 (close to phone
-cameras) and 75 (the usual benchmark), DCTR features (Holub and Fridrich
-[26]; 8,000 features from the 64 DCT-basis residuals of the decompressed
-image) with the ensemble classifier, half of the images for training and
-half for testing, at one vault share and at 0.1 bits per non-zero AC
-coefficient (`python -m shardpix.analysis.jpeg_benchmark`). The baseline is
-the non-adaptive equivalent of format 3: one bit per coefficient at random
-non-zero AC positions, ±1 away from zero.
+domain, with two detectors and two cover sources
+(`python -m shardpix.analysis.jpeg_benchmark`):
 
-Two of the 10,000 photographs at quality 75 are too flat to hold any
+- **Detectors.** DCTR (Holub and Fridrich [26]; 8,000 features from the 64
+  DCT-basis residuals) and GFR (Song et al. [27]; 17,000 features from 256
+  Gabor residuals), each with the ensemble classifier, half of the images
+  for training and half for testing. Both are computed as published: on the
+  decompressed image *before* rounding to integers, and GFR with its
+  published quantisation steps (2, 4, 6, 8 at quality 75; 0.5, 1, 1.5, 2 at
+  quality 95 [28]). A first version of this benchmark rounded the pixels and
+  used other GFR steps, which made both detectors slightly weaker; every
+  number below was measured again with the corrected features (version 2 in
+  the data files).
+- **Covers.** BOSSbase compressed with Pillow at quality 95 (close to phone
+  cameras) and 75 (the usual benchmark), 10,000 images, DCTR only; and the
+  cover images of ALASKA2 [29], colour photographs from many cameras
+  developed and compressed to JPEG with standard tables, sorted by their
+  exact quantisation table: 2,000 at quality 75 and 90 and 1,018 at quality
+  95 (all those the subset held), luminance only. ALASKA2 has fewer images,
+  so its intervals are two to three times wider.
+- **Payloads.** One vault share, and 0.1 bits per non-zero AC coefficient as
+  a positive control. The baseline is the non-adaptive equivalent of format
+  3: one bit per coefficient at random non-zero AC positions, ±1 away from
+  zero.
+
+Two of the 10,000 BOSSbase photographs at quality 75 are too flat to hold any
 payload (shardpix refuses them as covers) and stay unchanged; eight more hold
-less than a share and carry what they can. At quality 95 every photograph
-holds a share.
+less than a share and carry what they can.
 
-**One image.**
+**One image, one share** (detection error P_E with its 95% interval; 50% is
+guessing):
 
-| Payload | Quality 95, baseline | Quality 95, format 5 | Quality 75, baseline | Quality 75, format 5 |
-| --- | ---: | ---: | ---: | ---: |
-| One share | 18.6% [17.9, 19.4] | **49.6%** [48.6, 50.5] | 2.4% [2.1, 2.7] | **42.5%** [41.6, 43.5] |
-| 0.1 bits per non-zero AC (control) | 0.1% | 38.0% | 0.1% | 27.3% |
+| Covers | Quality | Detector | Baseline | Format 5 |
+| --- | ---: | --- | ---: | ---: |
+| BOSSbase | 95 | DCTR | 16.1% [15.4, 16.8] | **49.5%** [48.5, 50.4] |
+| ALASKA2 | 95 | DCTR | 32.6% [29.7, 35.5] | **50.4%** [47.3, 53.5] |
+| ALASKA2 | 95 | GFR | 38.5% [35.5, 41.5] | **50.2%** [47.1, 53.3] |
+| ALASKA2 | 90 | DCTR | 17.0% [15.4, 18.6] | **49.4%** [47.2, 51.5] |
+| ALASKA2 | 90 | GFR | 28.9% [26.9, 30.9] | **49.7%** [47.5, 51.9] |
+| BOSSbase | 75 | DCTR | 2.2% [1.9, 2.4] | **42.5%** [41.5, 43.5] |
+| ALASKA2 | 75 | DCTR | 6.4% [5.3, 7.5] | **43.5%** [41.4, 45.7] |
+| ALASKA2 | 75 | GFR | 17.4% [15.7, 19.1] | **47.1%** [44.9, 49.2] |
 
-AUC for one share: 0.90 and 0.51 at quality 95, 1.00 and 0.62 at quality 75.
-The controls show the detector sees format 5 once the payload is large.
+At 0.1 bits per non-zero AC coefficient (the control) format 5 is detected
+at every quality: 35.0% (BOSSbase, 95), 39.5% (ALASKA2, 95), 37.0% (ALASKA2,
+90), 27.3% (BOSSbase, 75) and 30.9% (ALASKA2, 75) with DCTR; the baseline is
+at 0-2%. Raw numbers: [data/jpeg_benchmark_q95.json](data/jpeg_benchmark_q95.json),
+[data/jpeg_benchmark_q75.json](data/jpeg_benchmark_q75.json) and
+`data/jpeg_benchmark_alaska2_q{75,90,95}.json`.
 
 **Several images of one vault** (pooled as in §5.5.7, likelihood ratio, 40
-splits; raw numbers in [data/pooled_jpeg_q95.json](data/pooled_jpeg_q95.json)
-and [data/pooled_jpeg_q75.json](data/pooled_jpeg_q75.json)):
+splits; raw numbers in `data/pooled_jpeg_q{95,75}.json` and
+`data/pooled_jpeg_alaska2_{dctr,gfr}_q{75,90,95}.json`):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-q75-dark.png">
-  <img alt="Detection error against the number of JPEG images of one vault at quality 75: format 5 falls from 43% with one image to 8% with fifty; the baseline is near 0 from the start" src="../assets/pooled-jpeg-q75-light.png">
+  <img alt="Detection error against the number of JPEG images of one vault at quality 75 on BOSSbase: format 5 falls from 43% with one image to 7% with fifty; the baseline is near 0 from the start" src="../assets/pooled-jpeg-q75-light.png">
 </picture>
 
-| Images of one vault | Quality 95, baseline | Quality 95, format 5 | Quality 75, baseline | Quality 75, format 5 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 18.6% | 49.8% | 2.5% | 42.9% |
-| 2 | 10.1% | 49.8% | 0.3% | 38.5% |
-| 5 | 2.1% | **49.6%** [47.1, 51.5] | 0.0% | **31.8%** [29.4, 35.2] |
-| 10 | 0.2% | **50.0%** [46.4, 54.6] | 0.0% | **24.8%** [21.9, 27.4] |
-| 20 | 0.0% | 48.8% | 0.0% | 16.9% |
-| 50 | 0.0% | **50.0%** [42.5, 62.9] | 0.0% | **7.8%** [4.8, 11.4] |
+Format 5, DCTR:
+
+| Images of one vault | BOSSbase 95 | ALASKA2 95 | ALASKA2 90 | BOSSbase 75 | ALASKA2 75 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 49.2% | 49.5% | 49.2% | 42.9% | 44.2% |
+| 5 | 48.1% | 50.0% | 49.5% | 31.6% | 32.7% |
+| 10 | **47.4%** [43.3, 50.4] | 50.0% | 48.6% | **24.7%** [22.5, 27.4] | 27.0% |
+| 20 | 45.6% | 50.0% | 48.1% | 16.5% | 18.3% |
+| 50 | **43.6%** [35.5, 54.5] | **50.0%** [26.1, 66.7] | **49.9%** [24.3, 55.8] | **7.3%** [4.6, 11.7] | **7.2%** [1.8, 25.7] |
+
+The non-adaptive baseline is caught on every set: with ten images its error
+is 0.1% (BOSSbase 95), 7.2% (ALASKA2 95), 0.1% (ALASKA2 90) and 0.0% at
+quality 75. GFR, on ALASKA2, gives the same picture with weaker numbers
+(format 5 at quality 75: 47.0% on one image, 22.9% on fifty).
 
 What this shows:
 
-1. **At quality 95 format 5 is at chance**, for one image and for fifty,
-   where the non-adaptive baseline is caught 81% of the time on one image
-   and always on ten. This is the case of phone photographs used as taken.
-2. **At quality 75 format 5 repeats what format 3 did in pixels** (§5.5.7):
-   a weak per-image signal (42.9%) that pooling turns into a strong one
-   (7.8% with fifty images, 24.8% with ten). Coarse quantisation leaves
-   fewer and larger non-zero coefficients, so each change weighs more.
-3. **The quality of the cover matters more than the method.** The same code
+1. **At quality 95 format 5 is at chance on one image**, on both cover
+   sources and for both detectors, where the non-adaptive baseline has a
+   detection error of 16-33%. This is the case of phone photographs used as
+   taken. Pooled, the larger BOSSbase set shows a slow, weak trend - 47.4%
+   with ten images, 43.6% with fifty, an interval that still includes 50% -
+   which the smaller ALASKA2 set cannot resolve. An adversary holding dozens
+   of images of one vault may therefore gain a small advantage even at
+   quality 95; with the handful of images a vault actually has, there is
+   none.
+2. **At quality 90 format 5 is at chance on ALASKA2 up to fifty images**,
+   for both detectors, within intervals of about ±8 points at ten images.
+3. **At quality 75 format 5 repeats what format 3 did in pixels** (§5.5.7),
+   with the same numbers on both cover sources: a weak per-image signal
+   (43-44%) that pooling turns into a strong one (25-27% with ten images,
+   7% with fifty). Coarse quantisation leaves fewer and larger non-zero
+   coefficients, so each change weighs more.
+4. **The quality of the cover matters more than the method.** The same code
    is safe on a high-quality JPEG and detectable on a heavily compressed
    one. Covers should be original camera files; a photo saved from a
    messaging app or a social network has usually been recompressed to
    quality 70-85.
+5. **GFR is weaker than DCTR here**, unlike in the literature. GFR has
+   17,000 features and was trained on at most 1,000 images per class on
+   ALASKA2, where published comparisons use 5,000 or more; the gap is what
+   that shortage would cause, and DCTR, the stronger of the two here, is
+   the one the conclusions rest on.
 
-Caveats: the covers are BOSSbase images compressed by Pillow, not files
-from phone cameras; one detector (DCTR); the detector trained at the exact
-payload. Stronger JPEG detectors (GFR [27], SRNet [8] or other JPEG
-networks) were not run.
+Caveats: the detectors are trained at the exact payload; two detectors, both
+hand-crafted; deep JPEG detectors such as SRNet [8] are being measured on
+the same ALASKA2 images and are not reported yet.
 
 **What this evaluation is not.** The chi-square attack that `analyze` runs
 on a JPEG's coefficients (03 §3.10) catches only tools that overwrite the
 lowest bit of the coefficients, such as JSteg; format 5 passes it by
 construction, and it is no evidence of security. The evidence for format 5
-is the DCTR measurement above.
+is the DCTR and GFR measurement above.
 
 ## 5.6 Known limitations
 
@@ -507,18 +552,20 @@ is the DCTR measurement above.
 
 **Trained steganalysis: measured against a few detectors, not the state of
 the art.** A format-4 share on BOSSbase 512x512 is at chance for SPAM and
-SRM-lite (§5.5.6), and a format-5 share at JPEG quality 95 is at chance for
-DCTR (§5.5.8). The detectors used are SPAM, a 3,125-feature subset of the
-spatial rich model, a small CNN trained on a CPU (format 3 only) and DCTR.
-The full SRM (34,671 features), maxSRM and other selection-channel-aware
-models, GFR for JPEG and deep networks such as SRNet, trained on a GPU,
-are stronger and were not run: "at chance" here means at chance for these
-detectors. The positive controls (§5.5.6, §5.5.8) show that the same
-detectors do see formats 4 and 5 at larger payloads, and the negative
-results - format 3 and quality-75 JPEG falling once pooled - would only
-become clearer with stronger detectors. All measurements use one image
-source (BOSSbase); in the field, cover-source mismatch works against the
-detector.
+SRM-lite (§5.5.6), and a format-5 share at JPEG quality 90-95 is at chance on
+one image for DCTR and GFR, on BOSSbase and ALASKA2 (§5.5.8). The detectors
+used are SPAM, a 3,125-feature subset of the spatial rich model, a small CNN
+trained on a CPU (format 3 only), DCTR and GFR. The full SRM (34,671
+features), maxSRM and other selection-channel-aware models and deep networks
+such as SRNet are stronger and were not run (SRNet on format 5 is in
+progress): "at chance" here means at chance for these detectors. The
+positive controls (§5.5.6, §5.5.8) show that the same detectors do see
+formats 4 and 5 at larger payloads, and the negative results - format 3 and
+quality-75 JPEG falling once pooled, and a weak trend at quality 95 over
+fifty BOSSbase images - would only become clearer with stronger detectors.
+The pixel measurements use one image source (BOSSbase); the JPEG ones two
+(BOSSbase and ALASKA2), which agree. In the field, cover-source mismatch
+works against the detector.
 
 **JPEG covers.** JPEG files are embedded in their own coefficients (format
 5) and never decoded to pixels, so JPEG-compatibility steganalysis (Fridrich,
@@ -677,6 +724,11 @@ measured.
 26. V. Holub and J. Fridrich, "Low-complexity features for JPEG steganalysis
     using undecimated DCT" (DCTR), *IEEE Transactions on Information
     Forensics and Security*, 2015.
-27. X. Song, F. Liu, C. Yang, X. Luo and Y. Zhang, "Steerable Gaussian
-    filters for JPEG steganalysis" (GFR), *ACM Workshop on Information
-    Hiding and Multimedia Security*, 2015.
+27. X. Song, F. Liu, C. Yang, X. Luo and Y. Zhang, "Steganalysis of
+    adaptive JPEG steganography using 2D Gabor filters" (GFR), *ACM
+    Workshop on Information Hiding and Multimedia Security*, 2015.
+28. C. Xia, Q. Guan and X. Zhao, "Further study on GFR features for JPEG
+    steganalysis", arXiv:1706.07576, 2017 (GFR quantisation steps).
+29. R. Cogranne, Q. Giboulot and P. Bas, "ALASKA#2: challenging academic
+    research on steganalysis with realistic images", *IEEE WIFS*, 2020
+    (ALASKA2).
