@@ -1,48 +1,43 @@
 {
   "dataset": "BOSSbase 1.01, 512x512, JPEG",
+  "features_version": 2,
   "quality": 75,
   "images": 10000,
   "seed": 0,
-  "detector": "DCTR + ensemble classifier",
+  "detector": "ensemble classifier on DCTR (8,000 features)",
   "strategies": {
     "jpeg": "format 5: syndrome-trellis codes with UERD costs on non-zero AC coefficients",
     "naive": "one bit per coefficient at random non-zero AC positions, +-1 away from zero"
   },
   "rows": [
     {
+      "detector": "dctr",
       "strategy": "naive",
       "payload": "share",
-      "p_e": 0.023999999999999987,
-      "p_e_low": 0.021000239369549617,
-      "p_e_high": 0.026999760630450356,
-      "auc": 0.9972408,
+      "p_e": 0.02150000000000002,
+      "p_e_low": 0.018657138406464376,
+      "p_e_high": 0.024342861593535662,
+      "auc": 0.99783432,
       "test_pairs": 5000
     },
     {
+      "detector": "dctr",
       "strategy": "naive",
       "payload": "0.1",
-      "p_e": 0.000599999999999989,
-      "p_e_low": 0.00012004406202234942,
-      "p_e_high": 0.0010799559379776286,
-      "auc": 0.99999946,
+      "p_e": 0.00039999999999997796,
+      "p_e_low": 8.078407841557143e-06,
+      "p_e_high": 0.0007919215921583988,
+      "auc": 0.99999976,
       "test_pairs": 5000
     },
     {
+      "detector": "dctr",
       "strategy": "jpeg",
       "payload": "share",
-      "p_e": 0.4253,
-      "p_e_low": 0.4156099869646321,
-      "p_e_high": 0.43499001303536794,
-      "auc": 0.61455382,
-      "test_pairs": 5000
-    },
-    {
-      "strategy": "jpeg",
-      "payload": "0.1",
-      "p_e": 0.2732,
-      "p_e_low": 0.2644661872173947,
-      "p_e_high": 0.2819338127826053,
-      "auc": 0.80597528,
+      "p_e": 0.42510000000000003,
+      "p_e_low": 0.41541058007110854,
+      "p_e_high": 0.43478941992889153,
+      "auc": 0.61603518,
       "test_pairs": 5000
     }
   ]
