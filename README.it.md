@@ -246,11 +246,16 @@ confronta shardpix con questi lavori.) Le misure:
 - **Foto vere, non foto di laboratorio.** Le foto del telefono sono JPEG,
   quindi shardpix nasconde la quota direttamente nei coefficienti del JPEG
   (formato 5) e restituisce un JPEG con le stesse impostazioni di qualità e
-  gli stessi metadati, senza conversioni che tradirebbero l'immagine. Sui
-  JPEG a qualità 95, come quelli del telefono, il formato 5 resta al livello
-  del caso da 1 a 50 immagini aggregate; a qualità 75, tipica delle foto
-  ricompresse dalle app di messaggistica, scende al 7,8% con cinquanta, la
-  stessa trappola del formato 3
+  gli stessi metadati, senza conversioni che tradirebbero l'immagine.
+  Misurato con DCTR e GFR su BOSSbase e su ALASKA2, foto vere di
+  fotocamere: a qualità 90-95, come quelle del telefono, un'immagine è al
+  livello del caso (49-50%), mentre il riferimento non adattivo viene
+  scoperto già su un'immagine (errore del 16-33%) e con certezza con dieci;
+  su cinquanta immagini della stessa cassaforte DCTR mostra al più una
+  tendenza debole a qualità 95 (43,6%, un intervallo che include ancora il
+  50%). A qualità 75, tipica delle foto ricompresse dalle app di
+  messaggistica, il formato 5 scende al 7% con cinquanta, la stessa
+  trappola del formato 3
   ([docs_it/05 §5.5.8](docs_it/05-security-analysis.md#558-immagini-di-copertura-jpeg-formato-5)).
   Usa i file originali della fotocamera.
 - **Tutto è riproducibile.** Rilevatori, dataset, controlli positivi e

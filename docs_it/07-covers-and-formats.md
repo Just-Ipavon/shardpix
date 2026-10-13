@@ -134,15 +134,16 @@ file in uscita deve avere l'estensione corrispondente (`.jpg` o `.png`).
 - **Solo la luminanza.** I coefficienti di crominanza non vengono mai usati:
   sono meno numerosi, quantizzati in modo più grossolano, e in ogni caso la
   capacità supera di gran lunga quella necessaria per una quota.
-- **JPEG di bassa qualità.** A qualità 95 il formato 5 è al livello del caso
-  contro DCTR, con un'immagine e con cinquanta aggregate; a qualità 75 è
-  debolmente rilevabile su un'immagine (42,5%) e chiaramente con molte (7,8%
+- **JPEG di bassa qualità.** A qualità 90-95 il formato 5 è al livello del
+  caso contro DCTR e GFR su un'immagine, con al più una tendenza debole su
+  cinquanta aggregate (43,6% a qualità 95 su BOSSbase); a qualità 75 è
+  debolmente rilevabile su un'immagine (42,5%) e chiaramente con molte (7%
   con cinquanta). Usa i file originali della fotocamera, che i telefoni
   salvano a qualità 90 o più (05 §5.5.8). `embed` e `seal` stimano la
   qualità di ogni JPEG dalla sua tabella di quantizzazione e avvisano sotto
   90; `capacity` mostra la stima.
-- **Rilevatori.** Il formato 5 è stato misurato contro DCTR; rilevatori JPEG
-  più potenti (GFR, reti profonde come SRNet per JPEG) non sono stati provati.
+- **Rilevatori.** Il formato 5 è stato misurato contro DCTR e GFR, su
+  BOSSbase e ALASKA2; reti profonde come SRNet sono in corso di misura.
 
 ## 7.7 Riepilogo: quale immagine di copertura dovrei usare?
 

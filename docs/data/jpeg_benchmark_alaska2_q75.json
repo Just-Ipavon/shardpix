@@ -1,0 +1,94 @@
+{
+  "dataset": "ALASKA2 (Kaggle covers), 512x512 colour JPEG (luminance)",
+  "features_version": 2,
+  "quality": 75,
+  "images": 2000,
+  "seed": 0,
+  "detector": "ensemble classifier on DCTR (8,000 features), GFR (17,000 features)",
+  "strategies": {
+    "jpeg": "format 5: syndrome-trellis codes with UERD costs on non-zero AC coefficients",
+    "naive": "one bit per coefficient at random non-zero AC positions, +-1 away from zero"
+  },
+  "rows": [
+    {
+      "detector": "dctr",
+      "strategy": "jpeg",
+      "payload": "share",
+      "p_e": 0.4355,
+      "p_e_low": 0.41376962973624243,
+      "p_e_high": 0.45723037026375757,
+      "auc": 0.59954,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "gfr",
+      "strategy": "jpeg",
+      "payload": "share",
+      "p_e": 0.47050000000000003,
+      "p_e_low": 0.4486247074579562,
+      "p_e_high": 0.4923752925420439,
+      "auc": 0.5499795,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "jpeg",
+      "payload": "0.1",
+      "p_e": 0.30899999999999994,
+      "p_e_low": 0.288748400181714,
+      "p_e_high": 0.3292515998182859,
+      "auc": 0.7594385,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "gfr",
+      "strategy": "jpeg",
+      "payload": "0.1",
+      "p_e": 0.3945,
+      "p_e_low": 0.37307989225517296,
+      "p_e_high": 0.4159201077448271,
+      "auc": 0.65236,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "naive",
+      "payload": "share",
+      "p_e": 0.06399999999999997,
+      "p_e_low": 0.053273229600667285,
+      "p_e_high": 0.07472677039933266,
+      "auc": 0.9854775,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "gfr",
+      "strategy": "naive",
+      "payload": "share",
+      "p_e": 0.17400000000000002,
+      "p_e_low": 0.15738479433771585,
+      "p_e_high": 0.19061520566228418,
+      "auc": 0.915507,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "naive",
+      "payload": "0.1",
+      "p_e": 0.0035000000000000014,
+      "p_e_low": 0.0009117051558989657,
+      "p_e_high": 0.006088294844101037,
+      "auc": 0.9998325,
+      "test_pairs": 1000
+    },
+    {
+      "detector": "gfr",
+      "strategy": "naive",
+      "payload": "0.1",
+      "p_e": 0.02450000000000001,
+      "p_e_low": 0.0177245561178621,
+      "p_e_high": 0.03127544388213792,
+      "auc": 0.997194,
+      "test_pairs": 1000
+    }
+  ]
+}

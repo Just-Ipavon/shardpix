@@ -467,77 +467,128 @@ sorgente di immagini, rilevatore addestrato al tasso esatto.
 ### 5.5.8 Immagini di copertura JPEG (formato 5)
 
 Il formato 5 (01 ADR-13) viene misurato come i formati 3 e 4, ma nel dominio
-JPEG: BOSSbase compresso con Pillow a qualità 95 (vicina a quella dei
-telefoni) e 75 (lo standard dei benchmark), caratteristiche DCTR (Holub e
-Fridrich [26]; 8.000 caratteristiche dai residui delle 64 funzioni di base
-DCT dell'immagine decompressa) con il classificatore a ensemble, metà delle
-immagini per l'addestramento e metà per il test, con una quota e con 0,1 bit
-per coefficiente AC diverso da zero (`python -m shardpix.analysis.jpeg_benchmark`).
-Il riferimento è l'equivalente non adattivo del formato 3: un bit per
-coefficiente in posizioni AC non nulle casuali, ±1 lontano da zero.
+JPEG, con due rilevatori e due sorgenti di immagini
+(`python -m shardpix.analysis.jpeg_benchmark`):
 
-Due delle 10.000 fotografie a qualità 75 sono troppo piatte per contenere
-qualsiasi dato (shardpix le rifiuta come copertine) e restano invariate; altre
-otto contengono meno di una quota e portano quello che possono. A qualità 95
-tutte le fotografie contengono una quota.
+- **Rilevatori.** DCTR (Holub e Fridrich [26]; 8.000 caratteristiche dai
+  residui delle 64 funzioni di base DCT) e GFR (Song et al. [27]; 17.000
+  caratteristiche da 256 residui di Gabor), ciascuno con il classificatore a
+  ensemble, metà delle immagini per l'addestramento e metà per il test.
+  Entrambi sono calcolati come nella letteratura: sull'immagine decompressa
+  *prima* dell'arrotondamento a interi, e GFR con i suoi passi di
+  quantizzazione pubblicati (2, 4, 6, 8 a qualità 75; 0,5, 1, 1,5, 2 a
+  qualità 95 [28]). Una prima versione di questo benchmark arrotondava i
+  pixel e usava altri passi per GFR, il che rendeva entrambi i rilevatori un
+  po' più deboli; tutti i numeri qui sotto sono stati rimisurati con le
+  caratteristiche corrette (versione 2 nei file di dati).
+- **Copertine.** BOSSbase compresso con Pillow a qualità 95 (vicina a quella
+  dei telefoni) e 75 (lo standard dei benchmark), 10.000 immagini, solo
+  DCTR; e le immagini di copertura di ALASKA2 [29], fotografie a colori di
+  molte fotocamere sviluppate e compresse in JPEG con tabelle standard,
+  ordinate per tabella di quantizzazione esatta: 2.000 a qualità 75 e 90 e
+  1.018 a qualità 95 (tutte quelle del sottoinsieme), solo luminanza.
+  ALASKA2 ha meno immagini, quindi i suoi intervalli sono due o tre volte
+  più larghi.
+- **Carichi.** Una quota della cassaforte, e 0,1 bit per coefficiente AC
+  diverso da zero come controllo positivo. Il riferimento è l'equivalente
+  non adattivo del formato 3: un bit per coefficiente in posizioni AC non
+  nulle casuali, ±1 lontano da zero.
 
-**Una sola immagine.**
+Due delle 10.000 fotografie di BOSSbase a qualità 75 sono troppo piatte per
+contenere qualsiasi dato (shardpix le rifiuta come copertine) e restano
+invariate; altre otto contengono meno di una quota e portano quello che
+possono.
 
-| Carico | Qualità 95, riferimento | Qualità 95, formato 5 | Qualità 75, riferimento | Qualità 75, formato 5 |
-| --- | ---: | ---: | ---: | ---: |
-| Una quota | 18,6% [17,9, 19,4] | **49,6%** [48,6, 50,5] | 2,4% [2,1, 2,7] | **42,5%** [41,6, 43,5] |
-| 0,1 bit per coefficiente AC non nullo (controllo) | 0,1% | 38,0% | 0,1% | 27,3% |
+**Una sola immagine, una quota** (errore di rilevazione P_E con il suo
+intervallo al 95%; 50% significa tirare a indovinare):
 
-AUC con una quota: 0,90 e 0,51 a qualità 95, 1,00 e 0,62 a qualità 75. I
-controlli mostrano che il rilevatore vede il formato 5 quando il carico è
-grande.
+| Copertine | Qualità | Rilevatore | Riferimento | Formato 5 |
+| --- | ---: | --- | ---: | ---: |
+| BOSSbase | 95 | DCTR | 16,1% [15,4, 16,8] | **49,5%** [48,5, 50,4] |
+| ALASKA2 | 95 | DCTR | 32,6% [29,7, 35,5] | **50,4%** [47,3, 53,5] |
+| ALASKA2 | 95 | GFR | 38,5% [35,5, 41,5] | **50,2%** [47,1, 53,3] |
+| ALASKA2 | 90 | DCTR | 17,0% [15,4, 18,6] | **49,4%** [47,2, 51,5] |
+| ALASKA2 | 90 | GFR | 28,9% [26,9, 30,9] | **49,7%** [47,5, 51,9] |
+| BOSSbase | 75 | DCTR | 2,2% [1,9, 2,4] | **42,5%** [41,5, 43,5] |
+| ALASKA2 | 75 | DCTR | 6,4% [5,3, 7,5] | **43,5%** [41,4, 45,7] |
+| ALASKA2 | 75 | GFR | 17,4% [15,7, 19,1] | **47,1%** [44,9, 49,2] |
+
+Con 0,1 bit per coefficiente AC non nullo (il controllo) il formato 5 viene
+rilevato a ogni qualità: 35,0% (BOSSbase, 95), 39,5% (ALASKA2, 95), 37,0%
+(ALASKA2, 90), 27,3% (BOSSbase, 75) e 30,9% (ALASKA2, 75) con DCTR; il
+riferimento è allo 0-2%. Dati grezzi:
+[data/jpeg_benchmark_q95.json](../docs/data/jpeg_benchmark_q95.json),
+[data/jpeg_benchmark_q75.json](../docs/data/jpeg_benchmark_q75.json) e
+`docs/data/jpeg_benchmark_alaska2_q{75,90,95}.json`.
 
 **Più immagini della stessa cassaforte** (aggregate come nel §5.5.7, rapporto
 di verosimiglianza, 40 suddivisioni; dati grezzi in
-[data/pooled_jpeg_q95.json](../docs/data/pooled_jpeg_q95.json) e
-[data/pooled_jpeg_q75.json](../docs/data/pooled_jpeg_q75.json)):
+`docs/data/pooled_jpeg_q{95,75}.json` e
+`docs/data/pooled_jpeg_alaska2_{dctr,gfr}_q{75,90,95}.json`):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-q75-dark.png">
-  <img alt="Errore di rilevazione in funzione del numero di immagini JPEG della stessa cassaforte a qualità 75: il formato 5 scende dal 43% con un'immagine all'8% con cinquanta; il riferimento è vicino a 0 fin dall'inizio" src="../assets/pooled-jpeg-q75-light.png">
+  <img alt="Errore di rilevazione in funzione del numero di immagini JPEG della stessa cassaforte a qualità 75 su BOSSbase: il formato 5 scende dal 43% con un'immagine al 7% con cinquanta; il riferimento è vicino a 0 fin dall'inizio" src="../assets/pooled-jpeg-q75-light.png">
 </picture>
 
-| Immagini della stessa cassaforte | Qualità 95, riferimento | Qualità 95, formato 5 | Qualità 75, riferimento | Qualità 75, formato 5 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 18,6% | 49,8% | 2,5% | 42,9% |
-| 2 | 10,1% | 49,8% | 0,3% | 38,5% |
-| 5 | 2,1% | **49,6%** [47,1, 51,5] | 0,0% | **31,8%** [29,4, 35,2] |
-| 10 | 0,2% | **50,0%** [46,4, 54,6] | 0,0% | **24,8%** [21,9, 27,4] |
-| 20 | 0,0% | 48,8% | 0,0% | 16,9% |
-| 50 | 0,0% | **50,0%** [42,5, 62,9] | 0,0% | **7,8%** [4,8, 11,4] |
+Formato 5, DCTR:
+
+| Immagini della stessa cassaforte | BOSSbase 95 | ALASKA2 95 | ALASKA2 90 | BOSSbase 75 | ALASKA2 75 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 49,2% | 49,5% | 49,2% | 42,9% | 44,2% |
+| 5 | 48,1% | 50,0% | 49,5% | 31,6% | 32,7% |
+| 10 | **47,4%** [43,3, 50,4] | 50,0% | 48,6% | **24,7%** [22,5, 27,4] | 27,0% |
+| 20 | 45,6% | 50,0% | 48,1% | 16,5% | 18,3% |
+| 50 | **43,6%** [35,5, 54,5] | **50,0%** [26,1, 66,7] | **49,9%** [24,3, 55,8] | **7,3%** [4,6, 11,7] | **7,2%** [1,8, 25,7] |
+
+Il riferimento non adattivo viene scoperto su ogni insieme: con dieci
+immagini il suo errore è 0,1% (BOSSbase 95), 7,2% (ALASKA2 95), 0,1%
+(ALASKA2 90) e 0,0% a qualità 75. GFR, su ALASKA2, dà lo stesso quadro con
+numeri più deboli (formato 5 a qualità 75: 47,0% su un'immagine, 22,9% su
+cinquanta).
 
 Cosa mostra:
 
-1. **A qualità 95 il formato 5 è al livello del caso**, con un'immagine e con
-   cinquanta, mentre il riferimento non adattivo viene scoperto l'81% delle
-   volte su un'immagine e sempre su dieci. È il caso delle foto del telefono
-   usate così come sono state scattate.
-2. **A qualità 75 il formato 5 ripete ciò che il formato 3 faceva nei pixel**
-   (§5.5.7): un segnale debole sulla singola immagine (42,9%) che
-   l'aggregazione rende forte (7,8% con cinquanta immagini, 24,8% con dieci).
-   Una quantizzazione grossolana lascia coefficienti non nulli più rari e più
-   grandi, quindi ogni modifica pesa di più.
-3. **La qualità della copertina conta più del metodo.** Lo stesso codice è
+1. **A qualità 95 il formato 5 è al livello del caso su un'immagine**, su
+   entrambe le sorgenti e per entrambi i rilevatori, mentre il riferimento
+   non adattivo ha un errore del 16-33%. È il caso delle foto del telefono
+   usate così come sono state scattate. Con l'aggregazione, l'insieme più
+   grande, BOSSbase, mostra una tendenza lenta e debole - 47,4% con dieci
+   immagini, 43,6% con cinquanta, un intervallo che include ancora il 50% -
+   che l'insieme più piccolo di ALASKA2 non riesce a risolvere. Un
+   avversario con decine di immagini della stessa cassaforte potrebbe quindi
+   ottenere un piccolo vantaggio anche a qualità 95; con le poche immagini
+   che una cassaforte ha davvero, nessuno.
+2. **A qualità 90 il formato 5 è al livello del caso su ALASKA2 fino a
+   cinquanta immagini**, per entrambi i rilevatori, con intervalli di circa
+   ±8 punti a dieci immagini.
+3. **A qualità 75 il formato 5 ripete ciò che il formato 3 faceva nei pixel**
+   (§5.5.7), con gli stessi numeri su entrambe le sorgenti: un segnale debole
+   sulla singola immagine (43-44%) che l'aggregazione rende forte (25-27% con
+   dieci immagini, 7% con cinquanta). Una quantizzazione grossolana lascia
+   coefficienti non nulli più rari e più grandi, quindi ogni modifica pesa di
+   più.
+4. **La qualità della copertina conta più del metodo.** Lo stesso codice è
    sicuro su un JPEG di alta qualità e rilevabile su uno molto compresso. Le
    copertine devono essere i file originali della fotocamera; una foto salvata
    da un'app di messaggistica o da un social è di solito ricompressa a qualità
    70-85.
+5. **Qui GFR è più debole di DCTR**, a differenza di quanto riporta la
+   letteratura. GFR ha 17.000 caratteristiche ed è stato addestrato su al
+   massimo 1.000 immagini per classe su ALASKA2, mentre i confronti
+   pubblicati ne usano 5.000 o più; lo scarto è quello che questa carenza
+   produrrebbe, e le conclusioni si basano su DCTR, il più forte dei due qui.
 
-Avvertenze: le copertine sono immagini di BOSSbase compresse da Pillow, non
-file di fotocamere di telefoni; un solo rilevatore (DCTR); rilevatore
-addestrato al carico esatto. Rilevatori JPEG più potenti (GFR [27], SRNet
-[8] o altre reti per JPEG) non sono stati provati.
+Avvertenze: i rilevatori sono addestrati al carico esatto; due rilevatori,
+entrambi a caratteristiche progettate a mano; rilevatori profondi per JPEG
+come SRNet [8] sono in corso di misura sulle stesse immagini ALASKA2 e non
+sono ancora riportati.
 
 **Che cosa questa valutazione non è.** L'attacco del chi-quadro che
 `analyze` esegue sui coefficienti di un JPEG (03 §3.10) scopre solo gli
 strumenti che sovrascrivono il bit meno significativo dei coefficienti, come
 JSteg; il formato 5 lo supera per costruzione, e non è una prova di
-sicurezza. La prova per il formato 5 è la misura con DCTR qui sopra.
+sicurezza. La prova per il formato 5 è la misura con DCTR e GFR qui sopra.
 
 ## 5.6 Limiti noti
 
@@ -546,19 +597,22 @@ sicurezza. La prova per il formato 5 è la misura con DCTR qui sopra.
 **Steganalisi addestrata: misurata contro alcuni rilevatori, non contro lo
 stato dell'arte.** Una quota nel formato 4 su BOSSbase 512x512 è al livello
 del caso per SPAM e SRM-lite (§5.5.6), e una quota nel formato 5 a qualità
-JPEG 95 è al livello del caso per DCTR (§5.5.8). I rilevatori usati sono
-SPAM, un sottoinsieme di 3.125 caratteristiche dello spatial rich model, una
-piccola CNN addestrata su una CPU (solo per il formato 3) e DCTR. L'SRM
-completo (34.671 caratteristiche), maxSRM e gli altri modelli che conoscono
-il canale di selezione, GFR per i JPEG e reti profonde come SRNet,
-addestrate su una GPU, sono più potenti e non sono stati eseguiti: "al
-livello del caso" qui significa al livello del caso per questi rilevatori. I
-controlli positivi (§5.5.6, §5.5.8) mostrano che gli stessi rilevatori
-vedono i formati 4 e 5 con carichi maggiori, e i risultati negativi - il
-formato 3 e i JPEG a qualità 75 che cadono con l'aggregazione - con
-rilevatori più potenti diventerebbero solo più netti. Tutte le misure usano
-un'unica sorgente di immagini (BOSSbase); sul campo, il mismatch della
-sorgente delle immagini gioca contro il rilevatore.
+JPEG 90-95 è al livello del caso su un'immagine per DCTR e GFR, su BOSSbase e
+ALASKA2 (§5.5.8). I rilevatori usati sono SPAM, un sottoinsieme di 3.125
+caratteristiche dello spatial rich model, una piccola CNN addestrata su una
+CPU (solo per il formato 3), DCTR e GFR. L'SRM completo (34.671
+caratteristiche), maxSRM e gli altri modelli che conoscono il canale di
+selezione e reti profonde come SRNet sono più potenti e non sono stati
+eseguiti (SRNet sul formato 5 è in corso): "al livello del caso" qui
+significa al livello del caso per questi rilevatori. I controlli positivi
+(§5.5.6, §5.5.8) mostrano che gli stessi rilevatori vedono i formati 4 e 5
+con carichi maggiori, e i risultati negativi - il formato 3 e i JPEG a
+qualità 75 che cadono con l'aggregazione, e una tendenza debole a qualità 95
+su cinquanta immagini di BOSSbase - con rilevatori più potenti
+diventerebbero solo più netti. Le misure sui pixel usano un'unica sorgente
+di immagini (BOSSbase); quelle sui JPEG due (BOSSbase e ALASKA2), che
+concordano. Sul campo, il mismatch della sorgente delle immagini gioca
+contro il rilevatore.
 
 **Immagini di copertura JPEG.** I file JPEG vengono inseriti nei loro
 stessi coefficienti (formato 5) e mai decodificati in pixel, quindi la
@@ -729,6 +783,11 @@ combinazione non era stata misurata.
 26. V. Holub e J. Fridrich, "Low-complexity features for JPEG steganalysis
     using undecimated DCT" (DCTR), *IEEE Transactions on Information
     Forensics and Security*, 2015.
-27. X. Song, F. Liu, C. Yang, X. Luo e Y. Zhang, "Steerable Gaussian
-    filters for JPEG steganalysis" (GFR), *ACM Workshop on Information
-    Hiding and Multimedia Security*, 2015.
+27. X. Song, F. Liu, C. Yang, X. Luo e Y. Zhang, "Steganalysis of
+    adaptive JPEG steganography using 2D Gabor filters" (GFR), *ACM
+    Workshop on Information Hiding and Multimedia Security*, 2015.
+28. C. Xia, Q. Guan e X. Zhao, "Further study on GFR features for JPEG
+    steganalysis", arXiv:1706.07576, 2017 (passi di quantizzazione di GFR).
+29. R. Cogranne, Q. Giboulot e P. Bas, "ALASKA#2: challenging academic
+    research on steganalysis with realistic images", *IEEE WIFS*, 2020
+    (ALASKA2).

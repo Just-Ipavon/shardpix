@@ -236,10 +236,14 @@ shardpix with this work.) The measurements:
 - **Real covers, not lab covers.** Phone photos are JPEG, so shardpix hides
   the share inside the JPEG coefficients themselves (format 5) and returns a
   JPEG with the same quality settings and metadata - no conversion that
-  would betray the image. On JPEGs at quality 95, like a phone's, format 5
-  stays at chance from 1 to 50 pooled images; at quality 75, typical of
-  photos recompressed by chat apps, it falls to 7.8% with fifty, the same
-  trap as format 3 ([docs/05 §5.5.8](docs/05-security-analysis.md#558-jpeg-covers-format-5)).
+  would betray the image. Measured with DCTR and GFR on BOSSbase and on
+  ALASKA2, real camera photos: at quality 90-95, like a phone's, one image
+  is at chance (49-50%), where the non-adaptive baseline is caught on one
+  image (16-33% error) and certainly with ten; over fifty images of one
+  vault DCTR shows at most a weak trend at quality 95 (43.6%, an interval
+  that still includes 50%). At quality 75, typical of photos recompressed
+  by chat apps, format 5 falls to 7% with fifty, the same trap as format 3
+  ([docs/05 §5.5.8](docs/05-security-analysis.md#558-jpeg-covers-format-5)).
   Use original camera files.
 - **Everything is reproducible.** The detectors, the datasets, the positive
   controls and the confidence intervals are in the repository; every number
