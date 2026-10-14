@@ -227,6 +227,8 @@ def seal(
         data = source.read_bytes()
     except OSError as exc:
         raise VaultError(f"cannot read {source}: {exc.strerror}") from exc
+    if len(data) > MAX_FILE_BYTES:  # the file grew after stat()
+        raise VaultError("files larger than 2 GiB are not supported")
     name = source.name.encode("utf-8")
     if len(name) > MAX_NAME_BYTES:
         raise VaultError("the file name is too long to store in the vault")

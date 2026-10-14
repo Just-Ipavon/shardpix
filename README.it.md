@@ -199,8 +199,8 @@ memorizzato:
 
 | Immagine | Come viene nascosta la quota | Risultato |
 | --- | --- | --- |
-| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 5): mai decodificato né ricompresso, stesse tabelle di qualità ed EXIF | `.jpg` |
-| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 4) | `.png` |
+| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 7): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker | `.jpg` |
+| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 6) | `.png` |
 | HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
 
 Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
@@ -280,6 +280,12 @@ dati grezzi: [docs/data/pooled_512.json](docs/data/pooled_512.json);
 per riprodurli: `python -m shardpix.analysis.pooled`.
 
 ## Rilevabilità
+
+Le misure che seguono sono state fatte sui formati 4 e 5. I formati 6 e 7,
+scritti dopo una revisione esterna (docs/06 §6.13), inseriscono allo stesso
+modo ma senza il byte pubblico del costo, che era un'impronta leggibile
+senza passphrase da chiunque avesse il codice sorgente; gli errori di
+rilevazione misurati valgono anche per loro.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/rs-estimate-dark.png">
@@ -372,7 +378,7 @@ shardpix/
 ├── cli.py              comandi, passphrase, protezione da sovrascritture, codici di uscita
 ├── vault.py            seal e unseal: AES-256-GCM + Shamir + steganografia
 ├── media.py            JPEG o pixel: sceglie il formato dal file
-├── jpeg.py             formato 5: inserimento nei coefficienti JPEG
+├── jpeg.py             formati 7 e 5: inserimento nei coefficienti JPEG
 ├── stego.py            derivazione delle chiavi, percorso, formati v4 (adattivo) e v3, framing
 ├── stc.py              codici a traliccio di sindrome (Viterbi)
 ├── costs.py            costi HiLL e UERD delle modifiche
