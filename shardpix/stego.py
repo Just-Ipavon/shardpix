@@ -166,6 +166,9 @@ class EmbedReport:
     bits_written: int
     """Salt and frame bits."""
     samples_changed: int
+    structure_kept: bool = True
+    """JPEG only: the output has the cover's marker layout and kind of Huffman tables.
+    False for a progressive cover or one whose layout libjpeg cannot reproduce."""
 
     @property
     def embedding_rate(self) -> float:

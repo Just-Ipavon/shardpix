@@ -178,8 +178,86 @@ class TestFormat5:
         )
         digest = hashlib.sha256(coefficients.astype("<i4").tobytes()).hexdigest()
         assert digest == ("bd3d599d7d79a5c9f5e6485a9ac7d8f66d1bcb892e6651f5cb83d435a253f3cb")
-        (tmp_path / "s.jpg").write_bytes(jpeg._encode(cover, coefficients))
+        (tmp_path / "s.jpg").write_bytes(jpeg._encode(cover, coefficients)[0])
         assert jpeg.extract(jpeg.load(tmp_path / "s.jpg"), "pw") == b"known answer"
+
+
+def markers(data: bytes) -> list[int]:
+    segments, _ = jpeg._segments(data)
+    return [m for m, _ in segments]
+
+
+def without_jfif(path):
+    """The same JPEG without its APP0 segment, as many cameras write it (EXIF only)."""
+    data = path.read_bytes()
+    segments, scan = jpeg._segments(data)
+    path.write_bytes(b"\xff\xd8" + b"".join(s for m, s in segments if m != 0xE0) + scan)
+    return path
+
+
+class TestStructure:
+    """A1: the output looks like the cover, not like libjpeg's own files."""
+
+    @pytest.mark.parametrize("variant", ["standard", "optimized", "exif only", "no metadata"])
+    def test_layout_matches_the_cover(self, tmp_path, variant):
+        cover_path = tmp_path / "cover.jpg"
+        if variant == "no metadata":
+            pixels = np.asarray(Image.open(phone_jpeg(tmp_path / "p.jpg")))
+            Image.fromarray(pixels).save(cover_path, quality=90)
+        else:
+            phone_jpeg(cover_path)
+        if variant == "optimized":
+            Image.open(cover_path).save(
+                cover_path, quality=90, optimize=True, exif=Image.open(cover_path).info["exif"]
+            )
+        if variant == "exif only":
+            without_jfif(cover_path)
+        source = cover_path.read_bytes()
+        cover = jpeg.load(cover_path)
+        stego_cover, report = round_trip(tmp_path, cover, b"payload")
+        data = stego_cover.path.read_bytes()
+        assert report.structure_kept
+        assert markers(data) == markers(source)
+        src, _ = jpeg._segments(source)
+        out, _ = jpeg._segments(data)
+        for (m, a), (_, b) in zip(src, out, strict=True):
+            if m in jpeg._META_MARKERS:
+                assert a == b
+        assert markers(data).count(0xE0) == markers(source).count(0xE0)
+        assert jpeg.extract(stego_cover, "pw") == b"payload"
+
+    def test_optimized_cover_gets_optimized_tables(self, tmp_path):
+        path = phone_jpeg(tmp_path / "cover.jpg")
+        Image.open(path).save(path, quality=90, optimize=True)
+        stego_cover, _ = round_trip(tmp_path, jpeg.load(path), b"payload")
+        standard = jpeg._huffman(jpeg._segments(phone_jpeg(tmp_path / "s.jpg").read_bytes())[0])
+        assert jpeg._huffman(jpeg._segments(stego_cover.path.read_bytes())[0]) != standard
+
+    def test_progressive_cover_is_reported(self, tmp_path):
+        path = phone_jpeg(tmp_path / "cover.jpg")
+        Image.open(path).save(path, quality=90, progressive=True)
+        cover = jpeg.load(path)
+        stego_cover, report = round_trip(tmp_path, cover, b"payload")
+        assert not report.structure_kept
+        data = stego_cover.path.read_bytes()
+        assert markers(data).count(0xE0) <= 1
+        assert jpeg.extract(stego_cover, "pw") == b"payload"
+        np.testing.assert_array_equal(stego_cover.image.Cb, cover.image.Cb)
+
+    def test_restart_markers_are_reported(self, tmp_path):
+        path = phone_jpeg(tmp_path / "cover.jpg")
+        Image.open(path).save(path, quality=90, restart_marker_blocks=4)
+        stego_cover, report = round_trip(tmp_path, jpeg.load(path), b"payload")
+        assert not report.structure_kept
+        assert jpeg.extract(stego_cover, "pw") == b"payload"
+
+    def test_other_components_are_untouched(self, tmp_path, photo):
+        cover = jpeg.load(photo)
+        stego_cover, _ = round_trip(tmp_path, cover, b"payload")
+        np.testing.assert_array_equal(stego_cover.image.Cb, cover.image.Cb)
+        np.testing.assert_array_equal(stego_cover.image.Cr, cover.image.Cr)
+        for a, b in zip(stego_cover.image.qt, cover.image.qt, strict=True):
+            np.testing.assert_array_equal(a, b)
 
 
 class TestUERD:

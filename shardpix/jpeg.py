@@ -26,6 +26,7 @@ could decode without a key (docs/06 SR-07); format 7 writes only the salt.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import tempfile
 from dataclasses import dataclass
@@ -186,7 +187,8 @@ def embed(
         span(progress, 0.0, 0.9),
     )
     span(progress, 0.0, 1.0)(0.9, "writing the JPEG")
-    return _encode(cover, coefficients), report
+    data, kept = _encode(cover, coefficients)
+    return data, dataclasses.replace(report, structure_kept=kept)
 
 
 def embed_coefficients(
@@ -264,14 +266,109 @@ def embed_coefficients(
     return out, report
 
 
-def _encode(cover: JpegCover, coefficients: np.ndarray) -> bytes:
-    """The JPEG file with new luminance coefficients and everything else unchanged."""
+_META_MARKERS = frozenset(range(0xE0, 0xF0)) | {0xFE}
+"""APPn and COM: metadata, copied from the cover byte for byte."""
+_DQT, _DHT, _SOS = 0xDB, 0xC4, 0xDA
+
+
+def _segments(data: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
+    """The header segments ``(marker, bytes)`` after SOI, and the rest from the first SOS."""
+    segments, i = [], 2
+    while True:
+        if i + 4 > len(data) or data[i] != 0xFF:
+            raise UnsupportedImageError("malformed JPEG header")
+        marker = data[i + 1]
+        if marker == 0xFF:  # fill byte
+            i += 1
+            continue
+        if marker == _SOS:
+            return segments, data[i:]
+        length = int.from_bytes(data[i + 2 : i + 4], "big")
+        if length < 2 or i + 2 + length > len(data):
+            raise UnsupportedImageError("malformed JPEG segment")
+        segments.append((marker, data[i : i + 2 + length]))
+        i += 2 + length
+
+
+def _tables(marker: int, segment: bytes) -> list[tuple[int, bytes]]:
+    """The tables of a DQT or DHT segment, keyed by their class/id byte."""
+    body, tables, j = segment[4:], [], 0
+    while j < len(body):
+        if marker == _DQT:
+            size = 1 + (128 if body[j] >> 4 else 64)
+        else:
+            size = 17 + sum(body[j + 1 : j + 17])
+        tables.append((body[j], body[j : j + size]))
+        j += size
+    return tables
+
+
+def _segment(marker: int, payload: bytes) -> bytes:
+    return bytes([0xFF, marker]) + (len(payload) + 2).to_bytes(2, "big") + payload
+
+
+def _huffman(segments: list[tuple[int, bytes]]) -> dict[int, bytes]:
+    return {k: t for m, s in segments if m == _DHT for k, t in _tables(m, s)}
+
+
+def _match_structure(source: bytes, encoded: bytes) -> tuple[bytes, bool]:
+    """``encoded`` laid out like ``source``: same metadata, same segments in the same order.
+
+    libjpeg writes its own JFIF header, then the cover's markers (so APP0
+    appears twice, and a cover with only EXIF gains a JFIF it never had), and
+    one table per segment in its own order. Here the metadata comes from the
+    cover byte for byte and the tables are regrouped into the cover's
+    segments. Returns the file and whether the layout could be matched; when
+    it cannot (a progressive cover, restart markers libjpeg does not write),
+    the cover's metadata are still restored.
+    """
+    src, _ = _segments(source)
+    out, scan = _segments(encoded)
+    tables = {(m, k): t for m, s in out if m in (_DQT, _DHT) for k, t in _tables(m, s)}
+    others = {m: s for m, s in out if m not in _META_MARKERS and m not in (_DQT, _DHT)}
+    used, layout = set(), []
+    for marker, segment in src:
+        if marker in _META_MARKERS:
+            layout.append(segment)
+        elif marker in (_DQT, _DHT):
+            keys = [(marker, k) for k, _ in _tables(marker, segment)]
+            if not all(key in tables for key in keys):
+                break
+            layout.append(_segment(marker, b"".join(tables[key] for key in keys)))
+            used.update(keys)
+        elif marker in others:
+            layout.append(others[marker])
+            used.add(marker)
+        else:
+            break
+    else:
+        if used == set(tables) | set(others):
+            return b"\xff\xd8" + b"".join(layout) + scan, True
+    meta = [s for m, s in src if m in _META_MARKERS]
+    rest = [s for m, s in out if m not in _META_MARKERS]
+    return b"\xff\xd8" + b"".join(meta + rest) + scan, False
+
+
+def _encode(cover: JpegCover, coefficients: np.ndarray) -> tuple[bytes, bool]:
+    """The JPEG file with new luminance coefficients, laid out like the cover.
+
+    The coefficients of every component are written losslessly. Huffman
+    tables are libjpeg's standard ones if the cover has them, optimised ones
+    otherwise (cameras and editors that optimise produce per-image tables).
+    Returns the file and whether its structure matches the cover's
+    (:func:`_match_structure`).
+    """
     image = cover.image.copy()
     image.Y = coefficients.reshape(cover.blocks.shape).astype(cover.blocks.dtype)
+    source = cover.path.read_bytes()
     with tempfile.TemporaryDirectory(prefix="shardpix-") as directory:
         target = Path(directory) / "stego.jpg"
         image.write_dct(str(target))
-        return target.read_bytes()
+        encoded = target.read_bytes()
+        if _huffman(_segments(encoded)[0]) != _huffman(_segments(source)[0]):
+            image.write_dct(str(target), flags=["+OPTIMIZE_CODING"])
+            encoded = target.read_bytes()
+    return _match_structure(source, encoded)
 
 
 def _not_found() -> PayloadNotFoundError:

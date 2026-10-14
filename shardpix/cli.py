@@ -103,6 +103,13 @@ LOW_QUALITY_WARNING = (
     "pooled (docs/05 §5.5.8); use the original files from the camera."
 )
 
+STRUCTURE_WARNING = (
+    "[yellow]warning:[/] {names} a progressive JPEG or one with restart markers, which "
+    "shardpix writes back as a baseline JPEG without them: anyone comparing the file "
+    "with others from the same camera can notice (docs/07); prefer photos as the phone "
+    "saves them."
+)
+
 OUTPUT_SUFFIXES = {".jpg": {".jpg", ".jpeg"}, ".png": {".png"}}
 """Extensions accepted for the stego file, by the kind of cover."""
 
@@ -433,6 +440,8 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
                 safe=jpeg.SAFE_QUALITY,
             )
         )
+    if not report.structure_kept:
+        console.print(STRUCTURE_WARNING.format(names=f"{escape(str(args.cover))} is"))
     return 0
 
 
@@ -612,6 +621,10 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
                 safe=jpeg.SAFE_QUALITY,
             )
         )
+    rewritten = [image.cover.name for image in result.images if not image.report.structure_kept]
+    if rewritten:
+        verb = "is" if len(rewritten) == 1 else "are"
+        console.print(STRUCTURE_WARNING.format(names=f"{escape(', '.join(rewritten))} {verb}"))
     console.print("Keep the vault file anywhere; give each image to a different holder.")
     console.print("Never publish the original covers next to the images.")
     return 0
