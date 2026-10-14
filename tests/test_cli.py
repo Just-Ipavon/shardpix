@@ -359,7 +359,7 @@ class TestCleanErrors:
         assert "gives a .jpg file" in capsys.readouterr().err
         assert run("embed", photo, "-o", tmp_path / "s.jpg", "-t", "hello") == 0
         out = capsys.readouterr().out
-        assert "JPEG (format 5)" in out and "JPEG-compatibility" not in out
+        assert "JPEG (format 7)" in out and "JPEG-compatibility" not in out
         assert run("extract", tmp_path / "s.jpg") == 0
         assert capsys.readouterr().out.endswith("hello")
 

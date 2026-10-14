@@ -96,10 +96,26 @@ def test_stego_pixels(production_scrypt):
 def test_stego_pixels_format_4(production_scrypt):
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"known answer", "pw", FORMAT_4, random_bytes=deterministic_random()
+        carrier,
+        b"known answer",
+        "pw",
+        FORMAT_4,
+        random_bytes=deterministic_random(),
+        version=stego.ADAPTIVE_V4,
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "dc94896bfff08879cd7ab29dd07ed130ea7b6fcde0444c8ad9720a3eea024b7a"
+    )
+    assert stego.extract(stego_carrier, "pw") == b"known answer"
+
+
+def test_stego_pixels_format_6(production_scrypt):
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"known answer", "pw", FORMAT_4, random_bytes=deterministic_random()
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "8ba14c6f0ba8894edd5a0aab0dfe071c39a643cdbad62d0cfedac5b6e174abe7"
     )
     assert stego.extract(stego_carrier, "pw") == b"known answer"
 
@@ -145,9 +161,25 @@ def test_stego_pixels_without_passphrase():
 def test_stego_pixels_without_passphrase_format_4():
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"public payload", None, FORMAT_4, random_bytes=deterministic_random(b"public")
+        carrier,
+        b"public payload",
+        None,
+        FORMAT_4,
+        random_bytes=deterministic_random(b"public"),
+        version=stego.ADAPTIVE_V4,
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "67d970a38da7f92fdfdc8cc567d31753de95cd9ec3224d7ef264325e6f47ce0a"
+    )
+    assert stego.extract(stego_carrier) == b"public payload"
+
+
+def test_stego_pixels_without_passphrase_format_6():
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"public payload", None, FORMAT_4, random_bytes=deterministic_random(b"public")
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "ed935d560d928e1136b2402e5e4e17934af6753d0f784b400501a5465444af03"
     )
     assert stego.extract(stego_carrier) == b"public payload"

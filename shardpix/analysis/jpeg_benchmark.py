@@ -80,8 +80,17 @@ def stego_blocks(
             return blocks
         size = bits // 8 - stego.PUBLIC_BYTES - stego.FRAME_OVERHEAD
         size = max(0, min(size, stego.capacity(eligible.size)))
+        # Format 5, as measured in docs/05: format 7 only drops its public cost
+        # byte (8 of the ~1,264 bits of a share), and pinning the format keeps
+        # the stego images, and so the cached features, identical.
         out, _ = jpeg.embed_coefficients(
-            coefficients, blocks.shape, quant, rng.bytes(size), "benchmark", rng.bytes
+            coefficients,
+            blocks.shape,
+            quant,
+            rng.bytes(size),
+            "benchmark",
+            rng.bytes,
+            version=jpeg.LEGACY_VERSION,
         )
     return out.reshape(blocks.shape)
 

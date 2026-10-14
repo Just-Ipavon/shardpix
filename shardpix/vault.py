@@ -122,7 +122,7 @@ class SealedImage:
     from_jpeg: bool = False
     """The cover was a JPEG decoded to pixels (only for formats Pillow reads as JPEG
     but that are not baseline JPEG files); JPEG files are embedded natively."""
-    format: str = "PNG (format 4)"
+    format: str = "PNG (format 6)"
     jpeg_quality: int | None = None
     """Estimated quality of a JPEG cover; ``None`` for pixel covers."""
 

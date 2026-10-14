@@ -43,7 +43,7 @@ images: any k of n images open it, fewer reveal nothing.
   share --adaptive +-1 changes------------>  one image per holder
 
 Covers are embedded the way their file is stored: phone JPEGs stay JPEG
-(format 5, same quality and metadata), PNG/TIFF/BMP become PNG (format 4).
+(format 7, same quality and metadata), PNG/TIFF/BMP become PNG (format 6).
 Run 'shardpix COMMAND -h' for the details and examples of each command."""
 
 EPILOG = """\
@@ -767,8 +767,8 @@ def build_parser() -> argparse.ArgumentParser:
         "embed",
         "hide a message or a file in an image",
         "Hides one payload, encrypted and authenticated, in a single image. A JPEG\n"
-        "cover gives a JPEG (format 5: same quantisation tables and metadata);\n"
-        "anything else gives a PNG (format 4). The changes are placed where the\n"
+        "cover gives a JPEG (format 7: same quantisation tables and metadata);\n"
+        "anything else gives a PNG (format 6). The changes are placed where the\n"
         "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
         "much fits. The cover itself is never modified.\n\n" + KEYING_NOTE,
         '  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p\n'

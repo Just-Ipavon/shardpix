@@ -143,8 +143,43 @@ class TestFormat5:
         (tmp_path / "s.jpg").write_bytes(data)
         stego_cover = jpeg.load(tmp_path / "s.jpg")
         digest = hashlib.sha256(stego_cover.coefficients().astype("<i4").tobytes()).hexdigest()
-        assert digest == ("bd3d599d7d79a5c9f5e6485a9ac7d8f66d1bcb892e6651f5cb83d435a253f3cb")
+        assert digest == ("f04d1717bc624c1b1f38fde1e7415acd2cf0453bd7c72a43e68424d202a23671")
         assert jpeg.extract(stego_cover, "pw") == b"known answer"
+
+    def test_format_7_has_no_keyless_fingerprint(self, tmp_path):
+        """SR-07: the public samples of a format-7 JPEG decode to nothing constant."""
+        cover = jpeg.load(arithmetic_jpeg(tmp_path / "c.jpg"))
+        coefficients = cover.coefficients()
+        eligible = jpeg.eligible_mask(coefficients)
+        hw = stego.header_width(int(eligible.sum()))
+        positions = stego._salt_positions(coefficients.size, eligible, hw)
+        cost_bytes = set()
+        for _ in range(16):
+            out, _ = jpeg.embed_coefficients(
+                coefficients, cover.blocks.shape, cover.quant, b"m", "pw"
+            )
+            bits = stego.read_adaptive(out, positions, stego.PUBLIC_BITS, stego._PUBLIC_CODE_SEED)
+            cost_bytes.add(np.packbits(bits).tobytes()[stego.SALT_BYTES])
+        assert len(cost_bytes) > 8
+        assert stego.SCRYPT_LOG_N | stego.ADAPTIVE_FLAG not in cost_bytes
+
+    def test_known_answer_format_5(self, tmp_path, monkeypatch):
+        """Format 5, still read and used by the benchmarks, stays pinned too."""
+        monkeypatch.setattr(stego, "SCRYPT_LOG_N", 17)
+        cover = jpeg.load(arithmetic_jpeg(tmp_path / "pinned.jpg"))
+        coefficients, _ = jpeg.embed_coefficients(
+            cover.coefficients(),
+            cover.blocks.shape,
+            cover.quant,
+            b"known answer",
+            "pw",
+            deterministic_random(),
+            version=jpeg.LEGACY_VERSION,
+        )
+        digest = hashlib.sha256(coefficients.astype("<i4").tobytes()).hexdigest()
+        assert digest == ("bd3d599d7d79a5c9f5e6485a9ac7d8f66d1bcb892e6651f5cb83d435a253f3cb")
+        (tmp_path / "s.jpg").write_bytes(jpeg._encode(cover, coefficients))
+        assert jpeg.extract(jpeg.load(tmp_path / "s.jpg"), "pw") == b"known answer"
 
 
 class TestUERD:

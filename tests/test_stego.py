@@ -120,7 +120,7 @@ class TestDistortion:
     def test_report_rates(self, rgb_carrier):
         _, report = stego.embed(rgb_carrier, bytes(100), PASSPHRASE)
         assert report.frame_bytes == 100 + stego.FRAME_OVERHEAD
-        assert report.bits_written == 8 * (stego.PUBLIC_BYTES + report.frame_bytes)
+        assert report.bits_written == 8 * (stego.SALT_BYTES + report.frame_bytes)
         assert report.embedding_rate == pytest.approx(report.bits_written / rgb_carrier.n_samples)
 
     def test_fully_saturated_images_have_no_capacity(self):
@@ -246,16 +246,27 @@ class TestKeyDerivation:
         with pytest.raises(ValueError):
             stego.derive_key(PASSPHRASE, self.SALT, 30)
 
-    def test_cost_is_read_from_the_image(self, rgb_carrier, monkeypatch):
-        """Images keep opening after the default cost changes."""
+    def test_legacy_cost_is_read_from_the_image(self, rgb_carrier, monkeypatch):
+        """Format 4 images keep opening after the default cost changes."""
         monkeypatch.setattr(stego, "SCRYPT_LOG_N", 11)
-        stego_carrier, _ = stego.embed(rgb_carrier, b"old cost", PASSPHRASE)
+        stego_carrier, _ = stego.embed(
+            rgb_carrier, b"old cost", PASSPHRASE, version=stego.ADAPTIVE_V4
+        )
         monkeypatch.setattr(stego, "SCRYPT_LOG_N", 12)
         assert stego.extract(stego_carrier, PASSPHRASE) == b"old cost"
 
+    def test_format_6_cost_is_fixed_by_the_version(self, rgb_carrier, monkeypatch):
+        """Format 6 stores no cost: raising it takes a new format version."""
+        monkeypatch.setattr(stego, "SCRYPT_LOG_N", 11)
+        stego_carrier, _ = stego.embed(rgb_carrier, b"fixed cost", PASSPHRASE)
+        assert stego.extract(stego_carrier, PASSPHRASE) == b"fixed cost"
+        monkeypatch.setattr(stego, "SCRYPT_LOG_N", 12)
+        with pytest.raises(PayloadNotFoundError):
+            stego.extract(stego_carrier, PASSPHRASE)
+
     def test_forged_cost_is_rejected_before_any_key_derivation(self, rgb_carrier):
         """A cost of 2^30 would make scrypt allocate 128 GiB; it must never be attempted."""
-        stego_carrier, _ = stego.embed(rgb_carrier, b"x", PASSPHRASE)
+        stego_carrier, _ = stego.embed(rgb_carrier, b"x", PASSPHRASE, FORMAT_3)
         samples = stego_carrier.samples()
         eligible = stego.eligible_mask(samples)
         cost_positions = stego._salt_positions(samples.size, eligible)[-8:]

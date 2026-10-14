@@ -1,4 +1,4 @@
-"""Adaptive steganography inside JPEG files (stego format 5).
+"""Adaptive steganography inside JPEG files (stego format 7; format 5 is still read).
 
 Phone cameras save JPEG. Hiding data in the decoded pixels of a JPEG and
 saving PNG is detectable at any rate, because the pixels of a decoded JPEG
@@ -15,11 +15,13 @@ at +-1 always moves away from zero. The set of usable coefficients is
 therefore identical before and after embedding, and the extractor rebuilds
 it from the stego file with no side information.
 
-**How.** Exactly as format 4 (:mod:`shardpix.stego`): the public salt and
-cost, the masked length and the sealed body are syndrome-trellis codes over
+**How.** Exactly as the PNG format (:mod:`shardpix.stego`): the public salt,
+the masked length and the sealed body are syndrome-trellis codes over
 public or keyed candidate coefficients, and the coder picks the changes
 with the lowest UERD cost (:func:`shardpix.costs.uerd`). Keys come from
 their own domain, so a JPEG payload never shares a key with a PNG one.
+Format 5 also wrote the scrypt cost in a public byte, a constant anyone
+could decode without a key (docs/06 SR-07); format 7 writes only the salt.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from .errors import CapacityError, PayloadNotFoundError, UnsupportedImageError
 from .progress import Progress, span
 
 VERSION = stego.JPEG_VERSION
+LEGACY_VERSION = stego.JPEG_LEGACY_VERSION
 MAX_COEFFICIENT = 1023
 """Largest magnitude of a baseline 8-bit JPEG coefficient."""
 
@@ -194,13 +197,18 @@ def embed_coefficients(
     passphrase: str | None = None,
     random_bytes: stego.RandomBytes = os.urandom,
     progress: Progress | None = None,
+    *,
+    version: int = VERSION,
 ) -> tuple[np.ndarray, stego.EmbedReport]:
     """The core of :func:`embed`, on a flat array of luminance coefficients.
 
     ``shape`` is the ``Hb x Wb x 8 x 8`` shape the coefficients come from and
     ``quant`` the luminance quantisation table. Benchmarks use it directly,
-    without writing files.
+    without writing files, and with ``version=5`` so that the published
+    measurements stay reproducible.
     """
+    if version not in (VERSION, LEGACY_VERSION):
+        raise ValueError(f"JPEG covers take format {VERSION} or {LEGACY_VERSION}")
     eligible = eligible_mask(coefficients)
     n_eligible = int(np.count_nonzero(eligible))
     room = stego.max_frame_bytes(n_eligible) - stego.FRAME_OVERHEAD
@@ -214,13 +222,15 @@ def embed_coefficients(
     log_n = stego.SCRYPT_LOG_N
     report_step = span(progress, 0.0, 1.0)
     report_step(0.0, "deriving the key")
-    key = stego.derive_key(passphrase, salt, log_n, VERSION)
-    frame = stego.build_frame(payload, key, random_bytes, VERSION)
-    public = salt + bytes([log_n | stego.ADAPTIVE_FLAG])
+    key = stego.derive_key(passphrase, salt, log_n, version)
+    frame = stego.build_frame(payload, key, random_bytes, version)
+    public = stego.public_block(salt, version, log_n)
     frame_bits = stego._to_bits(frame)
 
     hw = stego.header_width(n_eligible)
-    public_positions = stego._salt_positions(coefficients.size, eligible, hw)
+    public_positions = stego._salt_positions(
+        coefficients.size, eligible, hw, stego.public_bits(version)
+    )
     order = stego._keyed_order(key, eligible, public_positions)
     body = frame_bits[stego.LENGTH_BITS :]
     free = order.n_samples - stego.LENGTH_BITS * hw
@@ -248,7 +258,7 @@ def embed_coefficients(
         capacity_bytes=room,
         samples=coefficients.size,
         eligible_samples=n_eligible,
-        bits_written=int(stego.PUBLIC_BITS + frame_bits.size),
+        bits_written=int(8 * len(public) + frame_bits.size),
         samples_changed=changed,
     )
     return out, report
@@ -277,20 +287,30 @@ def extract(cover: JpegCover, passphrase: str | None = None) -> bytes:
     if largest_frame < stego.FRAME_OVERHEAD:
         raise _not_found()
 
+    for version in (VERSION, LEGACY_VERSION):
+        try:
+            return _extract(coefficients, eligible, n_eligible, largest_frame, passphrase, version)
+        except PayloadNotFoundError:
+            continue
+    raise _not_found()
+
+
+def _extract(
+    coefficients: np.ndarray,
+    eligible: np.ndarray,
+    n_eligible: int,
+    largest_frame: int,
+    passphrase: str | None,
+    version: int,
+) -> bytes:
     hw = stego.header_width(n_eligible)
-    public_positions = stego._salt_positions(coefficients.size, eligible, hw)
+    bits = stego.public_bits(version)
+    public_positions = stego._salt_positions(coefficients.size, eligible, hw, bits)
     public = stego._bytes(
-        stego.read_adaptive(
-            coefficients, public_positions, stego.PUBLIC_BITS, stego._PUBLIC_CODE_SEED
-        )
+        stego.read_adaptive(coefficients, public_positions, bits, stego._PUBLIC_CODE_SEED)
     )
-    salt, cost_byte = public[: stego.SALT_BYTES], public[stego.SALT_BYTES]
-    if not cost_byte & stego.ADAPTIVE_FLAG:
-        raise _not_found()
-    log_n = cost_byte & ~stego.ADAPTIVE_FLAG
-    if log_n not in stego.SCRYPT_LOG_N_ACCEPTED:
-        raise _not_found()
-    key = stego.derive_key(passphrase, salt, log_n, VERSION)
+    salt, log_n = stego.parse_public(public, version)
+    key = stego.derive_key(passphrase, salt, log_n, version)
     order = stego._keyed_order(key, eligible, public_positions)
 
     header_samples = stego.LENGTH_BITS * hw
@@ -311,6 +331,6 @@ def extract(cover: JpegCover, passphrase: str | None = None) -> bytes:
     sealed = stego._bytes(stego.read_adaptive(coefficients, positions, body_bits, key.code))
     nonce, body = sealed[: stego.NONCE_BYTES], sealed[stego.NONCE_BYTES :]
     try:
-        return stego.AESGCM(key.aead).decrypt(nonce, body, stego._aad(length, VERSION))
+        return stego.AESGCM(key.aead).decrypt(nonce, body, stego._aad(length, version))
     except stego.InvalidTag:
         raise _not_found() from None
