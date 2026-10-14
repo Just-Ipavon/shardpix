@@ -67,7 +67,7 @@ good covers:
 
 options used by several commands:
   -k N    how many images (or shares) are needed to open; with -k 3 any 3 do
-  -p      ask for a passphrase; without it anyone with shardpix reads the data
+  -p      ask for a passphrase (required to hide data)
   -o F    the file to write
   -d DIR  the folder to write into
   -t / -i the data as text in quotes (-t) or as a file (-i)
@@ -77,15 +77,17 @@ options used by several commands:
 passphrases:
   -p prompts for one, --passphrase-file reads it from a file. Passphrases are
   never accepted on the command line, where the shell history would keep
-  them. Without one, anyone running shardpix can find and read a payload.
+  them. Hiding requires one; --insecure-no-passphrase hides without, and then
+  anyone running shardpix can find and read the payload.
 
 documentation: https://github.com/Just-Ipavon/shardpix#readme"""
 
 KEYING_NOTE = """\
 passphrase:
   The passphrase picks the hidden positions and encrypts the payload; the
-  same one is needed to read it back. Without -p or --passphrase-file the
-  payload is still encrypted, but anyone running shardpix can read it."""
+  same one is needed to read it back. Hiding requires -p or
+  --passphrase-file; with --insecure-no-passphrase the payload is still
+  encrypted, but anyone running shardpix can read it."""
 
 CHI_SQUARE_ALERT = 0.10
 """Detected prefix (fraction of the image) above which the chi-square attack is reported."""
@@ -165,6 +167,23 @@ def read_passphrase(args: argparse.Namespace, *, confirm: bool) -> str | None:
             raise ShardpixError("passphrases do not match")
         return first
     return None
+
+
+def require_passphrase(args: argparse.Namespace) -> str | None:
+    """The passphrase for hiding: one is required unless ``--insecure-no-passphrase``.
+
+    Without a passphrase the positions and the key come from public constants,
+    so anyone running shardpix can locate and read the payload; that must be a
+    deliberate choice, not the result of forgetting ``-p``.
+    """
+    passphrase = read_passphrase(args, confirm=True)
+    if passphrase is None and not args.insecure_no_passphrase:
+        raise ShardpixError(
+            "a passphrase is required: use -p to type one or --passphrase-file FILE "
+            "(--insecure-no-passphrase hides the data so that anyone running shardpix "
+            "can read it)"
+        )
+    return passphrase
 
 
 def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> None:
@@ -334,7 +353,7 @@ def _share_label(share: shamir.Share) -> str:
     return f"#{share.index} ({share.group})"
 
 
-def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
+def _add_passphrase_options(parser: argparse.ArgumentParser, *, hiding: bool = False) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
         "-p",
@@ -342,8 +361,12 @@ def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="ask for a passphrase at the prompt (typed twice when hiding, hidden as you "
         "type). It chooses where the data hides and encrypts it: the same passphrase is "
-        "needed to read it back. Without -p or --passphrase-file, no passphrase is used "
-        "and anyone running shardpix can read the payload",
+        "needed to read it back"
+        + (
+            "; hiding requires -p or --passphrase-file"
+            if hiding
+            else ". Without -p or --passphrase-file, no passphrase is used"
+        ),
     )
     group.add_argument(
         "--passphrase-file",
@@ -353,6 +376,13 @@ def _add_passphrase_options(parser: argparse.ArgumentParser) -> None:
         "scripts. Passphrases are never accepted as plain arguments, which would leave "
         "them in the shell history",
     )
+    if hiding:
+        group.add_argument(
+            "--insecure-no-passphrase",
+            action="store_true",
+            help="hide without a passphrase: the data is still encrypted, but with a key "
+            "anyone running shardpix can derive, so anyone can locate and read it",
+        )
 
 
 # --------------------------------------------------------------------------- commands
@@ -403,7 +433,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
             f"{args.output.name}: a {'JPEG' if cover.is_jpeg else 'non-JPEG'} cover gives a "
             f"{cover.suffix} file; name the output something{cover.suffix}"
         )
-    passphrase = read_passphrase(args, confirm=True)
+    passphrase = require_passphrase(args)
     with progress_bar("Embedding") as progress:
         stego_file, report = media.hide(cover, payload, passphrase, progress=progress)
     write_new(args.output, stego_file, overwrite=args.force)
@@ -564,7 +594,7 @@ def _outcome_table(outcomes: tuple[vault.ImageOutcome, ...]) -> Table:
 
 
 def cmd_seal(args: argparse.Namespace, console: Console) -> int:
-    passphrase = read_passphrase(args, confirm=True)
+    passphrase = require_passphrase(args)
     with progress_bar("Sealing") as progress:
         result = vault.seal(
             args.file,
@@ -805,7 +835,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="a file to hide, of any type, up to the capacity of the cover (use either -t or -i)",
     )
-    _add_passphrase_options(p)
+    _add_passphrase_options(p, hiding=True)
     p.add_argument(
         "-f",
         "--force",
@@ -889,7 +919,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
         "followed by .spx, e.g. notes.pdf.spx)",
     )
-    _add_passphrase_options(p)
+    _add_passphrase_options(p, hiding=True)
     p.add_argument(
         "-f",
         "--force",

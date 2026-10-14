@@ -11,7 +11,7 @@ Cifra un file e divide la sua chiave tra foto dall'aspetto del tutto
 normale. shardpix produce due cose: il file cifrato (`.spx`), che puoi
 conservare dove vuoi, e *n* foto, una per ogni persona di fiducia, ognuna
 con una quota della chiave nascosta dentro. Per aprire il file servono il
-`.spx`, *k* foto qualsiasi e la passphrase, se l'hai impostata; con meno di
+`.spx`, *k* foto qualsiasi e la passphrase; con meno di
 *k* foto la chiave non si può ricostruire. Le foto sembrano invariate, e
 quanto bene nascondono le quote è misurato, non dato per scontato: vedi
 [Perché è importante](#perché-è-importante).
@@ -46,7 +46,7 @@ flowchart LR
 flowchart LR
     V["notes.pdf.spx"] --> U["shardpix unseal"]
     P["3 foto qualsiasi delle 5"] --> U
-    W["la passphrase, se impostata"] --> U
+    W["la passphrase"] --> U
     U --> F["notes.pdf"]
 ```
 
@@ -60,9 +60,9 @@ flowchart LR
   file, ed è nascosta in una foto tra posizioni candidate che solo la
   passphrase permette di trovare, con le poche modifiche messe dove la foto
   ha più texture, e cifrata in modo che i bit nascosti sembrino rumore.
-- **La passphrase** è una sola per tutto il vault. Senza passphrase
-  chiunque usi shardpix può trovare le quote, ma gliene servono comunque *k*
-  e il `.spx`.
+- **La passphrase** è una sola per tutto il vault, e `seal` ed `embed` la
+  richiedono. `--insecure-no-passphrase` nasconde senza: allora chiunque usi
+  shardpix può trovare le quote, ma gliene servono comunque *k* e il `.spx`.
 
 Per nascondere un breve messaggio o un file in una sola immagine, senza file
 vault, usa `embed` ed `extract`.
@@ -151,6 +151,7 @@ shardpix analyze sospetta.png
 | `-d, --directory` | Cartella di output (`seal`: predefinita `./sealed`; `split`: un file per quota) |
 | `-p, --passphrase` | Chiede una passphrase |
 | `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
+| `--insecure-no-passphrase` | Nasconde senza passphrase (`seal`, `embed`): chiunque può leggere |
 | `-o, --output` | File di output |
 | `--name` | Nome del file vault (`seal`) |
 | `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
