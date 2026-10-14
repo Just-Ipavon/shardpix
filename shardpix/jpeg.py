@@ -37,6 +37,7 @@ import numpy as np
 
 from . import costs, stego
 from .errors import CapacityError, PayloadNotFoundError, UnsupportedImageError
+from .images import check_size
 from .progress import Progress, span
 
 VERSION = stego.JPEG_VERSION
@@ -133,6 +134,7 @@ def load(path: str | Path) -> JpegCover:
     path = Path(path)
     if not is_jpeg(path):
         raise UnsupportedImageError(f"{path}: not a JPEG file")
+    check_size(path, *_dimensions(path))
     try:
         image = jpeglib.read_dct(str(path))
         image.load()
@@ -141,6 +143,23 @@ def load(path: str | Path) -> JpegCover:
     if image.Y is None:
         raise UnsupportedImageError(f"{path}: JPEG without a luminance component")
     return JpegCover(path, image)
+
+
+_SOF_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
+
+
+def _dimensions(path: Path) -> tuple[int, int]:
+    """Width and height from the frame header, read before libjpeg allocates anything."""
+    try:
+        segments, _ = _segments(path.read_bytes())
+    except OSError as exc:
+        raise UnsupportedImageError(f"{path}: cannot read ({exc.strerror or exc})") from exc
+    for marker, segment in segments:
+        if marker in _SOF_MARKERS and len(segment) >= 9:
+            height = int.from_bytes(segment[5:7], "big")
+            width = int.from_bytes(segment[7:9], "big")
+            return width, height
+    raise UnsupportedImageError(f"{path}: JPEG without a frame header")
 
 
 def eligible_mask(coefficients: np.ndarray) -> np.ndarray:
