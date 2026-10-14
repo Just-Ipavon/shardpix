@@ -101,7 +101,10 @@ def share_rate(size: int) -> float:
     rng = np.random.default_rng(0)
     pixels = rng.integers(16, 240, (size, size, 1), dtype=np.uint8)
     carrier = Carrier(pixels=pixels, mode="L")
-    _, report = stego.embed(carrier, bytes(vault.SHARE_BYTES), "benchmark passphrase")
+    # Format 4, whose rate the published measurements and cached features use.
+    _, report = stego.embed(
+        carrier, bytes(vault.SHARE_BYTES), "benchmark passphrase", version=stego.ADAPTIVE_V4
+    )
     return report.embedding_rate
 
 
@@ -130,7 +133,15 @@ def embed(cover: np.ndarray, rate: float, rng: np.random.Generator) -> np.ndarra
     # A few covers are mostly clipped and cannot hold high rates; like the
     # format-3 strategy, they carry as much as fits.
     payload = min(payload, stego.carrier_capacity(carrier))
-    out, _ = stego.embed(carrier, rng.bytes(payload), "benchmark", stego.Method.ADAPTIVE, rng.bytes)
+    # Format 4, as measured in docs/05 (format 6 only drops the cost byte).
+    out, _ = stego.embed(
+        carrier,
+        rng.bytes(payload),
+        "benchmark",
+        stego.Method.ADAPTIVE,
+        rng.bytes,
+        version=stego.ADAPTIVE_V4,
+    )
     return out.pixels[..., 0]
 
 

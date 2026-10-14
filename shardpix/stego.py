@@ -6,12 +6,20 @@ picked by a keyed pseudo-random walk. Without the passphrase an observer can
 neither tell which samples were used nor distinguish the bits from noise.
 
 **Per-image salt.** Every embedding draws a fresh 128-bit salt and writes it
-first, with the scrypt cost, into samples chosen by a *public* walk (the
-extractor must read them before it has a key). The keys are derived from the
-passphrase and that salt, so two images sealed with the same passphrase use
-unrelated keys and unrelated positions, and scrypt work cannot be
-precomputed for common image sizes. Storing the cost lets it be raised in
-future versions without breaking existing images.
+first into samples chosen by a *public* walk (the extractor must read them
+before it has a key). The keys are derived from the passphrase and that
+salt, so two images sealed with the same passphrase use unrelated keys and
+unrelated positions, and scrypt work cannot be precomputed for common image
+sizes. Nothing else is public: the salt is uniformly random, so reading the
+public samples tells an observer nothing about whether an image holds a
+payload. The scrypt cost is fixed by the format version; raising it means a
+new version.
+
+Formats 3 and 4 (and 5, in :mod:`shardpix.jpeg`) also wrote the scrypt cost
+in a public byte after the salt. That byte was a constant (``0x91`` in
+format 4) that anyone with the source could decode without a key, which
+told shardpix images apart from clean ones (docs/06 SR-07). They are still
+read; formats 6 and 7 replaced them and are the only ones written.
 
 **Eligible samples.** Only samples in the range 2-253 carry data, and
 embedding never moves a sample out of that range. Samples at 0 or 255 can
@@ -28,7 +36,7 @@ time in proportion to the payload, not the image - would slow down sharply.
 Layout, in the order the bits are written::
 
     salt    16 bytes   public walk; random per embedding
-    cost     1 byte    public walk; log2 of the scrypt N parameter
+    (cost    1 byte    formats 3-5 only: log2 of the scrypt N parameter)
     length   4 bytes   keyed walk from here on: size of nonce + body, XOR-masked
     nonce   12 bytes   AES-256-GCM nonce
     body     n bytes   AES-256-GCM ciphertext followed by its 16-byte tag
@@ -55,12 +63,15 @@ from .errors import CapacityError, PayloadNotFoundError
 from .images import Carrier
 from .progress import Progress, span
 
-FORMAT_VERSION = 4
+FORMAT_VERSION = 6
 """Format written by :attr:`Method.ADAPTIVE`; the other methods write format 3."""
+ADAPTIVE_V4 = 4
+"""Adaptive format with a public cost byte: read, and written only by benchmarks."""
 LEGACY_VERSION = 3
 SALT_BYTES = 16
 COST_BYTES = 1
 PUBLIC_BYTES = SALT_BYTES + COST_BYTES
+"""Public bytes of formats 3-5; capacity is computed from them for every format."""
 PUBLIC_BITS = PUBLIC_BYTES * 8
 LENGTH_BYTES = 4
 NONCE_BYTES = 12
@@ -94,12 +105,22 @@ HEADER_WIDTH = 64
 """Width of the codes carrying the public bytes and the length in format 4."""
 LENGTH_BITS = LENGTH_BYTES * 8
 
-JPEG_VERSION = 5
+JPEG_VERSION = 7
 """Format of payloads in JPEG coefficients (:mod:`shardpix.jpeg`)."""
+JPEG_LEGACY_VERSION = 5
+"""JPEG format with a public cost byte: read, and written only by benchmarks."""
+COST_VERSIONS = frozenset({LEGACY_VERSION, ADAPTIVE_V4, JPEG_LEGACY_VERSION})
+"""Formats whose public block ends with the scrypt cost byte (SR-07)."""
 
 _DOMAIN = b"shardpix/stego/v3"
 _DOMAIN_V4 = b"shardpix/stego/v4"
-_DOMAINS = {LEGACY_VERSION: _DOMAIN, FORMAT_VERSION: _DOMAIN_V4, JPEG_VERSION: b"shardpix/jpeg/v1"}
+_DOMAINS = {
+    LEGACY_VERSION: _DOMAIN,
+    ADAPTIVE_V4: _DOMAIN_V4,
+    FORMAT_VERSION: b"shardpix/stego/v6",
+    JPEG_LEGACY_VERSION: b"shardpix/jpeg/v1",
+    JPEG_VERSION: b"shardpix/jpeg/v2",
+}
 _PUBLIC_WALK_KEY = hashlib.sha256(_DOMAIN + b"|salt-walk").digest()
 _PUBLIC_CODE_SEED = hashlib.sha256(_DOMAIN_V4 + b"|public-code").digest()
 
@@ -347,8 +368,38 @@ def build_frame(
     return header + nonce + body
 
 
-def _salt_positions(n_samples: int, eligible: np.ndarray, width: int = 1) -> np.ndarray:
-    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(PUBLIC_BITS * width)
+def public_bits(version: int) -> int:
+    """Bits of the public block: the salt, and the cost byte in formats 3-5."""
+    return PUBLIC_BITS if version in COST_VERSIONS else 8 * SALT_BYTES
+
+
+def public_block(salt: bytes, version: int, log_n: int) -> bytes:
+    """The public block of ``version``: the salt, followed in formats 3-5 by the cost."""
+    if version not in COST_VERSIONS:
+        return salt
+    return salt + bytes([log_n | (0 if version == LEGACY_VERSION else ADAPTIVE_FLAG)])
+
+
+def parse_public(public: bytes, version: int) -> tuple[bytes, int]:
+    """Salt and scrypt cost from a public block; :class:`PayloadNotFoundError` if implausible."""
+    salt = public[:SALT_BYTES]
+    if version not in COST_VERSIONS:
+        return salt, SCRYPT_LOG_N
+    cost_byte = public[SALT_BYTES]
+    if bool(cost_byte & ADAPTIVE_FLAG) is (version == LEGACY_VERSION):
+        raise _not_found()
+    log_n = cost_byte & ~ADAPTIVE_FLAG
+    if log_n not in SCRYPT_LOG_N_ACCEPTED:
+        raise _not_found()
+    return salt, log_n
+
+
+def _salt_positions(
+    n_samples: int, eligible: np.ndarray, width: int = 1, bits: int = PUBLIC_BITS
+) -> np.ndarray:
+    # The walk is a fixed sequence, so the positions of the 128-bit public
+    # block of formats 6-7 are a prefix of those of the 136-bit block.
+    return SampleOrder(_PUBLIC_WALK_KEY, n_samples, eligible).first(bits * width)
 
 
 def _keyed_order(key: StegoKey, eligible: np.ndarray, salt_positions: np.ndarray) -> SampleOrder:
@@ -459,8 +510,15 @@ def embed(
     method: Method = Method.ADAPTIVE,
     random_bytes: RandomBytes = os.urandom,
     progress: Progress | None = None,
+    *,
+    version: int | None = None,
 ) -> tuple[Carrier, EmbedReport]:
-    """Hide ``payload`` in ``carrier`` and return the stego carrier."""
+    """Hide ``payload`` in ``carrier`` and return the stego carrier.
+
+    The adaptive method writes format 6, the others format 3. ``version``
+    can ask the adaptive method for format 4 instead, which benchmarks use so
+    that the published measurements stay reproducible.
+    """
     cover = carrier.samples()
     eligible = eligible_mask(cover)
     n_eligible = int(np.count_nonzero(eligible))
@@ -474,11 +532,14 @@ def embed(
     salt = random_bytes(SALT_BYTES)
     log_n = SCRYPT_LOG_N
     adaptive = method is Method.ADAPTIVE
-    version = FORMAT_VERSION if adaptive else LEGACY_VERSION
+    if version is None:
+        version = FORMAT_VERSION if adaptive else LEGACY_VERSION
+    if version not in ((FORMAT_VERSION, ADAPTIVE_V4) if adaptive else (LEGACY_VERSION,)):
+        raise ValueError(f"method {method.value} cannot write format {version}")
     span(progress, 0.0, 1.0)(0.0, "deriving the key")
     key = derive_key(passphrase, salt, log_n, version)
     frame = build_frame(payload, key, random_bytes, version)
-    public = salt + bytes([log_n | (ADAPTIVE_FLAG if adaptive else 0)])
+    public = public_block(salt, version, log_n)
 
     frame_bits = _to_bits(frame)
     bits = np.concatenate([_to_bits(public), frame_bits])
@@ -494,7 +555,7 @@ def embed(
         # bytes (fixed width, public matrix), the masked length (fixed width,
         # keyed matrix) and the sealed body (width from the length).
         hw = header_width(n_eligible)
-        public_positions = _salt_positions(cover.size, eligible, hw)
+        public_positions = _salt_positions(cover.size, eligible, hw, public_bits(version))
         order = _keyed_order(key, eligible, public_positions)
         body = frame_bits[LENGTH_BITS:]
         free = order.n_samples - LENGTH_BITS * hw
@@ -532,7 +593,7 @@ def _not_found() -> PayloadNotFoundError:
 
 
 def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
-    """Recover and authenticate the payload hidden in ``carrier`` (format 3 or 4)."""
+    """Recover and authenticate the payload hidden in ``carrier`` (format 6, 4 or 3)."""
     samples = carrier.samples()
     eligible = eligible_mask(samples)
     largest_frame = max_frame_bytes(int(np.count_nonzero(eligible)))
@@ -540,10 +601,10 @@ def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
         raise _not_found()
 
     # The format is not stored anywhere an observer could read without
-    # trying: each format's public bytes are decoded its own way, and a
-    # format is attempted only if its cost byte is plausible.
+    # trying: each format's public bytes are decoded its own way, and the
+    # older formats are attempted only if their cost byte is plausible.
     n_eligible = int(np.count_nonzero(eligible))
-    for version in (FORMAT_VERSION, LEGACY_VERSION):
+    for version in (FORMAT_VERSION, ADAPTIVE_V4, LEGACY_VERSION):
         try:
             return _extract(samples, eligible, n_eligible, largest_frame, passphrase, version)
         except PayloadNotFoundError:
@@ -563,19 +624,15 @@ def _extract(
     passphrase: str | None,
     version: int,
 ) -> bytes:
-    adaptive = version == FORMAT_VERSION
+    adaptive = version != LEGACY_VERSION
     hw = header_width(n_eligible) if adaptive else 1
-    public_positions = _salt_positions(samples.size, eligible, hw)
+    bits = public_bits(version)
+    public_positions = _salt_positions(samples.size, eligible, hw, bits)
     if adaptive:
-        public = _bytes(read_adaptive(samples, public_positions, PUBLIC_BITS, _PUBLIC_CODE_SEED))
+        public = _bytes(read_adaptive(samples, public_positions, bits, _PUBLIC_CODE_SEED))
     else:
         public = _bytes(read_bits(samples, public_positions))
-    salt, cost_byte = public[:SALT_BYTES], public[SALT_BYTES]
-    if bool(cost_byte & ADAPTIVE_FLAG) is not adaptive:
-        raise _not_found()
-    log_n = cost_byte & ~ADAPTIVE_FLAG
-    if log_n not in SCRYPT_LOG_N_ACCEPTED:
-        raise _not_found()
+    salt, log_n = parse_public(public, version)
     key = derive_key(passphrase, salt, log_n, version)
     order = _keyed_order(key, eligible, public_positions)
 

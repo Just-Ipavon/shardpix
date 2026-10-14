@@ -78,7 +78,7 @@ class TestRoundTrip:
         jpegs = [phone_jpeg(tmp_path / f"cover{i}.jpg", seed=10 + i) for i in range(3)]
         result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
         assert [image.output.suffix for image in result.images] == [".jpg"] * 3
-        assert {image.format for image in result.images} == {"JPEG (format 5)"}
+        assert {image.format for image in result.images} == {"JPEG (format 7)"}
         assert not any(image.from_jpeg for image in result.images)
         opened = vault.unseal(result.vault_path, images_of(result)[1:], PASSPHRASE)
         assert opened.data == secret_file.read_bytes()
@@ -104,7 +104,7 @@ class TestRoundTrip:
 
     def test_embedding_is_tiny(self, sealed):
         for image in sealed.images:
-            assert image.report.bits_written == 8 * vault.PAYLOAD_FRAME_BYTES
+            assert image.report.bits_written == 8 * (vault.PAYLOAD_FRAME_BYTES - stego.COST_BYTES)
             assert image.report.embedding_rate < 0.1
 
 
@@ -420,7 +420,7 @@ class TestOutcomeDetails:
         result = vault.seal(
             secret_file, [photo, png], 2, tmp_path / "out", method=stego.Method.REPLACEMENT
         )
-        assert [i.format for i in result.images] == ["JPEG (format 5)", "PNG (format 4)"]
+        assert [i.format for i in result.images] == ["JPEG (format 7)", "PNG (format 6)"]
         original = load_image(png).pixels
         sealed_png = load_image(result.images[1].output).pixels
         assert np.array_equal(original >> 1, sealed_png >> 1)  # replacement only touches the LSB

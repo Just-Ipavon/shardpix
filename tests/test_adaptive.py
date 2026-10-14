@@ -167,7 +167,7 @@ class TestFormat4:
         moved = (stego_carrier.pixels != cover.pixels)[..., 0]
         assert moved[:, 64:].sum() > 20 * max(1, moved[:, :64].sum())
 
-    def test_public_byte_marks_the_format(self):
+    def test_legacy_public_byte_marks_the_format(self):
         cover = carrier(6)
         samples = cover.samples()
         eligible = stego.eligible_mask(samples)
@@ -175,7 +175,7 @@ class TestFormat4:
         v3_positions = stego._salt_positions(samples.size, eligible)
         v4_positions = stego._salt_positions(samples.size, eligible, hw)
 
-        out, _ = stego.embed(cover, b"m", "pw", ADAPTIVE)
+        out, _ = stego.embed(cover, b"m", "pw", ADAPTIVE, version=stego.ADAPTIVE_V4)
         bits = stego.read_adaptive(
             out.samples(), v4_positions, stego.PUBLIC_BITS, stego._PUBLIC_CODE_SEED
         )
@@ -186,6 +186,31 @@ class TestFormat4:
         cost = np.packbits(stego.read_bits(out.samples(), v3_positions)).tobytes()[stego.SALT_BYTES]
         assert cost == stego.SCRYPT_LOG_N
 
+    def test_format_6_has_no_keyless_fingerprint(self):
+        """SR-07: decoding the public samples without a key gives nothing constant.
+
+        Formats 3-5 wrote the scrypt cost after the salt; every format-4 image
+        decoded to 0x91 there, which told shardpix images from clean ones.
+        """
+        cover = carrier(6)
+        samples = cover.samples()
+        eligible = stego.eligible_mask(samples)
+        hw = stego.header_width(int(eligible.sum()))
+        positions = stego._salt_positions(samples.size, eligible, hw)
+        cost_bytes = set()
+        for _ in range(16):
+            out, _ = stego.embed(cover, b"m", "pw", ADAPTIVE)
+            bits = stego.read_adaptive(
+                out.samples(), positions, stego.PUBLIC_BITS, stego._PUBLIC_CODE_SEED
+            )
+            cost_bytes.add(np.packbits(bits).tobytes()[stego.SALT_BYTES])
+        assert len(cost_bytes) > 8
+        assert stego.SCRYPT_LOG_N | stego.ADAPTIVE_FLAG not in cost_bytes
+
+    def test_format_4_images_are_still_read(self):
+        stego_carrier, _ = stego.embed(carrier(7), b"old", "pw", ADAPTIVE, version=4)
+        assert stego.extract(stego_carrier, "pw") == b"old"
+
     def test_format_3_images_are_still_read(self):
         stego_carrier, _ = stego.embed(carrier(7), b"old", "pw", stego.Method.MATCHING)
         assert stego.extract(stego_carrier, "pw") == b"old"
@@ -193,8 +218,10 @@ class TestFormat4:
     def test_formats_use_separate_keys(self):
         salt = bytes(range(16))
         v3 = stego.derive_key("pw", salt, 10, stego.LEGACY_VERSION)
-        v4 = stego.derive_key("pw", salt, 10, stego.FORMAT_VERSION)
+        v4 = stego.derive_key("pw", salt, 10, stego.ADAPTIVE_V4)
+        v6 = stego.derive_key("pw", salt, 10, stego.FORMAT_VERSION)
         assert v3.order != v4.order and v3.aead != v4.aead and v4.code and not v3.code
+        assert v6.order not in (v3.order, v4.order) and v6.aead not in (v3.aead, v4.aead)
 
     def test_tampering_with_the_body_is_detected(self):
         cover = carrier(8)
