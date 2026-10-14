@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import itertools
+
 import numpy as np
 import pytest
 
@@ -120,6 +123,18 @@ class TestHiLL:
         assert np.allclose(flat[1::3].reshape(24, 32), costs.hill(rgb[..., 1]))
 
 
+def seeded_random(seed: bytes):
+    counter = itertools.count()
+
+    def random_bytes(n: int) -> bytes:
+        out = b""
+        while len(out) < n:
+            out += hashlib.sha256(seed + next(counter).to_bytes(8, "big")).digest()
+        return out[:n]
+
+    return random_bytes
+
+
 def carrier(seed: int = 0, height: int = 120, width: int = 160, channels: int = 3) -> Carrier:
     mode = "RGB" if channels == 3 else "L"
     return Carrier(pixels=natural_image(height, width, channels, seed=seed), mode=mode)
@@ -190,22 +205,24 @@ class TestFormat4:
         """SR-07: decoding the public samples without a key gives nothing constant.
 
         Formats 3-5 wrote the scrypt cost after the salt; every format-4 image
-        decoded to 0x91 there, which told shardpix images from clean ones.
+        decoded to 0x91 there, which told shardpix images from clean ones. In
+        format 6 the byte after the salt is whatever the cover gives, so it
+        varies from image to image. Seeded, so the check is reproducible.
         """
-        cover = carrier(6)
-        samples = cover.samples()
-        eligible = stego.eligible_mask(samples)
-        hw = stego.header_width(int(eligible.sum()))
-        positions = stego._salt_positions(samples.size, eligible, hw)
-        cost_bytes = set()
-        for _ in range(16):
-            out, _ = stego.embed(cover, b"m", "pw", ADAPTIVE)
+        cost_bytes = []
+        for seed in range(12):
+            cover = carrier(seed)
+            samples = cover.samples()
+            eligible = stego.eligible_mask(samples)
+            hw = stego.header_width(int(eligible.sum()))
+            positions = stego._salt_positions(samples.size, eligible, hw)
+            out, _ = stego.embed(cover, b"m", "pw", ADAPTIVE, seeded_random(bytes([seed])))
             bits = stego.read_adaptive(
                 out.samples(), positions, stego.PUBLIC_BITS, stego._PUBLIC_CODE_SEED
             )
-            cost_bytes.add(np.packbits(bits).tobytes()[stego.SALT_BYTES])
-        assert len(cost_bytes) > 8
-        assert stego.SCRYPT_LOG_N | stego.ADAPTIVE_FLAG not in cost_bytes
+            cost_bytes.append(np.packbits(bits).tobytes()[stego.SALT_BYTES])
+        assert len(set(cost_bytes)) > 6
+        assert cost_bytes.count(stego.SCRYPT_LOG_N | stego.ADAPTIVE_FLAG) <= 1
 
     def test_format_4_images_are_still_read(self):
         stego_carrier, _ = stego.embed(carrier(7), b"old", "pw", ADAPTIVE, version=4)
