@@ -8,6 +8,8 @@ easy to inspect visually to be a safe place for data.
 from __future__ import annotations
 
 import io
+import os
+import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -17,6 +19,12 @@ from PIL import Image
 from .errors import ShardpixError, UnsupportedImageError
 
 LOSSLESS_SUFFIXES = frozenset({".png"})
+
+MAX_PIXELS = 130_000_000
+"""Largest image read, checked from the header before any pixel is decoded.
+
+Above the largest phone sensors (108-120 megapixels); a few kilobytes of
+crafted header could otherwise claim gigapixels and exhaust memory."""
 
 _KEEP_MODES = {"L": 1, "LA": 1, "RGB": 3, "RGBA": 3}
 _REJECTED_MODES = {"I", "I;16", "I;16B", "I;16L", "I;16N", "F"}
@@ -106,15 +114,30 @@ def load_image(path: str | Path) -> Carrier:
     """Read an image from disk as a carrier."""
     path = Path(path)
     try:
-        with Image.open(path) as image:
-            image.load()
-            return from_pil(image)
+        with warnings.catch_warnings():
+            # Pillow's own warning starts at 89 megapixels; MAX_PIXELS decides here.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                check_size(path, *image.size)
+                image.load()
+                return from_pil(image)
     except FileNotFoundError as exc:
         raise UnsupportedImageError(f"{path}: no such file") from exc
     except Image.DecompressionBombError as exc:
         raise UnsupportedImageError(f"{path}: image is too large ({exc})") from exc
     except (OSError, SyntaxError, ValueError) as exc:
         raise UnsupportedImageError(f"{path}: not a readable image ({exc})") from exc
+
+
+def check_size(path: str | Path, width: int, height: int) -> None:
+    """Refuse an image larger than :data:`MAX_PIXELS`, or with no size, before decoding it."""
+    if width <= 0 or height <= 0:
+        raise UnsupportedImageError(f"{path}: the header gives no image size")
+    if width * height > MAX_PIXELS:
+        raise UnsupportedImageError(
+            f"{path}: image is too large ({width}x{height}, more than "
+            f"{MAX_PIXELS // 1_000_000} megapixels)"
+        )
 
 
 def to_pil(carrier: Carrier) -> Image.Image:
@@ -131,18 +154,31 @@ def write_new(path: str | Path, data: bytes, *, overwrite: bool = False) -> None
 
     Exclusive creation (``O_CREAT | O_EXCL``) closes the gap between checking
     that a file does not exist and writing it, and refuses to follow a symbolic
-    link planted at the destination, even a dangling one.
+    link planted at the destination, even a dangling one; ``O_NOFOLLOW`` refuses
+    it when overwriting too. New files are readable by their owner only
+    (``0o600``): a stego image, a vault or a share is nobody else's business on
+    a shared machine, whatever the umask.
     """
     path = Path(path)
     # Windows follows a dangling link even with exclusive creation, which
     # would redirect the write to wherever the link points: refuse it first.
-    if not overwrite and path.is_symlink():
-        raise ShardpixError(f"{path} already exists; use --force to overwrite it")
+    if path.is_symlink():
+        raise ShardpixError(
+            f"{path} is a symbolic link; give the path of a regular file"
+            if overwrite
+            else f"{path} already exists; use --force to overwrite it"
+        )
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overwrite else os.O_EXCL)
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
     try:
-        with open(path, "wb" if overwrite else "xb") as handle:
-            handle.write(data)
+        descriptor = os.open(path, flags, 0o600)
     except FileExistsError as exc:
         raise ShardpixError(f"{path} already exists; use --force to overwrite it") from exc
+    except OSError as exc:
+        raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
     except OSError as exc:
         raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
 

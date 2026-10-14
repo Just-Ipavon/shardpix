@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import stat
+import sys
+
 import numpy as np
 import pytest
 from PIL import Image
@@ -9,7 +13,7 @@ from PIL import Image
 from shardpix.errors import UnsupportedImageError
 from shardpix.images import from_pil, load_image, save_png
 
-from .conftest import natural_image
+from .conftest import natural_image, phone_jpeg
 
 
 class TestLoad:
@@ -115,3 +119,67 @@ class TestWriteNew:
         with pytest.raises(ShardpixError):
             write_new(link, b"x")
         assert not (tmp_path / "target").exists()
+
+    def test_overwrite_never_follows_a_link(self, tmp_path):
+        from shardpix.errors import ShardpixError
+        from shardpix.images import write_new
+
+        target = tmp_path / "target"
+        target.write_bytes(b"keep")
+        link = tmp_path / "link"
+        link.symlink_to(target)
+        with pytest.raises(ShardpixError, match="symbolic link"):
+            write_new(link, b"x", overwrite=True)
+        assert target.read_bytes() == b"keep"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+    def test_new_files_are_private(self, tmp_path):
+        from shardpix.images import write_new
+
+        old = os.umask(0o022)
+        try:
+            write_new(tmp_path / "f", b"x")
+        finally:
+            os.umask(old)
+        assert stat.S_IMODE((tmp_path / "f").stat().st_mode) == 0o600
+
+
+class TestSizeLimit:
+    """M1: the size is checked from the header, before anything is decoded."""
+
+    def test_huge_png_header_is_refused(self, tmp_path):
+        import struct
+        import zlib
+
+        path = tmp_path / "big.png"
+        Image.fromarray(natural_image(16, 16, 3)).save(path)
+        data = bytearray(path.read_bytes())
+        ihdr = struct.pack(">II", 20_000, 20_000) + bytes(data[24:29])
+        data[16:29] = ihdr
+        data[29:33] = struct.pack(">I", zlib.crc32(b"IHDR" + ihdr))
+        path.write_bytes(bytes(data))
+        with pytest.raises(UnsupportedImageError, match="too large"):
+            load_image(path)
+
+    def test_huge_jpeg_header_is_refused(self, tmp_path, monkeypatch):
+        from shardpix import jpeg
+
+        path = phone_jpeg(tmp_path / "big.jpg")
+        data = path.read_bytes()
+        segments, _ = jpeg._segments(data)
+        offset = data.index(next(s for m, s in segments if m == 0xC0))
+        patched = bytearray(data)
+        patched[offset + 5 : offset + 9] = (20_000).to_bytes(2, "big") * 2
+        path.write_bytes(bytes(patched))
+
+        def never(*args, **kwargs):
+            raise AssertionError("libjpeg must not be called")
+
+        monkeypatch.setattr(jpeg.jpeglib, "read_dct", never)
+        with pytest.raises(UnsupportedImageError, match="too large"):
+            jpeg.load(path)
+
+    def test_the_limit_admits_the_largest_phone_sensors(self):
+        from shardpix import images
+
+        assert 120_000_000 <= images.MAX_PIXELS
