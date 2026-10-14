@@ -153,15 +153,16 @@ cannot be written. Test: `TestSave`.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `4`, `3`, `5` | Format written by `ADAPTIVE`, by the baseline methods and by `jpeg.py`; part of the AES-GCM associated data and of the key domain. |
-| `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Per-image salt and scrypt cost, written along the public walk (ADR-05). |
+| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `6`, `3`, `7` | Format written by `ADAPTIVE`, by the baseline methods and by `jpeg.py`; part of the AES-GCM associated data and of the key domain. |
+| `ADAPTIVE_V4`, `JPEG_LEGACY_VERSION`, `COST_VERSIONS` | `4`, `5`, `{3, 4, 5}` | Formats still read, and written on request (`version=`) by the benchmarks; the formats whose public block carries the cost byte (06 §6.13, SR-07). |
+| `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Per-image salt and, in formats 3 to 5, scrypt cost, written along the public walk (ADR-05); `public_bits(version)` gives 128 for formats 6 and 7. |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Frame fields. |
 | `FRAME_OVERHEAD` | `32` | Bytes the keyed frame adds to every payload. |
 | `SCRYPT_LOG_N`, `SCRYPT_R`, `SCRYPT_P` | `17`, `8`, `1` | Passphrase hardening for new embeddings: N = 2^17, about 128 MiB and 0.4 s per guess (OWASP's first recommendation). |
 | `SCRYPT_LOG_N_ACCEPTED` | `range(10, 19)` | Costs accepted when extracting; the cap keeps a forged image from demanding gigabytes. |
 | `ELIGIBLE_MIN`, `ELIGIBLE_MAX` | `2`, `253` | Samples outside this range are never used nor produced (ADR-06). |
 | `MAX_FILL` | `2` | At most one eligible sample in two is used (ADR-11). |
-| `ADAPTIVE_FLAG` | `0x80` | Set in the cost byte of a format-4 image. |
+| `ADAPTIVE_FLAG` | `0x80` | Set in the cost byte of a format-4 or format-5 image. |
 | `MAX_WIDTH`, `COLUMN_BUDGET`, `CHUNK_BITS` | `128`, `2^20`, `8192` | Widest body code, most samples one payload's trellis visits, payload bits per trellis (ADR-12). |
 | `HEADER_WIDTH`, `LENGTH_BITS` | `64`, `32` | Widest code for the format-4 public bytes and length; length field in bits. |
 | `_DOMAIN`, `_DOMAIN_V4` | `b"shardpix/stego/v3"`, `b"shardpix/stego/v4"` | Domain separation for every derivation, one per format. |
@@ -296,9 +297,10 @@ after the header codes). Tests: `TestRoundTrip`, `TestDistortion`,
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Tries format 4, then format 3. For each: reads the salt and the cost the
-way that format writes them, refuses a cost byte of the other format or a
-cost outside the accepted range before any key derivation, derives the
+Tries format 6, then 4, then 3. For each: reads the salt (and, in formats
+3 and 4, the cost) the way that format writes them, refuses a cost byte of
+the other format or a cost outside the accepted range before any key
+derivation, derives the
 keys, reads and unmasks the length, checks it against the largest possible
 frame, reads the body and decrypts it. Raises `PayloadNotFoundError` with
 the same message for a wrong passphrase, a clean image and a modified one:

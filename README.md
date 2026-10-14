@@ -192,8 +192,8 @@ bytes of each cover and hides the share the way that file is stored:
 
 | Cover | How the share is hidden | Output |
 | --- | --- | --- |
-| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 5): never decoded or recompressed, same quality tables and EXIF | `.jpg` |
-| PNG, TIFF, BMP, RAW export | In the pixels (format 4) | `.png` |
+| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 7): never decoded or recompressed, same quality tables, EXIF and marker layout | `.jpg` |
+| PNG, TIFF, BMP, RAW export | In the pixels (format 6) | `.png` |
 | iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
 
 Choose textured photos you took yourself and never shared, and send the
@@ -267,6 +267,12 @@ raw data: [docs/data/pooled_512.json](docs/data/pooled_512.json);
 reproduce with `python -m shardpix.analysis.pooled`.
 
 ## Detectability
+
+The measurements below were made on formats 4 and 5. Formats 6 and 7,
+written since an external review (docs/06 §6.13), embed the same way
+without the public cost byte, which was a fingerprint anyone with the
+source code could read without the passphrase; the measured detection
+errors apply to them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/rs-estimate-dark.png">
@@ -350,7 +356,7 @@ shardpix/
 ├── cli.py              commands, passphrase input, overwrite protection, exit codes
 ├── vault.py            seal and unseal: AES-256-GCM + Shamir + steganography
 ├── media.py            JPEG or pixels: picks the format from the file
-├── jpeg.py             format 5: embedding in JPEG coefficients
+├── jpeg.py             formats 7 and 5: embedding in JPEG coefficients
 ├── stego.py            key derivation, keyed walk, formats v4 (adaptive) and v3, framing
 ├── stc.py              syndrome-trellis codes (Viterbi)
 ├── costs.py            HiLL and UERD embedding costs

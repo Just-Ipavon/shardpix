@@ -103,6 +103,15 @@ two classical attacks. Run it with `python -m shardpix.analysis.benchmark`;
 the raw numbers are in [data/benchmark.json](data/benchmark.json). §5.5.5
 adds trained detectors on a standard dataset of 10,000 photographs.
 
+**Formats measured.** Every measurement in this section was made on formats
+3, 4 and 5. Formats 6 and 7 (01 §1.5.1) embed exactly like 4 and 5 but write
+128 public bits instead of 136, so they change the same samples minus at
+most a handful; the detection errors below apply to them. What these
+detectors do not measure is a reader who decodes the public block without
+a key: in formats 3 to 5 that reader found the cost byte, the same in every
+image, and recognised a shardpix image whatever the detectors said (06
+§6.13, SR-07). Formats 6 and 7 remove it.
+
 ### 5.5.1 RS analysis
 
 <picture>

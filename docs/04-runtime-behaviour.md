@@ -147,10 +147,10 @@ write one bit per sample with no costs and no codes.
 
 ## 4.5 Extracting a payload
 
-Extraction mirrors embedding. It first tries format 4 and, if that finds
-nothing, format 3; a cost byte belonging to the other format, or a cost
-out of range, ends an attempt before any key derivation, so reading a
-format-3 image almost never costs a second scrypt. In format 4 every read
+Extraction mirrors embedding. It tries format 6, then 4, then 3 (7, then
+5, on a JPEG). Format 6 has no cost byte, so it always costs one scrypt;
+in the older formats a cost byte belonging to another format, or a cost
+out of range, ends an attempt before any key derivation. In formats 4 and 6 every read
 below is a syndrome over `w0` or `w` candidates per bit instead of a single
 LSB; the diagram shows format 3. In both, the walk is read twice. The
 extractor first needs 32 positions to read the length, and only then knows

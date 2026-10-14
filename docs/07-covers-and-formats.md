@@ -85,8 +85,8 @@ only as the baseline the benchmarks compare against.
 
 | Input | What shardpix does | Output | Verdict |
 | --- | --- | --- | --- |
-| JPEG from a phone or camera | Embeds in the coefficients (format 5) | JPEG | **Good cover**, as taken |
-| PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 4) | PNG | **Good cover** |
+| JPEG from a phone or camera | Embeds in the coefficients (format 7) | JPEG | **Good cover**, as taken |
+| PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 6) | PNG | **Good cover** |
 | RAW / DNG (iPhone ProRAW, Android RAW) | Not read directly: export it to an 8-bit PNG or TIFF | PNG | **Good cover**, after export |
 | HEIC (iPhone "High Efficiency") | Not readable (no HEIF support in Pillow) | — | Switch the camera to JPEG; converting HEIC to JPEG compresses the photo twice |
 | 16-bit PNG or TIFF | Refused | — | Export as 8-bit |
@@ -138,6 +138,6 @@ the output must carry the matching extension (`.jpg` or `.png`).
 | You have | Do |
 | --- | --- |
 | A phone | Use its JPEG photos as they are: textured, full resolution, never shared |
-| RAW exports or PNG photos | Use them: they give PNG outputs (format 4) |
+| RAW exports or PNG photos | Use them: they give PNG outputs (format 6) |
 | HEIC photos | Switch the camera to JPEG for the photos you will use |
 | Images from the web | Do not use them: the original is one reverse image search away |

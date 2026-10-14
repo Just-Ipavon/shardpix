@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-06 — Internal security review report |
-| System | shardpix 1.1.0 (review started on 1.0.0) |
+| System | shardpix 1.1.0 (review started on 1.0.0); second review on 2.0.0 (§6.13) |
 | Status | Complete |
-| Last revised | 2026-10-06 |
+| Last revised | 2026-10-14 |
 
 ## 6.1 Purpose, scope and independence
 
@@ -60,6 +60,11 @@ most significant result is SR-01: the passphrase hardening was below the
 current OWASP recommendation, and the image format had no room to raise it
 without breaking existing images. Both are fixed in 1.1.0.
 
+**Correction (2.0.0).** The statement above no longer holds. A second
+review (§6.13) found that SR-07, accepted as Info, was wrong: the cost byte
+is a keyless fingerprint of every image made in formats 3 to 5. It is
+reclassified High and fixed by formats 6 and 7.
+
 ## 6.4 Findings
 
 | Id | Severity | Title | Found by | Status |
@@ -70,7 +75,7 @@ without breaking existing images. Both are fixed in 1.1.0.
 | SR-04 | Info | Test gaps: public-mode key derivation, report fields and error details not pinned | Mutation testing | Fixed in 1.1.0 (31 tests added) |
 | SR-05 | Info | `--method replacement` offered without a warning | Manual review | Fixed in 1.1.0 |
 | SR-06 | Info | Dependencies specified by lower bound only; no lock file | Manual review | Accepted |
-| SR-07 | Info | Salt and cost positions are public and depend only on the eligible samples | Manual review | Accepted |
+| SR-07 | ~~Info~~ High | Salt and cost positions are public: the cost byte is a keyless fingerprint | Manual review; corrected by the second review | Fixed in formats 6 and 7 (§6.13) |
 | SR-08 | Info | `random_bytes` injection hook in the public API | Manual review | Accepted |
 
 ### SR-01 — scrypt cost below the OWASP recommendation, and not stored (Medium)
@@ -161,14 +166,31 @@ environments, where a lock file would not apply; mitigated by pip-audit in CI
 and by the known-answer tests, which fail if a dependency upgrade changes any
 output.
 
-### SR-07 — Public salt positions (Accepted, Info)
+### SR-07 — Public salt positions (High, fixed in formats 6 and 7)
 
 The 136 positions holding the salt and the cost are derived from a public
 key and the set of eligible samples, so anyone can locate and read them. They
-must be readable before any key exists. The salt is uniformly random and the
-cost byte is constant, so what an observer reads there is 128 random bits and
-8 bits that are mostly unchanged cover LSBs at scattered positions — no more
-distinguishable from a clean image than any other 136 samples. Accepted.
+must be readable before any key exists.
+
+*Original assessment, wrong:* "the salt is uniformly random and the cost
+byte is constant, so what an observer reads there is 128 random bits and 8
+bits that are mostly unchanged cover LSBs". The embedding writes those 8
+bits: whatever the cover held, decoding them gives the cost byte, `0x91` in
+formats 4 and 5 (17 in format 3). Anyone with the source code reads it
+without a passphrase; a clean image gives that value with probability 1/256,
+a vault of *n* images with probability 256^-n. The second review measured it
+on 20 stego images (20 of 20) against 300 clean ones (2 of 300). This makes
+the steganalysis results of 05 §5.5 irrelevant against an adversary who
+knows shardpix: the detectors measure the changes, the fingerprint needs
+none.
+
+*Fix:* formats 6 (PNG) and 7 (JPEG) write only the 128-bit salt at the
+public positions. The scrypt cost is fixed by the format version (N = 2^17);
+raising it means a new version, which SR-01's purpose (room to raise the
+cost) still allows. `test_format_6_has_no_keyless_fingerprint` and
+`test_format_7_has_no_keyless_fingerprint` decode the public block of stego
+and clean images and require the same distribution. Images in formats 3 to 5
+are still read and keep the fingerprint; re-seal them to remove it.
 
 ### SR-08 — `random_bytes` hook (Accepted, Info)
 
@@ -302,7 +324,7 @@ Examples of mutants that survive because they are equivalent:
 | ASVS 6.2.1 | Modules fail securely; no oracle in error handling | Pass. Wrong passphrase, clean image and modified image give one error (SP-08); decryption failures never return partial data. |
 | ASVS 6.2.2 | Industry-proven algorithms and libraries | Pass. AES-GCM, ChaCha20, HMAC-SHA256, HKDF, scrypt from `cryptography`/`hashlib`. Own code limited to Shamir, GF(256), embedding and steganalysis (ADR-02). |
 | ASVS 6.2.3 | Correct IV, mode and padding configuration | Pass. AEAD only; 96-bit random nonces; no padding. |
-| ASVS 6.2.4 | Algorithms and parameters can be replaced | Pass after SR-01. Every format is versioned; the scrypt cost is stored per image. |
+| ASVS 6.2.4 | Algorithms and parameters can be replaced | Pass after SR-01. Every format is versioned; the scrypt cost was stored per image up to format 5 and is fixed by the version from format 6 (SR-07). |
 | ASVS 6.2.5 | No insecure modes or primitives | Pass. No ECB, CBC, MD5, SHA-1. ChaCha20 is used as a keystream with a zero nonce under single-use keys. |
 | ASVS 6.2.6 | Nonces not reused with the same key | Pass. Each AES-GCM key encrypts once: the vault key is fresh per vault, the stego key fresh per image via the salt. |
 | ASVS 6.2.7 | Encrypted data is authenticated | Pass. Vault, stego payload and shares are all authenticated; the vault header is AAD. |
@@ -314,7 +336,7 @@ Examples of mutants that survive because they are equivalent:
 | ASVS 5.1.3 / 12.1.1 | Input validation; resource limits on files | Pass. Decompression-bomb limit, 2 GiB file limit, scrypt cost cap, search budget, length checks before decryption. |
 | ASVS 7.4.1 | Generic error messages, no stack traces | Pass. `TestCleanErrors`. |
 | ASVS 12.3.1–12.3.2 | File names from untrusted data are sanitised; no path traversal | Pass. `safe_filename`, property-tested. |
-| ASVS V12.3 (general) | Files written without races or link following | Pass after SR-03. |
+| ASVS V12.3 (general) | Files written without races or link following | Pass after SR-03 and SR-12 (mode 0600, `O_NOFOLLOW`). |
 | ASVS 14.2.1 | Dependencies up to date, no known vulnerabilities | Pass, with SR-06 accepted. |
 
 ## 6.10 Accepted risks
@@ -356,7 +378,123 @@ could only argue:
    where the 2-megapixel threshold is extrapolated, not measured. Testing
    under cover-source mismatch would show how much of the measured advantage
    survives outside the laboratory.
-4. **The public walk** and whether its positions plus the cost byte leak
-   anything across many images.
+4. **The public walk** and whether its positions leak anything across many
+   images. The cost byte did (SR-07); formats 6 and 7 leave only the salt.
 5. **Side channels** in extraction, if shardpix were ever used outside a
    trusted local machine.
+
+## 6.13 Second review (2.0.0)
+
+An external review of 2.0.0 examined the cryptography (Shamir, the vault,
+key derivation), the embedding and the files shardpix writes, and verified
+its main findings experimentally. It found Shamir and the vault sound and
+the hiding layer flawed. Its findings, and what was done:
+
+| Id | Severity | Title | Status |
+| --- | --- | --- | --- |
+| SR-07 | High | The public cost byte is a keyless fingerprint (above) | Fixed: formats 6 and 7 |
+| SR-09 | High | JPEG output structurally unlike the cover | Fixed, with a warning where it cannot be |
+| SR-10 | Medium | No passphrase by default | Fixed |
+| SR-11 | Medium | Memory exhaustion from a crafted image header | Fixed |
+| SR-12 | Medium | Outputs readable by every user | Fixed |
+| SR-13 | Medium | Keys and secrets never wiped from memory | Accepted |
+| SR-14 | Medium | PNG re-encoding fingerprint | Accepted, documented |
+| SR-15 | Low | Asymmetries of the embedding | Accepted, measured |
+| SR-16 | Low | File size checked before reading, not after | Fixed |
+| SR-17 | Low | Vault metadata in clear; GF(256) not constant time; passphrase strength not checked; EXIF kept | Accepted (05 §5.6) |
+
+### SR-09 — JPEG structure (High, fixed)
+
+libjpeg, through `jpeglib.write_dct`, wrote its own JFIF segment followed by
+the cover's markers: every output had two APP0 segments, and a camera file
+with EXIF only gained a JFIF it never had. Optimised Huffman tables became
+the standard ones (about 6% larger), and progressive files became baseline.
+A forensic tool comparing markers or Huffman tables tells the output from a
+camera original without any statistics.
+
+*Fix* (`jpeg._encode`, `jpeg._match_structure`): the output takes the
+cover's APPn and COM segments byte for byte, its quantisation and Huffman
+tables are regrouped into the cover's segments in the cover's order, and
+Huffman tables are optimised when the cover's are not the standard ones.
+Tests on baseline, optimised, EXIF-only and metadata-free covers require the
+same marker sequence and the same metadata bytes. Progressive files and
+restart markers cannot be written by the libjpeg interface shardpix uses:
+for those covers `EmbedReport.structure_kept` is False and `embed` and
+`seal` print a warning. Phone cameras write baseline files without restart
+markers.
+
+### SR-10 — No passphrase by default (Medium, fixed)
+
+Without `-p`, the positions and the key came from public constants: anyone
+with shardpix could read each share and, with *k* images and the `.spx`,
+open the vault. A warning was printed but the insecure choice was the
+default. `seal` and `embed` now fail without `-p` or `--passphrase-file`;
+`--insecure-no-passphrase` keeps the old behaviour as a deliberate choice.
+
+### SR-11 — Memory exhaustion (Medium, fixed)
+
+`jpeg.load` called libjpeg with no size limit: a frame header claiming
+65535x65535 allocates about 8.6 GB for the luminance alone. Pillow only
+warned between 89 and 179 megapixels. The size is now read from the header
+(`jpeg._dimensions`; Pillow's lazy `open`) and refused above 130 megapixels
+(`images.MAX_PIXELS`, above the largest phone sensors) before anything is
+decoded.
+
+### SR-12 — Outputs readable by every user (Medium, fixed)
+
+Files were created with the umask, typically mode 0644, including recovered
+plaintext and text shares. `images.write_new` now creates every output with
+mode 0600 and `O_NOFOLLOW`, which also refuses a symbolic link when
+overwriting with `--force`.
+
+### SR-13 — Secrets not wiped (Medium, accepted)
+
+Keys, MAC keys and plaintexts are immutable `bytes`; core dumps are not
+disabled; `cryptography` copies keys into OpenSSL. Overwriting a few NumPy
+copies would leave the others, so it would promise more than it delivers.
+Accepted as a property of a Python tool (05 §5.6); the threat model assumes
+an uncompromised machine during sealing and opening.
+
+### SR-14 — PNG re-encoding (Medium, accepted)
+
+PNG outputs are written by Pillow: ancillary chunks (`tEXt`, `pHYs`, `gAMA`,
+`tIME`) are dropped and the zlib parameters and IDAT split are Pillow's. A
+palette cover becomes 24-bit RGB with ±1 noise, more than 256 colours in an
+image that looked like a palette image; TIFF and BMP covers become PNG.
+Accepted: docs/07 recommends photos straight from the camera, which are
+JPEG and keep their format (format 7); PNG covers are already advised to
+be photographs, not palette graphics.
+
+### SR-15 — Asymmetries of the embedding (Low, accepted)
+
+In JPEG, a coefficient of ±1 can only move to ±2, never to 0, so the
+histogram loses ones and gains twos; in pixels, 2 and 253 have one allowed
+direction. The effect is part of what the trained detectors of 05 §5.5
+measure: DCTR, GFR and SRNet see the actual changes, including these.
+Changing the rule would change the embedding and invalidate those
+measurements; it stays, and the measurements stand for it.
+
+### SR-16 — Size checked before reading (Low, fixed)
+
+`vault.seal` compared the size from `stat()` and then read the file; a file
+growing in between raised an unhandled `OverflowError`. The length is now
+checked again after reading.
+
+### SR-17 — Accepted as documented
+
+The `.spx` magic and its *k*, *n* and group id are readable and the
+ciphertext is not padded; GF(256) uses lookup tables; passphrase strength
+is not checked; EXIF and thumbnails are kept, so publishing the original
+next to the stego image links them (the CLI says never to publish the
+covers). All are listed in 05 §5.6.
+
+### What the measurements in 05 §5.5 cover
+
+The steganalysis of 05 §5.5 (SPAM, SRM-lite, DCTR, GFR, SRNet) was run on
+formats 4 and 5. Formats 6 and 7 embed the same way with 8 fewer public
+bits, so their changes are those of formats 4 and 5 minus at most a handful;
+the measured detection errors apply to them. What the measurements never
+covered is a keyless reader of the public block (SR-07) and the file
+structure (SR-09, SR-14): those are the findings this review fixed or
+documented.
+

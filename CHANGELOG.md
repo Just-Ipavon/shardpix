@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+An external security review (docs/06 §6.13) found that images of formats 3
+to 5 can be recognised without the passphrase. New images are written in
+formats 6 and 7; older images still open.
+
+### Security
+
+- **SR-07, a keyless fingerprint (High).** Formats 3 to 5 write the scrypt
+  cost byte at public positions, and it decodes to the same value in every
+  image: anyone with the source code recognised a shardpix image without
+  the passphrase, whatever the steganalysis said. **Stego formats 6 (PNG)
+  and 7 (JPEG)** write only the 128-bit salt there and fix the cost by the
+  version. docs/06 corrects the original assessment, which had accepted
+  SR-07 as harmless.
+- **SR-09, JPEG structure (High).** The JPEG output had two JFIF segments
+  (or a JFIF on an EXIF-only camera file) and standard Huffman tables on
+  covers with optimised ones. It now keeps the cover's metadata byte for
+  byte, its segment layout, and optimised tables when the cover has them.
+  `embed` and `seal` warn on progressive covers and restart markers, which
+  cannot be reproduced.
+- **SR-10.** `seal` and `embed` require a passphrase; hiding without one
+  takes `--insecure-no-passphrase`.
+- **SR-11.** Image size is read from the header and refused above 130
+  megapixels before anything is decoded (a crafted JPEG header could ask
+  libjpeg for gigabytes).
+- **SR-12.** Every output is created with mode 0600 and never through a
+  symbolic link, also with `--force`.
+- **SR-16.** `seal` no longer crashes on a file that grows while it is read.
+
 ### Changed
 
 - **License: GPL-3.0-or-later.** `pyproject.toml` and the License sections
@@ -23,6 +51,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Documentation
 
+- docs/06 §6.13: the second review, its findings and what was accepted
+  (secrets not wiped, PNG re-encoding, asymmetries of the embedding) and
+  why. docs/05 §5.5 and the README say the measurements were made on
+  formats 4 and 5 and apply to 6 and 7, which embed the same way.
 - docs/05 §5.5.8 (EN and IT): every JPEG measurement again with the
   corrected detectors, and a second cover source, ALASKA2 (real camera
   photographs at quality 75, 90 and 95), measured with DCTR and GFR. One

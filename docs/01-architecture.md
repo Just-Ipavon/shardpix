@@ -297,15 +297,16 @@ has already computed, so asking for the first 32 positions and then the first
 Three formats are versioned independently; each carries its own magic and
 version so that a future change can be detected rather than misread.
 
-### 1.5.1 Payload inside an image (stego formats v4 and v3)
+### 1.5.1 Payload inside an image (stego formats 3 to 7)
 
-Both formats carry the same fields; they differ in how the bits reach the
-samples. shardpix writes format 4 by default and reads both.
+All formats carry the same fields, except that formats 6 and 7 have no cost
+byte; they differ in how the bits reach the samples. shardpix writes format
+6 (pixels) or 7 (JPEG) and reads all five.
 
 | Field | Size | Content |
 | --- | --- | --- |
 | salt | 16 B | Random per embedding |
-| cost | 1 B | log2 of scrypt's N (17 today; 10–18 accepted when reading); bit 7 set in format 4 |
+| cost | 1 B | Formats 3 to 5 only: log2 of scrypt's N (17; 10–18 accepted when reading); bit 7 set in formats 4 and 5. Formats 6 and 7 fix N = 2^17 by their version |
 | length | 4 B | Size of nonce + body, XOR-masked with a key-derived mask |
 | nonce | 12 B | AES-256-GCM nonce |
 | body | n + 16 B | AES-256-GCM ciphertext and tag; AAD = domain, format version, length |
@@ -331,6 +332,14 @@ set is the non-zero AC coefficients, costs are UERD, and a coefficient at
 ±1 always moves away from zero so the eligible set never changes. Keys come
 from the domain `shardpix/jpeg/v1`. The output is a JPEG with the cover's
 quantisation tables and metadata.
+
+**Formats 6 and 7 (06 §6.13, SR-07).** Formats 4 and 5 without the cost
+byte: the public block is the 128-bit salt alone, read from the first
+128 × w₀ samples of the public walk (w₀ = min(64, eligible / 1280)). The
+cost byte was a keyless fingerprint, since anyone can decode the public
+block and found the same value in every image. Domains `shardpix/stego/v6`
+and `shardpix/jpeg/v2`. The extractor tries 6, 4, 3 on pixels and 7, 5 on
+JPEG. A JPEG output keeps the cover's marker layout (06 §6.13, SR-09).
 
 **Format 3 (matching, replacement).** One bit per sample, salt and cost on
 the public walk, the rest on the keyed walk; domain `shardpix/stego/v3`.
