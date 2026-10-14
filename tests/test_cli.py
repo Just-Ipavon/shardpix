@@ -579,6 +579,20 @@ class TestLowQualityJpeg:
         assert "bad.jpg has JPEG quality about 70" in out
         assert "good.jpg has" not in out
 
+    def test_embed_warns_on_a_progressive_photo(self, tmp_path, capsys):
+        from PIL import Image
+
+        photo = self._photo(tmp_path, 95)
+        Image.open(photo).save(photo, quality=95, progressive=True)
+        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        out = " ".join(capsys.readouterr().out.split())
+        assert "photo.jpg is a progressive JPEG" in out
+
+    def test_embed_is_quiet_on_a_baseline_photo(self, tmp_path, capsys):
+        photo = self._photo(tmp_path, 95)
+        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert "progressive" not in capsys.readouterr().out
+
     def test_capacity_shows_the_quality(self, tmp_path, capsys):
         assert run("capacity", self._photo(tmp_path, 75)) == 0
         out = capsys.readouterr().out
