@@ -116,7 +116,7 @@ the layers can be used and demonstrated independently.
 | A4 | An output exists | Error unless `--force`. |
 | A5 | A cover is too small or too saturated for a share | Error naming the cover; nothing is written. |
 | A6 | A cover is a JPEG (a phone photo) | Its share goes into its coefficients (format 5) and the output is a `.jpg` with the same tables and metadata. |
-| A7 | No passphrase option given | Sealing proceeds; a warning says anyone with shardpix can read each share, though k are still needed. |
+| A7 | No passphrase option given | Error: a passphrase is required. With `--insecure-no-passphrase` sealing proceeds and a warning says anyone with shardpix can read each share, though k are still needed. |
 | A8 | The file is larger than 2 GiB | Error: AES-GCM as exposed by `cryptography` is limited to 2 GiB per call. |
 
 ---

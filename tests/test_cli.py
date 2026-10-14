@@ -43,8 +43,38 @@ class TestEmbedExtract:
         assert recovered.read_bytes() == secret.read_bytes()
 
     def test_warns_when_no_passphrase_is_used(self, cover_png, tmp_path, capsys):
-        assert run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x") == 0
+        assert (
+            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "--insecure-no-passphrase")
+            == 0
+        )
         assert "no passphrase" in capsys.readouterr().out
+
+    def test_embed_requires_a_passphrase(self, cover_png, tmp_path, capsys):
+        out = tmp_path / "s.png"
+        assert run("embed", cover_png, "-o", out, "-t", "x") == 1
+        assert "passphrase is required" in capsys.readouterr().err
+        assert not out.exists()
+
+    def test_seal_requires_a_passphrase(self, cover_png, tmp_path, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        assert run("seal", secret, cover_png, "-k", "1", "-d", tmp_path / "o") == 1
+        assert "passphrase is required" in capsys.readouterr().err
+        assert not (tmp_path / "o").exists()
+
+    def test_insecure_flag_excludes_a_passphrase(self, cover_png, passphrase_file, tmp_path):
+        with pytest.raises(SystemExit):
+            run(
+                "embed",
+                cover_png,
+                "-o",
+                tmp_path / "s.png",
+                "-t",
+                "x",
+                "--passphrase-file",
+                passphrase_file,
+                "--insecure-no-passphrase",
+            )
 
     def test_wrong_passphrase_exits_with_an_error(
         self, cover_png, passphrase_file, tmp_path, capsys
@@ -57,23 +87,44 @@ class TestEmbedExtract:
         assert "no shardpix payload found" in capsys.readouterr().err
 
     def test_refuses_lossy_output(self, cover_png, tmp_path, capsys):
-        assert run("embed", cover_png, "-o", tmp_path / "s.jpg", "-t", "x") == 1
+        assert (
+            run("embed", cover_png, "-o", tmp_path / "s.jpg", "-t", "x", "--insecure-no-passphrase")
+            == 1
+        )
         assert "gives a .png file" in capsys.readouterr().err
 
     def test_refuses_to_overwrite_without_force(self, cover_png, tmp_path):
         out = tmp_path / "s.png"
-        assert run("embed", cover_png, "-o", out, "-t", "x") == 0
-        assert run("embed", cover_png, "-o", out, "-t", "x") == 1
-        assert run("embed", cover_png, "-o", out, "-t", "x", "--force") == 0
+        assert run("embed", cover_png, "-o", out, "-t", "x", "--insecure-no-passphrase") == 0
+        assert run("embed", cover_png, "-o", out, "-t", "x", "--insecure-no-passphrase") == 1
+        assert (
+            run("embed", cover_png, "-o", out, "-t", "x", "--force", "--insecure-no-passphrase")
+            == 0
+        )
 
     def test_refuses_to_overwrite_the_cover(self, cover_png, capsys):
-        assert run("embed", cover_png, "-o", cover_png, "-t", "x", "--force") == 1
+        assert (
+            run(
+                "embed",
+                cover_png,
+                "-o",
+                cover_png,
+                "-t",
+                "x",
+                "--force",
+                "--insecure-no-passphrase",
+            )
+            == 1
+        )
         assert "also an input" in capsys.readouterr().err
 
     def test_payload_too_large(self, cover_png, tmp_path, capsys):
         big = tmp_path / "big.bin"
         big.write_bytes(bytes(1_000_000))
-        assert run("embed", cover_png, "-o", tmp_path / "s.png", "-i", big) == 1
+        assert (
+            run("embed", cover_png, "-o", tmp_path / "s.png", "-i", big, "--insecure-no-passphrase")
+            == 1
+        )
         assert "at most" in capsys.readouterr().err
 
 
@@ -276,7 +327,16 @@ class TestVaultCommands:
     def test_inspect_shows_the_share(self, tmp_path, covers, capsys):
         secret = tmp_path / "s.txt"
         secret.write_text("x")
-        run("seal", secret, *covers[:2], "-k", "2", "-d", tmp_path / "sealed")
+        run(
+            "seal",
+            secret,
+            *covers[:2],
+            "-k",
+            "2",
+            "-d",
+            tmp_path / "sealed",
+            "--insecure-no-passphrase",
+        )
         capsys.readouterr()
         assert run("inspect", tmp_path / "sealed" / "photo1.png") == 0
         out = capsys.readouterr().out
@@ -285,7 +345,7 @@ class TestVaultCommands:
 
     def test_inspect_plain_payload(self, cover_png, tmp_path, capsys):
         stego_path = tmp_path / "s.png"
-        run("embed", cover_png, "-o", stego_path, "-t", "hello")
+        run("embed", cover_png, "-o", stego_path, "-t", "hello", "--insecure-no-passphrase")
         capsys.readouterr()
         assert run("inspect", stego_path) == 0
         assert "not a share" in capsys.readouterr().out
@@ -293,7 +353,12 @@ class TestVaultCommands:
     def test_seal_rejects_bad_threshold(self, tmp_path, covers, capsys):
         secret = tmp_path / "s.txt"
         secret.write_text("x")
-        assert run("seal", secret, *covers, "-k", "9", "-d", tmp_path / "o") == 1
+        assert (
+            run(
+                "seal", secret, *covers, "-k", "9", "-d", tmp_path / "o", "--insecure-no-passphrase"
+            )
+            == 1
+        )
         assert "threshold" in capsys.readouterr().err
 
 
@@ -301,7 +366,18 @@ class TestCleanErrors:
     """Every expected failure ends with a one-line error and exit code 1, never a traceback."""
 
     def test_output_in_a_missing_directory(self, cover_png, tmp_path, capsys):
-        assert run("embed", cover_png, "-o", tmp_path / "missing" / "s.png", "-t", "x") == 1
+        assert (
+            run(
+                "embed",
+                cover_png,
+                "-o",
+                tmp_path / "missing" / "s.png",
+                "-t",
+                "x",
+                "--insecure-no-passphrase",
+            )
+            == 1
+        )
         assert "error:" in capsys.readouterr().err
 
     def test_output_is_a_directory(self, cover_png, tmp_path, capsys):
@@ -355,9 +431,15 @@ class TestCleanErrors:
         from .conftest import phone_jpeg
 
         photo = phone_jpeg(tmp_path / "photo.jpg")
-        assert run("embed", photo, "-o", tmp_path / "s.png", "-t", "x") == 1
+        assert (
+            run("embed", photo, "-o", tmp_path / "s.png", "-t", "x", "--insecure-no-passphrase")
+            == 1
+        )
         assert "gives a .jpg file" in capsys.readouterr().err
-        assert run("embed", photo, "-o", tmp_path / "s.jpg", "-t", "hello") == 0
+        assert (
+            run("embed", photo, "-o", tmp_path / "s.jpg", "-t", "hello", "--insecure-no-passphrase")
+            == 0
+        )
         out = capsys.readouterr().out
         assert "JPEG (format 7)" in out and "JPEG-compatibility" not in out
         assert run("extract", tmp_path / "s.jpg") == 0
@@ -371,7 +453,7 @@ class TestOutputSafety:
         link = tmp_path / "out.bin"
         link.symlink_to(target)
         stego_path = tmp_path / "s.png"
-        run("embed", cover_png, "-o", stego_path, "-t", "secret")
+        run("embed", cover_png, "-o", stego_path, "-t", "secret", "--insecure-no-passphrase")
         assert run("extract", stego_path, "-o", link) == 1
         assert not target.exists()
         assert "already exists" in capsys.readouterr().err
@@ -379,7 +461,17 @@ class TestOutputSafety:
     def test_method_is_not_a_user_option(self, cover_png, tmp_path):
         """Formats other than adaptive exist for the benchmarks, not for users."""
         with pytest.raises(SystemExit):
-            run("embed", cover_png, "-o", tmp_path / "s.png", "-t", "x", "-m", "replacement")
+            run(
+                "embed",
+                cover_png,
+                "-o",
+                tmp_path / "s.png",
+                "-t",
+                "x",
+                "-m",
+                "replacement",
+                "--insecure-no-passphrase",
+            )
 
 
 class TestHelp:
@@ -410,7 +502,7 @@ class TestHelp:
             cli.main(["seal", "-h"])
         out = " ".join(capsys.readouterr().out.split())
         assert "how many images are needed to open the vault" in out
-        assert "anyone running shardpix can read the payload" in out
+        assert "anyone can locate and read it" in out
 
     def test_overview_lists_a_quick_start(self, capsys):
         with pytest.raises(SystemExit):
@@ -559,14 +651,20 @@ class TestLowQualityJpeg:
 
     def test_embed_warns_on_a_recompressed_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 75)
-        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert (
+            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+            == 0
+        )
         out = " ".join(capsys.readouterr().out.split())
         assert "JPEG quality about 75" in out
         assert "original files" in out
 
     def test_embed_is_quiet_on_a_camera_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 95)
-        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert (
+            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+            == 0
+        )
         assert "JPEG quality" not in capsys.readouterr().out
 
     def test_seal_names_only_the_recompressed_photos(self, tmp_path, capsys):
@@ -574,7 +672,20 @@ class TestLowQualityJpeg:
         bad = self._photo(tmp_path, 70, "bad.jpg", seed=2)
         secret = tmp_path / "secret.txt"
         secret.write_text("hello")
-        assert run("seal", secret, good, bad, "-k", "2", "-d", tmp_path / "out") == 0
+        assert (
+            run(
+                "seal",
+                secret,
+                good,
+                bad,
+                "-k",
+                "2",
+                "-d",
+                tmp_path / "out",
+                "--insecure-no-passphrase",
+            )
+            == 0
+        )
         out = " ".join(capsys.readouterr().out.split())
         assert "bad.jpg has JPEG quality about 70" in out
         assert "good.jpg has" not in out
@@ -584,13 +695,19 @@ class TestLowQualityJpeg:
 
         photo = self._photo(tmp_path, 95)
         Image.open(photo).save(photo, quality=95, progressive=True)
-        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert (
+            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+            == 0
+        )
         out = " ".join(capsys.readouterr().out.split())
         assert "photo.jpg is a progressive JPEG" in out
 
     def test_embed_is_quiet_on_a_baseline_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 95)
-        assert run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x") == 0
+        assert (
+            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+            == 0
+        )
         assert "progressive" not in capsys.readouterr().out
 
     def test_capacity_shows_the_quality(self, tmp_path, capsys):

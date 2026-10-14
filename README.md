@@ -11,7 +11,7 @@ Encrypt a file and split its key among ordinary-looking photos. shardpix
 gives you two things: the encrypted file (`.spx`), which you can store
 anywhere, and *n* photos, one for each person you trust, each hiding a share
 of the key. To open the file you need the `.spx`, any *k* of the photos and
-the passphrase, if you set one; with fewer than *k* photos the key cannot be
+the passphrase; with fewer than *k* photos the key cannot be
 rebuilt. The photos look unchanged, and how well they hide the shares is
 measured, not assumed: see [Why it matters](#why-it-matters).
 
@@ -44,7 +44,7 @@ flowchart LR
 flowchart LR
     V["notes.pdf.spx"] --> U["shardpix unseal"]
     P["any 3 of the 5 photos"] --> U
-    W["the passphrase, if one was set"] --> U
+    W["the passphrase"] --> U
     U --> F["notes.pdf"]
 ```
 
@@ -57,7 +57,8 @@ flowchart LR
   a photo among candidate positions only the passphrase can find, with its
   few changes placed where the photo is textured, and encrypted so the
   hidden bits look like noise.
-- **The passphrase** is one for the whole vault. Without one, anyone running
+- **The passphrase** is one for the whole vault, and `seal` and `embed`
+  require one. `--insecure-no-passphrase` hides without: then anyone running
   shardpix can find the shares, but still needs *k* of them and the `.spx`.
 
 To hide a short message or a file in a single image, with no vault file,
@@ -145,6 +146,7 @@ shardpix analyze suspicious.png
 | `-d, --directory` | Output directory (`seal`: default `./sealed`; `split`: one file per share) |
 | `-p, --passphrase` | Prompt for a passphrase |
 | `--passphrase-file` | Read the passphrase from the first line of a file |
+| `--insecure-no-passphrase` | Hide without a passphrase (`seal`, `embed`): anyone can read it |
 | `-o, --output` | Output file |
 | `--name` | Vault file name (`seal`) |
 | `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
