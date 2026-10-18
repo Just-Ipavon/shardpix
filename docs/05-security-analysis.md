@@ -16,8 +16,10 @@ that back the claims about detectability.
 shardpix is a portfolio and learning project. Its cryptography comes from
 audited libraries (ADR-02), its own code is tested against independent
 references, and it has been through the two reviews documented in
-[06-security-review.md](06-security-review.md), neither of them independent, but **the system as a whole
-has not been audited by an independent third party**. For secrets whose loss would really hurt, prefer established tools
+[06-security-review.md](06-security-review.md), neither of them
+independent: **the system as a whole has not been audited by an
+independent third party**. For secrets whose loss would really hurt, prefer
+established tools
 — for example [age](https://age-encryption.org) for file encryption and
 [SLIP-0039](https://github.com/satoshilabs/slips/blob/master/slip-0039.md)
 implementations for secret sharing — and treat shardpix as a well-documented
