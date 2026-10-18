@@ -154,6 +154,15 @@ class TestPassphrase:
         args = argparse.Namespace(passphrase=False, passphrase_file=path)
         assert cli.read_passphrase(args, confirm=False) == "line one"
 
+    def test_end_of_input_at_the_prompt_is_a_clean_error(self, monkeypatch):
+        def no_input(prompt):
+            raise EOFError
+
+        monkeypatch.setattr(cli.getpass, "getpass", no_input)
+        args = argparse.Namespace(passphrase=True, passphrase_file=None)
+        with pytest.raises(cli.ShardpixError, match="no passphrase entered"):
+            cli.read_passphrase(args, confirm=True)
+
     def test_no_option_means_no_passphrase(self):
         args = argparse.Namespace(passphrase=False, passphrase_file=None)
         assert cli.read_passphrase(args, confirm=False) is None
