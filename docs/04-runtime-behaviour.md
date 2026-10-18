@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-04 — Dynamic view |
-| System | shardpix 2.0.0 |
+| System | shardpix 3.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-07 |
+| Last revised | 2026-10-18 |
 
 ## 4.1 Purpose
 
@@ -21,9 +21,9 @@ sequenceDiagram
     actor O as Owner
     participant CLI as cli.cmd_seal
     participant V as vault.seal
-    participant IMG as images
+    participant M as media
     participant SH as shamir.split
-    participant ST as stego.embed
+    participant IMG as images.write_new
 
     O->>CLI: shardpix seal notes.pdf photos/*.png -k 3 -p
     activate CLI
@@ -34,8 +34,8 @@ sequenceDiagram
     V->>V: validate k, n, distinct covers,<br/>file size, name length
     V->>V: compute outputs, refuse collisions<br/>and overwrites
     loop every cover
-        V->>IMG: load_image(cover)
-        IMG-->>V: Carrier
+        V->>M: open_cover(cover)
+        M-->>V: Cover (JPEG coefficients or pixels)
         V->>V: check capacity >= 109 bytes
     end
     Note over V: nothing has been written yet
@@ -44,11 +44,11 @@ sequenceDiagram
     V->>SH: split(key, 3, n, group_id)
     SH-->>V: n shares
     loop share i into cover i
-        V->>ST: embed(carrier, share, passphrase)
-        ST-->>V: stego Carrier, EmbedReport
-        V->>IMG: save_png(stego, sealed/cover_i.png)
+        V->>M: hide(cover, share, passphrase)
+        M-->>V: stego file bytes, EmbedReport
+        V->>IMG: write_new(sealed/cover_i.png or .jpg)
     end
-    V->>V: write sealed/notes.pdf.spx
+    V->>IMG: write_new(sealed/notes.pdf.spx)
     V-->>CLI: SealResult
     deactivate V
     CLI-->>O: table: image, share, rate, changes
@@ -68,7 +68,7 @@ sequenceDiagram
     actor R as Recovering party
     participant CLI as cli.cmd_unseal
     participant V as vault.unseal
-    participant ST as stego.extract
+    participant ST as media.reveal
     participant SH as shamir.recover_all
 
     R->>CLI: shardpix unseal notes.pdf.spx a.png b.png c.png d.png -p
@@ -77,7 +77,7 @@ sequenceDiagram
     activate V
     V->>V: read header, drop repeated paths
     loop every image
-        V->>ST: extract(carrier, passphrase)
+        V->>ST: reveal(path, passphrase)
         alt payload found
             ST-->>V: bytes
             V->>V: parse Share, compare group id
@@ -94,10 +94,11 @@ sequenceDiagram
             V->>V: keep this cluster, stop
         end
     end
-    V-->>CLI: UnsealResult (file name, data, outcomes)
+    V->>V: safe_filename(stored name)
+    V-->>CLI: UnsealResult (sanitised name, data, outcomes)
     deactivate V
     CLI-->>R: table: image, share, status, detail
-    CLI->>CLI: sanitised name, refuse overwrite
+    CLI->>CLI: refuse overwrite
     CLI-->>R: file written, exit 0
     deactivate CLI
 ```
@@ -120,17 +121,17 @@ sequenceDiagram
 
     C->>E: embed(carrier, payload, passphrase)
     E->>E: samples, eligible = 2..253, capacity check
-    E->>E: salt = 16 random bytes, cost = 17 | 0x80
-    E->>K: derive_key(passphrase, salt, version 4)
+    E->>E: salt = 16 random bytes (format 6: no cost byte)
+    E->>K: derive_key(passphrase, salt, version 6)
     K->>K: scrypt(N=2^17, r=8, p=1) then HKDF x4
     K-->>E: order, aead, length_mask, code
     E->>E: frame = masked length + nonce + AES-GCM(payload)
-    E->>T: HiLL costs of every sample
     E->>W: public walk over eligible samples
-    W-->>E: 136 x w0 candidates for salt and cost
+    W-->>E: 128 x w0 candidates for the salt
     E->>W: keyed walk over eligible minus those
     W-->>E: 32 x w0 candidates for the length,<br/>then w x 8 x (len(frame) - 4) for the body
-    loop salt + cost, length, body
+    E->>T: HiLL costs of every sample
+    loop salt, length, body
         E->>T: Viterbi: least-cost LSBs with the right syndrome
         T-->>E: samples to flip
         E->>E: flip each by +-1 (up at 2, down at 253)
@@ -138,21 +139,27 @@ sequenceDiagram
     E-->>C: stego carrier, EmbedReport
 ```
 
-A JPEG cover takes the same path through `jpeg.embed` instead (format 5):
+A JPEG cover takes the same path through `jpeg.embed` instead (format 7):
 `media.open_cover` reads its quantised coefficients without decoding them,
 the candidates are the non-zero AC luminance coefficients, the costs are
-UERD, and the result is written back as a JPEG with the original tables and
-metadata. The baseline methods of format 3, used only by the benchmarks,
-write one bit per sample with no costs and no codes.
+UERD, and the result is re-encoded losslessly as a JPEG with the original
+tables and metadata, laid out like the cover: same APPn/COM bytes, segment
+order and table grouping (06 SR-09; progressive covers and restart markers
+excepted, with a warning). With `version=4` (benchmarks) the diagram gains
+the cost byte `17 | 0x80` after the salt and 136 × w0 public candidates.
+The baseline methods of format 3, used only by the benchmarks, write one
+bit per sample with no costs and no codes.
 
 ## 4.5 Extracting a payload
 
 Extraction mirrors embedding. It tries format 6, then 4, then 3 (7, then
 5, on a JPEG). Format 6 has no cost byte, so it always costs one scrypt;
 in the older formats a cost byte belonging to another format, or a cost
-out of range, ends an attempt before any key derivation. In formats 4 and 6 every read
-below is a syndrome over `w0` or `w` candidates per bit instead of a single
-LSB; the diagram shows format 3. In both, the walk is read twice. The
+out of range, ends an attempt before any key derivation. Trying format 6
+first therefore costs one scrypt on every image, and reading a format-4
+image costs about two. In the adaptive formats (4 to 7) every read below is
+a syndrome over `w0` or `w` candidates per bit instead of a single LSB; the
+diagram shows format 3. In all formats, the walk is read twice. The
 extractor first needs 32 positions to read the length, and only then knows
 how many more to read. `SampleOrder.first` caches what it has computed, so the
 second call extends the first instead of starting over, and because every
@@ -231,7 +238,7 @@ them all against the vault tag.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Loaded: load_image
+    [*] --> Loaded: media.open_cover
     Loaded --> Unreadable: not an image
     Loaded --> Extracted: payload authenticated
     Loaded --> NoPayload: wrong passphrase, clean or modified
@@ -265,7 +272,7 @@ holder needs to know which image was the problem.
 | Per-image work in `unseal` | Caught and recorded as an `ImageOutcome`; the loop continues | An unreadable image does not stop the others from being read |
 | Per-line work in `combine` | Malformed lines collected as problems, reported, skipped | A truncated share in a file of five |
 | Vault and share failures | Raised with the details attached (`outcomes`, `rejected`) | `VaultError` carries the full per-image table |
-| `cli.main` | `ShardpixError` and `OSError` → one-line message, exit 1; argparse → exit 2; Ctrl-C → exit 130 | `error: s.jpg: output must be a .png file …` |
+| `cli.main` | `ShardpixError` and `OSError` → one-line message, exit 1; argparse → exit 2; Ctrl-C → exit 130 | `error: s.png: a JPEG cover gives a .jpg file; name the output something.jpg` |
 
 | Exit code | Meaning |
 | --- | --- |
@@ -281,26 +288,27 @@ before a single file is written.
 ## 4.9 Indicative timing profile
 
 Measured on a cloud VM (Python 3.13, one core), as an order of magnitude.
-The format-4 rows were measured while another job shared the CPU, so they
-are upper bounds.
+The adaptive rows were measured on format 4 while another job shared the
+CPU, so they are upper bounds. Format 6, now written, embeds the same way
+with 8 fewer public bits, so the embedding times apply to it.
 
 | Operation | Duration |
 | --- | --- |
 | Key derivation (scrypt, N = 2^17) | ~0.42 s per image |
 | `embed` / `extract`, 512 × 512 RGB, vault-share payload, format 3 | ~0.45 s each, mostly scrypt |
 | `embed`, 1920 × 1080 RGB, vault-share payload, format 3 | ~0.5 s |
-| `embed`, vault-share payload, format 4: 512 × 512 / 1920 × 1080 / 12 MP RGB | ~1.7 s / ~2.3 s / ~8.4 s: scrypt, HiLL over the whole image, Viterbi |
-| `extract`, vault-share payload, format 4, any of the sizes above | ~0.5 s, mostly scrypt |
+| `embed`, vault-share payload, format 4 (and 6): 512 × 512 / 1920 × 1080 / 12 MP RGB | ~1.7 s / ~2.3 s / ~8.4 s: scrypt, HiLL over the whole image, Viterbi |
+| `extract`, vault-share payload, format 4, any of the sizes above | ~0.5 s, mostly scrypt, as measured before format 6 existed; a format-6 image costs one scrypt, a format-4 image now about two (format 6 is tried first) |
 | `seal`, 1 MB file, 5 covers of 512 × 512 | ~2.4 s |
 | `seal`, 1 MB file, 5 covers of 1920 × 1080 | ~5.3 s: PNG compression and scrypt |
 | `unseal`, 3 images of 512 × 512 or 1920 × 1080 | ~1.3 s, mostly scrypt |
 | `analyze`, 1920 × 1080 RGB | ~1.2 s (RS 0.3 s, sequential chi-square 0.9 s) |
 | Full benchmark (10 covers, 4 strategies, 11 rates) | ~40 s |
-| Test suite (369 tests) | ~60 s with the trained-detector and adaptive tests |
+| Test suite (476 tests) | ~90 s with the trained-detector, adaptive and JPEG tests |
 
 In format 3 the cost of placing a payload does not depend on the image size
 (ADR-04); what grows with the image is decoding, the eligibility mask and
-PNG encoding. Format 4 adds the HiLL cost map, which is computed over the
+PNG encoding. The adaptive formats add the HiLL cost map, which is computed over the
 whole image and dominates for large photos, and a Viterbi pass whose length
 depends on the payload only.
 The file size barely matters: AES-GCM runs at memory speed.
@@ -309,7 +317,7 @@ The file size barely matters: AES-GCM runs at memory speed.
 
 ```mermaid
 graph LR
-    subgraph offline["Automated suite: 310 tests, ~9 s, no network"]
+    subgraph offline["Automated suite: 476 tests, ~90 s, no network"]
         U1["Arithmetic<br/>GF(256) vs reference,<br/>chi2 vs SciPy"]
         U2["Formats<br/>known-answer tests"]
         U3["Security behaviour<br/>tampering, forgery,<br/>wrong passphrase"]
@@ -332,13 +340,18 @@ graph LR
 | --- | --- | --- |
 | `test_gf256.py` | 18 | All 65,536 products against shift-and-add; FIPS-197 examples; field axioms |
 | `test_shamir.py` | 62 | Every k-subset; information-theoretic secrecy by enumeration; tampering; forged clusters; search robustness |
-| `test_stego.py` | 54 | Round trips in every mode; authentication; distortion bounds; saturation invariance; walk properties; key derivation |
-| `test_images.py` | 19 | Mode conversion, alpha preservation, lossless output, exclusive file creation |
-| `test_chi_square.py` | 17 | Survival function vs SciPy; detection on combed histograms |
+| `test_stego.py` | 58 | Round trips in every mode; authentication; distortion bounds; saturation invariance; walk properties; key derivation |
+| `test_adaptive.py` | 37 | Syndrome-trellis codes, HiLL costs, code widths; formats 4 and 6 (round trips, no keyless fingerprint in format 6, older formats still read, separate keys) |
+| `test_jpeg.py` | 35 | Formats 5 and 7 in JPEG coefficients; output structure against the cover (`TestStructure`); UERD; `media`; quality estimate |
+| `test_jpeg_features.py` | 11 | JPEG decompression, DCTR and GFR features, benchmark detectors |
+| `test_images.py` | 24 | Mode conversion, alpha preservation, lossless output, exclusive owner-only file creation, size limit from the header |
+| `test_chi_square.py` | 21 | Survival function vs SciPy; detection on combed histograms; JPEG coefficients |
 | `test_rs.py` | 13 | Flip operations; estimates track replacement; naive vs saturation-aware matching |
-| `test_vault.py` | 59 | Every subset opens; failures; forged sets; collisions; restored names |
-| `test_cli.py` | 47 | Every command end to end; clean errors |
-| `test_known_answers.py` | 5 | Walk positions, share bytes, stego pixels (with and without passphrase) and vault bytes pinned |
+| `test_vault.py` | 61 | Every subset opens; failures; forged sets; collisions; restored names |
+| `test_cli.py` | 80 | Every command end to end; clean errors; passphrase rules; binary output on a terminal; progress; wildcards; JPEG warnings and analysis |
+| `test_known_answers.py` | 10 | Walk positions, share bytes, code matrix, stego pixels in formats 3, 4 and 6 (with and without passphrase) and vault bytes pinned |
+| `test_ml.py` | 20 | SPAM and SRM-lite features, ensemble classifier, metrics, benchmark plumbing, CNN |
+| `test_pooled.py` | 10 | Pooled steganalysis: groups, likelihood model, pooled detection |
 | `test_properties.py` | 16 | Property-based tests and parser fuzzing (Hypothesis); `HYPOTHESIS_PROFILE=fuzz` for 3,000 cases each |
 
 Two choices keep the suite fast and deterministic. Covers are synthesised

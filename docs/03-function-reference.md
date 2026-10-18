@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-03 — Detailed component specification |
-| System | shardpix 2.0.0 |
+| System | shardpix 3.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-07 |
+| Last revised | 2026-10-18 |
 
 ## 3.1 Purpose and conventions
 
@@ -34,12 +34,13 @@ graph LR
         P2["shamir: split, recover_all, combine"]
         P3["stego: derive_key, SampleOrder,<br/>embed, extract"]
         P5["stc, costs: syndrome-trellis codes,<br/>HiLL and UERD costs"]
-        P6["jpeg: format 5 on coefficients"]
+        P6["jpeg: format 7 on coefficients<br/>(reads 5)"]
         P4["chi_square, rs"]
     end
 
     subgraph io["Logic with file I/O"]
-        I1["images: load_image, save_png"]
+        I1["images: load_image, write_new"]
+        I5["jpeg.load, media: open_cover,<br/>hide, reveal"]
         I2["vault: seal, unseal"]
         I3["cli: commands"]
         I4["benchmark: run, plots"]
@@ -52,15 +53,16 @@ graph LR
 ```
 
 Embedding, sharing and both attacks operate on arrays and bytes, never on
-paths: the file system is touched only by `images`, `vault`, `cli` and the
-benchmark. That is what lets most of the 369 tests run without creating a
-single file.
+paths: the file system is touched only by `images`, `jpeg` (`load`,
+`is_jpeg`, and libjpeg's temporary file in `_encode`), `media`, `vault`,
+`cli` and the benchmarks. That is what lets most of the 476 tests run
+without creating a single file.
 
 ---
 
 ## 3.3 `shardpix/__init__.py` and `__main__.py`
 
-`__init__` exposes only `__version__` (`"2.0.0"`) and imports no submodule, so
+`__init__` exposes only `__version__` (`"3.0.0"`) and imports no submodule, so
 `import shardpix` is fast and free of side effects. `__main__` delegates to
 `cli.main` so the tool runs as `python -m shardpix` without installation.
 
@@ -71,7 +73,7 @@ single file.
 | Class | Raised when | Extra attribute |
 | --- | --- | --- |
 | `ShardpixError` | Base class of every expected failure; the CLI turns it into `error: …` and exit code 1 | — |
-| `UnsupportedImageError` | The file is not a readable image, is 16-bit or float, is too large for Pillow's decompression-bomb limit, or the output is not `.png` | — |
+| `UnsupportedImageError` | The file is not a readable image, is 16-bit or float, has more than `images.MAX_PIXELS` pixels or no size according to its header, is a JPEG with a malformed header or no frame header, or (`save_png`) the output is not `.png` | — |
 | `CapacityError` | The payload does not fit in the carrier | — |
 | `PayloadNotFoundError` | Extraction fails: wrong passphrase, no payload or modified image | — |
 | `ShareError` | Base class for share problems | `rejected`: `(share, reason)` pairs set aside before the failure |
@@ -89,7 +91,8 @@ single file.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `LOSSLESS_SUFFIXES` | `{".png"}` | The only output extension accepted. |
+| `LOSSLESS_SUFFIXES` | `{".png"}` | The only extension `save_png` accepts. |
+| `MAX_PIXELS` | `130_000_000` | Largest image read, checked from the header before decoding (06 SR-11); above the largest phone sensors. |
 | `_KEEP_MODES` | `L`, `LA` → 1 channel; `RGB`, `RGBA` → 3 | Modes kept as they are, with their number of colour channels. |
 | `_REJECTED_MODES` | `I`, `I;16*`, `F` | High bit-depth modes, refused rather than silently reduced to 8 bits. |
 
@@ -122,8 +125,17 @@ profile before conversion. Test: `TestLoad`.
 
 ### `load_image(path) -> Carrier`
 
-Opens, fully decodes and converts an image. Raises `UnsupportedImageError`
-for a missing file, a decompression bomb, or anything Pillow cannot decode.
+Opens the image lazily, checks its size from the header with `check_size`,
+then fully decodes and converts it. Pillow's own decompression-bomb warning
+is silenced: `MAX_PIXELS` decides. Raises `UnsupportedImageError` for a
+missing file, an image that is too large, or anything Pillow cannot decode.
+
+### `check_size(path, width, height) -> None`
+
+Raises `UnsupportedImageError` if the header gives no size (width or height
+≤ 0) or more than `MAX_PIXELS` pixels. Called by `load_image` and, through
+`jpeg._dimensions`, by `jpeg.load`, before any pixel or coefficient is
+decoded (06 SR-11). Test: `TestSizeLimit`.
 
 ### `to_pil(carrier) -> Image`
 
@@ -132,17 +144,20 @@ Converts back to Pillow, letting it infer the mode from the array shape.
 ### `write_new(path, data, *, overwrite=False) -> None`
 
 Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`) unless
-`overwrite`: checking and creating are one atomic step, and an existing name
-— including a dangling symbolic link — is refused rather than followed
-(06 SR-03). Raises `ShardpixError`. Every output of the CLI and of `seal` goes
-through it. Test: `TestWriteNew`.
+`overwrite` (then `O_TRUNC`): checking and creating are one atomic step, and an
+existing name — including a dangling symbolic link — is refused rather than
+followed (06 SR-03). `O_NOFOLLOW` is always set, and a symbolic link at the
+destination is refused even with `overwrite`. New files get mode `0o600`
+whatever the umask (06 SR-12). Raises `ShardpixError`. Every output of the
+CLI and of `seal` goes through it. Test: `TestWriteNew`.
 
 ### `save_png(carrier, path, *, overwrite=False) -> None`
 
 Encodes a lossless PNG at the default compression level, preserving the ICC
-profile, and writes it with `write_new`. Raises `UnsupportedImageError` for
-any extension but `.png` — JPEG would re-quantise the pixels and destroy the
-payload — and `ShardpixError` if the file exists (without `overwrite`) or
+profile, and writes it with `write_new`. Kept for library callers: the CLI
+and the vault write PNG outputs through `media.encode_png` and `write_new`.
+Raises `UnsupportedImageError` for any extension but `.png` — JPEG would
+re-quantise the pixels and destroy the payload — and `ShardpixError` if the file exists (without `overwrite`) or
 cannot be written. Test: `TestSave`.
 
 ---
@@ -164,15 +179,15 @@ cannot be written. Test: `TestSave`.
 | `MAX_FILL` | `2` | At most one eligible sample in two is used (ADR-11). |
 | `ADAPTIVE_FLAG` | `0x80` | Set in the cost byte of a format-4 or format-5 image. |
 | `MAX_WIDTH`, `COLUMN_BUDGET`, `CHUNK_BITS` | `128`, `2^20`, `8192` | Widest body code, most samples one payload's trellis visits, payload bits per trellis (ADR-12). |
-| `HEADER_WIDTH`, `LENGTH_BITS` | `64`, `32` | Widest code for the format-4 public bytes and length; length field in bits. |
-| `_DOMAIN`, `_DOMAIN_V4` | `b"shardpix/stego/v3"`, `b"shardpix/stego/v4"` | Domain separation for every derivation, one per format. |
-| `_PUBLIC_WALK_KEY` | SHA-256 of the v3 domain and a label | Key of the public walk that places the salt (both formats). |
-| `_PUBLIC_CODE_SEED` | SHA-256 of the v4 domain and a label | Seed of the public code matrix for the format-4 salt and cost. |
+| `HEADER_WIDTH`, `LENGTH_BITS` | `64`, `32` | Widest code for the public block and length of the adaptive formats (4 to 7); length field in bits. |
+| `_DOMAINS` | 3 → `b"shardpix/stego/v3"`, 4 → `b"shardpix/stego/v4"`, 6 → `b"shardpix/stego/v6"`, 5 → `b"shardpix/jpeg/v1"`, 7 → `b"shardpix/jpeg/v2"` | Domain separation for every derivation, one per format (`_DOMAIN` and `_DOMAIN_V4` are the first two). |
+| `_PUBLIC_WALK_KEY` | SHA-256 of the v3 domain and a label | Key of the public walk that places the public block (all formats). |
+| `_PUBLIC_CODE_SEED` | SHA-256 of the v4 domain and a label | Seed of the public code matrix for the public block of formats 4 to 7. |
 
 ### `class Method(str, Enum)`
 
-`ADAPTIVE` (default): format 4, ±1 changes chosen by syndrome-trellis codes
-where the HiLL cost is lowest (ADR-12). `MATCHING`: format 3, a mismatching
+`ADAPTIVE` (default): format 6 (format 4 with `version=4`), ±1 changes
+chosen by syndrome-trellis codes where the HiLL cost is lowest (ADR-12). `MATCHING`: format 3, a mismatching
 sample moves by ±1 at random. `REPLACEMENT`: format 3, its least significant
 bit is overwritten.
 
@@ -185,8 +200,10 @@ matrix; empty in format 3).
 ### `class EmbedReport` *(frozen)*
 
 Payload, frame and capacity sizes, total and eligible samples, bits written
-(salt included) and samples changed; `embedding_rate` and `change_rate` are
-both relative to all colour samples.
+(public block included) and samples changed; `embedding_rate` and
+`change_rate` are both relative to all colour samples. `structure_kept`
+(default `True`) is set by `jpeg.embed`: `False` when the output could not
+take the cover's marker layout (a progressive cover, restart markers).
 
 ### `derive_key(passphrase, salt, log_n=None, version=3) -> StegoKey`
 
@@ -253,19 +270,32 @@ The LSBs at the given positions.
 `domain ‖ version ‖ length`: a frame cut from one version cannot be
 replayed as another, and the length cannot be altered without detection.
 
-### `_salt_positions(n_samples, eligible, width=1)`, `_keyed_order(key, eligible, salt_positions)` *(private)*
+### `public_bits(version)`, `public_block(salt, version, log_n)`, `parse_public(public, version)`
 
-The first 136 × `width` positions of the public walk, and the keyed walk
-over the eligible samples minus those positions.
+`public_bits` is 136 for formats 3 to 5 (`COST_VERSIONS`) and 128 for 6
+and 7. `public_block` is the salt, followed in formats 3 to 5 by the cost
+byte (`log_n`, with `ADAPTIVE_FLAG` in formats 4 and 5). `parse_public`
+returns `(salt, log_n)`: `SCRYPT_LOG_N` for formats 6 and 7; for the older
+ones it raises `PayloadNotFoundError` for an implausible cost byte (the
+flag of the other format, or a cost outside `SCRYPT_LOG_N_ACCEPTED`).
+
+### `_salt_positions(n_samples, eligible, width=1, bits=PUBLIC_BITS)`, `_keyed_order(key, eligible, salt_positions)` *(private)*
+
+The first `bits` × `width` positions of the public walk, and the keyed walk
+over the eligible samples minus those positions. Since the walk is a fixed
+sequence, the 128-bit public block of formats 6 and 7 sits on a prefix of
+the positions of the 136-bit block.
 
 ### `header_width(n_eligible)`, `code_width(free_samples, message_bits)`
 
-Widths of the format-4 codes, computed by embedder and extractor from the
-same numbers: `min(64, n_eligible // 1344)` for the salt, cost and length,
-and `min(128, free // bits, 2^20 // bits)` for the body, never below 1.
+Widths of the adaptive codes (formats 4 to 7), computed by embedder and
+extractor from the same numbers: `min(64, n_eligible // 1344)` for the
+public block and length, and `min(128, free // bits, 2^20 // bits)` for the
+body, never below 1. `header_width` always counts `PUBLIC_BITS` (136) + 32
+bits, in formats 6 and 7 too, so every adaptive format has the same `w0`.
 Test: `test_adaptive.py::TestCodeWidth`.
 
-### `write_adaptive(samples, positions, bits, sample_costs, seed, random_bytes, *, low=2, high=253)`
+### `write_adaptive(samples, positions, bits, sample_costs, seed, random_bytes, *, low=2, high=253, progress=None)`
 
 Writes `bits` as the syndrome of the LSBs at `positions` (`width`
 candidates per bit, in order), coding at most `CHUNK_BITS` bits per trellis,
@@ -277,27 +307,32 @@ Raises `ValueError` if `positions` is not a multiple of `bits`.
 
 The `length` bits written by `write_adaptive`: the syndrome of the LSBs.
 
-### `choose_flips(samples, positions, bits, sample_costs, seed)`
+### `choose_flips(samples, positions, bits, sample_costs, seed, progress=None)`
 
-The syndrome-trellis part of format 4 and 5: the indices among `positions`
+The syndrome-trellis part of formats 4 to 7, reporting progress once per
+trellis: the indices among `positions`
 (`width` candidates per bit) whose parity must flip, chosen to minimise the
 total cost. Works on any integer array, pixels or JPEG coefficients;
 `write_adaptive` and `jpeg.embed_coefficients` apply the ±1 changes with
 their own rules.
 
-### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom)`
+### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom, progress=None, *, version=None)`
 
-Returns `(stego carrier, EmbedReport)`. Format 3 writes the public bytes and
-the frame one bit per sample. Format 4 computes the HiLL costs of the cover
-and writes three codes: public bytes, length, body (01 §1.5.1). Raises
-`CapacityError` if the image cannot hold even an empty frame, or if the
-payload exceeds the capacity (for format 4, also when the body does not fit
-after the header codes). Tests: `TestRoundTrip`, `TestDistortion`,
+Returns `(stego carrier, EmbedReport)`. `ADAPTIVE` writes format 6, or
+format 4 with `version=4` (the benchmarks, so published measurements stay
+reproducible); `MATCHING` and `REPLACEMENT` write format 3. Format 3 writes
+the public bytes and the frame one bit per sample. The adaptive formats
+compute the HiLL costs of the cover and write three codes: public block,
+length, body (01 §1.5.1). Raises `ValueError` if `version` does not match
+the method, and `CapacityError` if the image cannot hold even an empty
+frame, or if the payload exceeds the capacity (for the adaptive formats,
+also when the body does not fit after the header codes). Tests: `TestRoundTrip`, `TestDistortion`,
 `TestSaturation`, `TestImageModes`, `test_adaptive.py::TestFormat4`.
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Tries format 6, then 4, then 3. For each: reads the salt (and, in formats
+Tries format 6, then 4, then 3. Format 6 always costs one scrypt, so a
+format-4 image costs about two. For each: reads the salt (and, in formats
 3 and 4, the cost) the way that format writes them, refuses a cost byte of
 the other format or a cost outside the accepted range before any key
 derivation, derives the
@@ -443,7 +478,7 @@ Tests: `TestAuthentication`, `TestRobustSearch`.
 | `MAX_NAME_BYTES` | 255 | Longest stored file name. |
 | `MAX_FILE_BYTES` | 2 GiB minus framing | Limit of one AES-GCM call in `cryptography`. |
 | `SHARE_BYTES` | 109 | One share of the vault key. |
-| `PAYLOAD_FRAME_BYTES` | 158 | Bytes written into each image: salt and cost + sealed share. |
+| `PAYLOAD_FRAME_BYTES` | 158 | Bytes written into each image, as an upper bound: public block of formats 3 to 5 (17) + share (109) + frame overhead (32). Formats 6 and 7 write 157 (1,256 bits). |
 | `FALLBACK_NAME` | `unsealed.bin` | Name used when the stored one is unusable. |
 
 ### `class VaultHeader` *(frozen)*
@@ -465,7 +500,7 @@ case-insensitive file system are refused everywhere. `_check_new_file`
 refuses inputs always and existing files without `force`; `_write` turns an
 `OSError` into `VaultError`.
 
-### `seal(source, covers, threshold, out_dir, passphrase=None, *, method, vault_name, force, random_bytes)`
+### `seal(source, covers, threshold, out_dir, passphrase=None, *, method, vault_name, force, random_bytes, progress=None)`
 
 Validation runs before anything is written: cover count and threshold, distinct
 covers, output directory, file size, file name length, output collisions
@@ -492,7 +527,7 @@ overrides), strips trailing dots and spaces, and replaces empty names, `.`,
 Returns a `Share`, or an `ImageOutcome` explaining why there is none
 (unreadable, no payload, malformed share).
 
-### `unseal(vault_path, images, passphrase=None) -> UnsealResult`
+### `unseal(vault_path, images, passphrase=None, progress=None) -> UnsealResult`
 
 Removes repeated paths, reads a share from every image, sets aside shares of
 other vaults and duplicates, runs `shamir.recover_all`, and tries each
@@ -577,16 +612,24 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0.10: detected prefix at which `analyze` reports the chi-square signature. |
 | `RS_ALERT` | 0.10: RS estimate at which `analyze` reports LSB replacement. Clean photographs measured −2.5% to +8.3% in the benchmark. |
-| `JPEG_WARNING` | Text shown when a non-JPEG file was nonetheless decoded as JPEG by Pillow; JPEG files are embedded natively (format 5). |
+| `JPEG_WARNING` | Text shown when a non-JPEG file was nonetheless decoded as JPEG by Pillow; JPEG files are embedded natively (format 7). |
+| `LOW_QUALITY_WARNING` | Text shown when a JPEG cover's estimated quality is below `jpeg.SAFE_QUALITY` (90). |
+| `STRUCTURE_WARNING` | Text shown when `EmbedReport.structure_kept` is False: a progressive cover or one with restart markers, written back as baseline without them (06 SR-09). |
 | `OUTPUT_SUFFIXES` | Extensions accepted for the stego file: `.jpg`/`.jpeg` for a JPEG cover, `.png` otherwise. |
+| `DESCRIPTION`, `OVERVIEW`, `EPILOG`, `KEYING_NOTE` | Help texts: one-line summary, the `shardpix -h` overview and its epilog (quick start, good covers, common options, passphrases), and the passphrase note appended to the help of every command that takes one. |
 
 ### Helpers
 
 | Function | Behaviour |
 | --- | --- |
 | `make_console(stderr=False)` | Rich console without syntax highlighting; word-wrapped in a terminal, unwrapped when piped. |
-| `read_passphrase(args, confirm)` | From `--passphrase-file` (first line, UTF-8 with optional BOM) or a prompt (confirmed when creating). Never from the command line itself, which would leak into shell history and the process list. |
+| `read_passphrase(args, confirm)` | From `--passphrase-file` (first line, UTF-8 with optional BOM) or a prompt (confirmed when creating); `None` without either option. An end of input at the prompt (Ctrl-D) becomes `ShardpixError("no passphrase entered")`. Never from the command line itself, which would leak into shell history and the process list. |
+| `require_passphrase(args)` | `read_passphrase` for hiding: raises `ShardpixError` when no passphrase is given unless `--insecure-no-passphrase` (06 SR-10). |
+| `_add_passphrase_options(parser, hiding=False)` | Adds `-p/--passphrase` and `--passphrase-file`, mutually exclusive; with `hiding`, also `--insecure-no-passphrase`. |
 | `check_output(path, force, inputs)` | Refuses directories, inputs (always) and existing files (without `--force`). |
+| `progress_bar(title)` | Context manager yielding a progress callback that drives a transient Rich bar on stderr, or `None` when stderr is not a terminal. |
+| `write_stdout(data, what)` | Writes bytes to stdout; refuses binary data when stdout is a terminal, naming the kind of file it looks like and suggesting `-o FILE`. |
+| `expand_wildcards(paths)` | Expands `*`, `?` and `[...]` for shells that do not (PowerShell, cmd.exe); existing names and patterns that match nothing are kept as they are. |
 | `format_bytes(size)` | `1536` → `1.5 KiB`. |
 | `positive_int(value)` | argparse type for integers ≥ 1. |
 | `read_secret(args)` | Bytes from `--input` or `--text`. |
@@ -597,23 +640,27 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | Function | Command | Notes |
 | --- | --- | --- |
 | `cmd_capacity` | `capacity IMAGE` | Dimensions, format, usable samples or coefficients, capacity. |
-| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE)` | Format from the cover's file; refuses an output extension of the other kind; warns without passphrase. |
-| `cmd_extract` | `extract IMAGE [-o FILE]` | Raw bytes to stdout unless `-o`. |
-| `cmd_analyze` | `analyze IMAGE [--steps N]` | Chi-square and RS; RS skipped below 4 pixels of width. |
-| `cmd_seal` | `seal FILE COVER... -k K [-d DIR] [--name N]` | Per-image table, warnings, guidance. |
+| `cmd_embed` | `embed COVER -o OUT (-t TEXT \| -i FILE) (-p \| --passphrase-file F \| --insecure-no-passphrase)` | Format from the cover's file; refuses an output extension of the other kind; requires a passphrase unless `--insecure-no-passphrase`, then warns; warns on low JPEG quality and on a structure not kept. |
+| `cmd_extract` | `extract IMAGE [-o FILE]` | Without `-o`, the payload goes to stdout (`write_stdout`): text is printed, binary data refused on a terminal. |
+| `cmd_analyze` | `analyze IMAGE [--steps N]` | Chi-square and RS; RS skipped below 4 pixels of width. A JPEG goes to `_analyze_jpeg`: chi-square on the luminance coefficients, no RS. |
+| `cmd_seal` | `seal FILE COVER... -k K [-d DIR] [--name N] (-p \| --passphrase-file F \| --insecure-no-passphrase)` | Requires a passphrase unless `--insecure-no-passphrase`, then warns; per-image table, warnings (decoded JPEG, low quality, structure), guidance. |
 | `cmd_unseal` | `unseal VAULT IMAGE... [-o FILE]` | Per-image table; output checked before and after decryption. |
 | `cmd_inspect` | `inspect IMAGE` | Share metadata or payload size. |
 | `cmd_split` | `split (-t \| -i) -k K -n N [-d DIR]` | One line per share, or one file per share. |
-| `cmd_combine` | `combine FILE... [-o FILE]` | Report on stderr when the secret goes to stdout. |
+| `cmd_combine` | `combine FILE... [-o FILE]` | Report on stderr when the secret goes to stdout (`write_stdout`). |
 
 Every command accepts `-p/--passphrase` or `--passphrase-file` where a
-passphrase applies, and `-f/--force` where it writes a file.
+passphrase applies, and `-f/--force` where it writes a file. `embed` and
+`seal` require one of the two, or `--insecure-no-passphrase`; `extract`,
+`unseal` and `inspect` without either read with the public key, which opens
+only what was hidden with `--insecure-no-passphrase`.
 
 ### `build_parser()` and `main(argv=None) -> int`
 
 There is no `--method` option: the format follows the cover (01 ADR-13).
 
-`main` dispatches to the handler and maps outcomes to exit codes: 0 on
+`main` expands wildcards in `COVER`, `IMAGE` and share-file arguments
+(`expand_wildcards`), then dispatches to the handler and maps outcomes to exit codes: 0 on
 success, 1 for any `ShardpixError` (printing the per-image or per-share
 details it carries) or `OSError`, 2 for usage errors (argparse), 130 on
 Ctrl-C. Tests: `test_cli.py`, in particular `TestCleanErrors`.
@@ -686,11 +733,11 @@ neighbours' energies. Tests: `test_jpeg.py::TestUERD`.
 | `ensemble.py` | `train`, `Ensemble.votes`, `decision_error`, `detection_error`, `auc` | Ensemble of Fisher linear discriminants on random subspaces, subspace size chosen by out-of-bag error; detection metrics. |
 | `cnn.py` | `StegoNet`, `train`, `scores` | Small CNN with a fixed SRM high-pass layer, trained on cover/stego pairs (optional, PyTorch). |
 | `ml_benchmark.py` | `main` (`--strategy shardpix|adaptive`, `--detectors`, `--rates`, `--checkpoint`, `--cache`, `--rerun`) | Paired train/test experiments on BOSSbase; results in `docs/data/ml_benchmark_*.json`, per-image test scores in `*.scores.npz`. |
-| `features.py` (JPEG) | `decompress`, `dctr`, `dctr_step` | Decoding from coefficients, and DCTR features (8,000): 64 DCT-basis residuals, quantised, histogrammed per 8x8 phase in 25 merged classes. |
-| `jpeg_benchmark.py` | `main` (`--quality`, `--strategy jpeg\|naive`, `--payloads share,…`) | Format 5 against a non-adaptive baseline on BOSSbase JPEGs, DCTR + ensemble; results in `docs/data/jpeg_benchmark_q*.json`. |
+| `features.py` (JPEG) | `decompress`, `dctr`, `dctr_step`, `gfr`, `gfr_step` | Decoding from coefficients; DCTR features (8,000): 64 DCT-basis residuals, quantised, histogrammed per 8x8 phase in 25 merged classes; GFR features (17,000) from Gabor residuals. |
+| `jpeg_benchmark.py` | `main` (`--quality`, `--strategy jpeg\|naive`, `--payloads share,…`) | Format 5 (written with `version=5`) against a non-adaptive baseline on BOSSbase JPEGs, DCTR or GFR + ensemble; results in `docs/data/jpeg_benchmark_q*.json`. |
 | `pooled.py` | `pooled`, `run`, `main` | An adversary holding g images of one vault: pooled scores (mean or fitted likelihood ratio), calibration and evaluation on disjoint halves over 40 splits (05 §5.5.7). |
 
-Tests: `test_ml.py`.
+Tests: `test_ml.py`, `test_jpeg_features.py`, `test_pooled.py`.
 
 ---
 
@@ -698,15 +745,19 @@ Tests: `test_ml.py`.
 
 | Name | Value | Role |
 | --- | --- | --- |
-| `VERSION` | `5` | `stego.JPEG_VERSION`. |
+| `VERSION`, `LEGACY_VERSION` | `7`, `5` | `stego.JPEG_VERSION` (written) and `stego.JPEG_LEGACY_VERSION` (read, written only with `version=5`). |
+| `JPEG_MAGIC` | `b"\xff\xd8\xff"` | Start-of-image marker and the first byte of the next marker: how a JPEG is recognised. |
 | `MAX_COEFFICIENT` | `1023` | Largest magnitude of a baseline coefficient; a change never crosses it. |
 | `SAFE_QUALITY` | `90` | Estimated quality below which `embed` and `seal` warn that a JPEG cover looks recompressed (05 §5.5.8). |
 
 ### `is_jpeg(path)`, `load(path) -> JpegCover`
 
 `is_jpeg` reads the first three bytes (`FF D8 FF`). `load` reads the
-quantised coefficients with `jpeglib` without decoding; raises
-`UnsupportedImageError` for a non-JPEG, an unreadable file or a JPEG with no
+width and height from the frame header (`_dimensions`) and refuses an image
+above `images.MAX_PIXELS` before libjpeg allocates anything (06 SR-11),
+then reads the quantised coefficients with `jpeglib` without decoding.
+Raises `UnsupportedImageError` for a non-JPEG, a malformed header, no frame
+header, an image that is too large, an unreadable file or a JPEG with no
 luminance. `JpegCover` exposes `blocks` (`Hb × Wb × 8 × 8`), `quant` (the
 luminance table), `coefficients()` (flat copy), `geometry()` and `quality`.
 
@@ -723,22 +774,36 @@ quality for the custom tables of phone cameras. Tests:
 
 Non-zero AC coefficients; capacity as for pixels, over that count.
 
-### `embed(cover, payload, passphrase=None, random_bytes) -> (bytes, EmbedReport)`
+### `embed(cover, payload, passphrase=None, random_bytes=os.urandom, progress=None) -> (bytes, EmbedReport)`
 
-`embed_coefficients` on the cover, then the JPEG file rewritten with the new
-luminance and everything else unchanged. Raises `CapacityError` like
-`stego.embed`. Tests: `test_jpeg.py::TestFormat5`.
+`embed_coefficients` on the cover (format 7), then the JPEG file re-encoded
+by `_encode` with the new luminance; the report's `structure_kept` says
+whether the output has the cover's layout. Raises `CapacityError` like
+`stego.embed`. Tests: `test_jpeg.py::TestFormat5`, `TestStructure`.
 
-### `embed_coefficients(coefficients, shape, quant, payload, passphrase, random_bytes)`
+### `embed_coefficients(coefficients, shape, quant, payload, passphrase=None, random_bytes=os.urandom, progress=None, *, version=VERSION)`
 
-The three syndrome codes of format 4 over the eligible coefficients, with
-UERD costs, keys from the JPEG domain; each flip moves a coefficient by ±1,
-away from zero at ±1 and inwards at ±1023 (`_apply`). Returns the new flat
-coefficients and the report. Used directly by the benchmark.
+The three syndrome codes of the adaptive formats over the eligible
+coefficients, with UERD costs, keys from the JPEG domain of `version`; each
+flip moves a coefficient by ±1, away from zero at ±1 and inwards at ±1023
+(`_apply`). Returns the new flat coefficients and the report. Used directly
+by the benchmark, with `version=5`. Raises `ValueError` for a version other
+than 7 or 5.
 
 ### `extract(cover, passphrase=None) -> bytes`
 
-Mirrors `stego.extract` for format 5; one error for every failure.
+Mirrors `stego.extract`: tries format 7, then 5; one error for every
+failure.
+
+### `_dimensions`, `_segments`, `_tables`, `_match_structure`, `_encode` *(private)*
+
+| Function | Behaviour |
+| --- | --- |
+| `_dimensions(path)` | Width and height from the first SOF segment; `UnsupportedImageError` if there is none. |
+| `_segments(data)` | The header segments `(marker, bytes)` after SOI up to the first SOS, and the rest of the file; `UnsupportedImageError` for a malformed header or segment. |
+| `_tables(marker, segment)` | The tables of a DQT or DHT segment, keyed by their class/id byte. |
+| `_match_structure(source, encoded)` | Lays libjpeg's output out like the cover: APPn and COM segments copied byte for byte, quantisation and Huffman tables regrouped into the cover's segments, in the cover's order. Returns the file and whether the layout matched; when it cannot (progressive cover, restart markers), only the metadata are restored. |
+| `_encode(cover, coefficients)` | Writes the coefficients losslessly with `jpeglib`, with optimised Huffman tables when the cover's are not libjpeg's standard ones, then `_match_structure` (06 SR-09). |
 
 ---
 
@@ -754,8 +819,14 @@ Mirrors `stego.extract` for format 5; one error for every failure.
 The output extension and the opened cover, both decided from the file's
 first bytes, never from its name.
 
-### `hide(cover, payload, passphrase, random_bytes, method=ADAPTIVE) -> (bytes, EmbedReport)`
+### `hide(cover, payload, passphrase=None, random_bytes=os.urandom, method=ADAPTIVE, progress=None) -> (bytes, EmbedReport)`
 
-Format 5 for a JPEG, format 4 (or a baseline `method`) for pixels, returned
-as the bytes of the file to write. `reveal(path, passphrase)` is the
-inverse. Tests: `test_jpeg.py::TestMedia`, `test_vault.py`.
+Format 7 for a JPEG, format 6 (or format 3 with a baseline `method`) for
+pixels, returned as the bytes of the file to write. `reveal(path,
+passphrase)` is the inverse. Tests: `test_jpeg.py::TestMedia`,
+`test_vault.py`.
+
+### `encode_png(carrier) -> bytes`
+
+A carrier as PNG bytes at the default compression level, keeping its ICC
+profile; what `hide` returns for a pixel cover.

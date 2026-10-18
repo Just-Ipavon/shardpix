@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-07 — Covers, image formats and embedding methods |
-| System | shardpix 2.0.0 |
+| System | shardpix 3.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-07 |
+| Last revised | 2026-10-18 |
 
 ## 7.1 In short
 
@@ -51,8 +51,8 @@ steganalysis* (Fridrich, Goljan and Du, 2001) detects that at any rate.
 
 | Cover | Format | Where the share goes | Output | Measured against |
 | --- | --- | --- | --- | --- |
-| JPEG (phone photos, most cameras) | 5 | Non-zero AC coefficients of the luminance, chosen by a syndrome-trellis code with UERD costs | JPEG with the same quantisation tables and metadata | DCTR (05 §5.5.8) |
-| PNG, TIFF, BMP, RAW export | 4 | Pixel values in 2–253, chosen by a syndrome-trellis code with HiLL costs | PNG | SPAM, SRM-lite, pooled (05 §5.5.6–5.5.7) |
+| JPEG (phone photos, most cameras) | 7 | Non-zero AC coefficients of the luminance, chosen by a syndrome-trellis code with UERD costs | JPEG with the same quantisation tables and metadata | DCTR (05 §5.5.8) |
+| PNG, TIFF, BMP, RAW export | 6 | Pixel values in 2–253, chosen by a syndrome-trellis code with HiLL costs | PNG | SPAM, SRM-lite, pooled (05 §5.5.6–5.5.7) |
 
 Both formats rest on the same idea. A **cost** says how risky a ±1 change
 is at each place: high where the image is smooth and predictable (a sky, a
@@ -63,7 +63,9 @@ them as long as the block's syndrome equals the message, and the Viterbi
 algorithm picks the changes with the lowest total cost. The extractor only
 computes the syndrome; it never needs the costs.
 
-What format 5 adds for JPEG:
+Formats 6 and 7 are formats 4 and 5 without the public scrypt cost byte,
+which anyone could decode without a key (06 §6.4, SR-07); 4 and 5 are
+still read. What format 7 adds for JPEG:
 
 - **Only non-zero AC coefficients move.** Turning a zero into a non-zero
   is the most detectable change in a JPEG, so zeros and DC coefficients are
@@ -73,9 +75,12 @@ What format 5 adds for JPEG:
 - **UERD costs** (Guo et al., 2015): a change costs the quantisation step of
   its frequency divided by the energy of its block and its neighbours -
   cheap in busy blocks and low frequencies, expensive in flat blocks.
-- **Nothing else changes.** The image is never decoded or recompressed:
+- **Nothing else changes.** The image is never decoded to pixels or
+  recompressed: the coefficients are re-encoded losslessly, and the
   quantisation tables, chroma, dimensions and the EXIF and ICC metadata are
-  written back as they were.
+  kept byte for byte. The marker layout follows the cover (segment order,
+  table grouping, optimised Huffman tables when the cover has them), with
+  the exceptions in §7.6.
 
 The formats used before (3: one bit per sample by LSB matching or
 replacement) are no longer offered by the CLI. They remain in the library
@@ -115,14 +120,21 @@ the output must carry the matching extension (`.jpg` or `.png`).
 
 ## 7.6 Limits that remain
 
-- **File structure.** Quantisation tables and metadata are kept, but the
-  file is rewritten by libjpeg: Huffman tables, marker order or progressive
-  encoding can differ from what a given phone model writes. A forensic
-  analyst comparing the file's structure with that phone's usual output
+- **File structure.** The file is re-encoded by libjpeg, but since SR-09
+  (06 §6.13) it follows the cover: APPn and COM segments byte for byte, the
+  cover's segment order and table grouping, and optimised Huffman tables
+  when the cover's are not the standard ones. Two cases cannot be
+  reproduced: a progressive cover and one with restart markers are written
+  as baseline without restart markers, and `embed` and `seal` warn. A
+  forensic analyst comparing such a file with that camera's usual output
   could notice that it was rewritten, without learning anything about the
-  share. Steganalysis of the content is a separate question (05 §5.5.8).
+  share. Phone cameras write baseline files without restart markers.
+  Steganalysis of the content is a separate question (05 §5.5.8).
 - **Luminance only.** Chroma coefficients are never used: they are fewer,
   more coarsely quantised, and capacity is far beyond a share anyway.
+- **Measured formats.** The measurements below were made on formats 4 and
+  5. Formats 6 and 7 embed the same way with 8 fewer public bits, so they
+  apply to them (06 §6.13, "What the measurements in 05 §5.5 cover").
 - **Low-quality JPEGs.** At quality 90-95 format 5 is at chance against
   DCTR and GFR on one image, with at most a weak trend over fifty pooled
   (43.6% at quality 95 on BOSSbase); at quality 75 it is weakly detectable
