@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-02 — Use case specification |
-| System | shardpix 2.0.0 |
+| System | shardpix 3.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-07 |
+| Last revised | 2026-10-18 |
 
 ## 2.1 Actors
 
@@ -115,7 +115,7 @@ the layers can be used and demonstrated independently.
 | A3 | An output would overwrite a cover or the file | Error, even with `--force`. |
 | A4 | An output exists | Error unless `--force`. |
 | A5 | A cover is too small or too saturated for a share | Error naming the cover; nothing is written. |
-| A6 | A cover is a JPEG (a phone photo) | Its share goes into its coefficients (format 5) and the output is a `.jpg` with the same tables and metadata. |
+| A6 | A cover is a JPEG (a phone photo) | Its share goes into its coefficients (format 7) and the output is a `.jpg` with the same tables and metadata. |
 | A7 | No passphrase option given | Error: a passphrase is required. With `--insecure-no-passphrase` sealing proceeds and a warning says anyone with shardpix can read each share, though k are still needed. |
 | A8 | The file is larger than 2 GiB | Error: AES-GCM as exposed by `cryptography` is limited to 2 GiB per call. |
 
@@ -126,7 +126,7 @@ the layers can be used and demonstrated independently.
 | | |
 | --- | --- |
 | **Primary actor** | Recovering party |
-| **Preconditions** | The vault file and at least k of its images are available; the passphrase is known. |
+| **Preconditions** | The vault file and at least k of its images are available; the passphrase is known (none if the vault was sealed with `--insecure-no-passphrase`). |
 | **Postconditions** | The original file is restored under its original (sanitised) name or the name given with `-o`. |
 | **Trigger** | `shardpix unseal notes.pdf.spx a.png b.png c.png -p` |
 
@@ -147,7 +147,7 @@ the layers can be used and demonstrated independently.
 | Id | Condition | Behaviour |
 | --- | --- | --- |
 | A1 | Fewer than k valid shares | Error with the per-image table; valid shares are shown as *unverified*. |
-| A2 | Wrong passphrase | Every image reports *no payload*; error. |
+| A2 | Wrong or missing passphrase | Every image reports *no payload*; error. A vault sealed with `--insecure-no-passphrase` opens without `-p`. |
 | A3 | Some images corrupted, at least k good ones remain | Recovery succeeds; corrupted images are reported as *rejected* with the reason. |
 | A4 | A fabricated set of mutually consistent shares is present | Its key fails the vault tag; recovery succeeds with the genuine set; forged images are *rejected*. |
 | A5 | The vault file was modified | Every cluster fails the tag; error. |
@@ -161,19 +161,19 @@ the layers can be used and demonstrated independently.
 | | |
 | --- | --- |
 | **Primary actor** | Owner |
-| **Preconditions** | A cover image and a payload no larger than its capacity. |
+| **Preconditions** | A cover image, a payload no larger than its capacity, and a passphrase. |
 | **Postconditions** | An image that looks like the cover and carries the sealed payload: a PNG, or a JPEG if the cover is a JPEG (A3). |
 | **Trigger** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
 
 #### Main flow
 
 1. The system loads the cover and computes the eligible samples (2–253).
-2. The system checks the capacity.
-3. The system draws a salt, derives the keys from passphrase and salt, and
-   seals the payload into a frame.
+2. The system checks the output extension and asks for the passphrase twice.
+3. The system checks the capacity, draws a salt, derives the keys from
+   passphrase and salt, and seals the payload into a frame.
 4. The system reads the cover in the domain of its file: a JPEG as
-   quantised coefficients (format 5, 01 ADR-13), anything else as pixels
-   (format 4, ADR-12). It computes the cost of every candidate (UERD or
+   quantised coefficients (format 7, 01 ADR-13), anything else as pixels
+   (format 6, ADR-12). It computes the cost of every candidate (UERD or
    HiLL) and writes the salt, the length and the sealed body as
    syndrome-trellis codes, changing the cheapest candidates by ±1.
 5. The system writes a JPEG or a PNG, matching the cover, and reports the
@@ -185,7 +185,8 @@ the layers can be used and demonstrated independently.
 | --- | --- | --- |
 | A1 | Output extension does not match the cover (`.jpg` for a JPEG, `.png` otherwise) | Error naming the expected extension. |
 | A2 | Payload larger than capacity | Error with the capacity in bytes. |
-| A3 | Cover is a JPEG | Format 5, output `.jpg` (as UC-01 A6). |
+| A3 | Cover is a JPEG | Format 7, output `.jpg` (as UC-01 A6). |
+| A4 | No passphrase option given | Error: a passphrase is required. With `--insecure-no-passphrase` the payload is embedded and a warning says anyone with shardpix can locate and read it. |
 
 ---
 
@@ -291,8 +292,8 @@ the layers can be used and demonstrated independently.
 | | |
 | --- | --- |
 | **Primary actor** | Analyst |
-| **Preconditions** | Any 8-bit image. |
-| **Postconditions** | Chi-square and RS results and a verdict. |
+| **Preconditions** | Any 8-bit image, or a JPEG. |
+| **Postconditions** | Chi-square and RS results (chi-square only for a JPEG) and a verdict. |
 | **Trigger** | `shardpix analyze suspicious.png` |
 
 #### Main flow
@@ -310,6 +311,7 @@ the layers can be used and demonstrated independently.
 | --- | --- | --- |
 | A1 | Image narrower than 4 pixels | RS is reported as not applicable. |
 | A2 | Nothing flagged | The output states that a negative result is not proof of a clean image. |
+| A3 | The file is a JPEG | The chi-square test runs on the quantised luminance DCT coefficients (whole and sequential), with the estimated JPEG quality; there is no RS step. A signature over at least 10% of the coefficients is flagged as JSteg-like embedding. |
 
 ---
 
