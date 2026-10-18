@@ -158,15 +158,16 @@ esiste (senza `overwrite`) o non può essere scritto. Test: `TestSave`.
 
 | Nome | Valore | Ruolo |
 | --- | --- | --- |
-| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `4`, `3`, `5` | Formato scritto da `ADAPTIVE`, dai metodi di base e da `jpeg.py`; fa parte dei dati associati di AES-GCM e del dominio delle chiavi. |
-| `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Sale per immagine e costo di scrypt, scritti lungo il percorso pubblico (ADR-05). |
+| `FORMAT_VERSION`, `LEGACY_VERSION`, `JPEG_VERSION` | `6`, `3`, `7` | Formato scritto da `ADAPTIVE`, dai metodi di base e da `jpeg.py`; fa parte dei dati associati di AES-GCM e del dominio delle chiavi. |
+| `ADAPTIVE_V4`, `JPEG_LEGACY_VERSION`, `COST_VERSIONS` | `4`, `5`, `{3, 4, 5}` | Formati ancora letti, e scritti su richiesta (`version=`) dai benchmark; i formati il cui blocco pubblico contiene il byte di costo (06 §6.13, SR-07). |
+| `SALT_BYTES`, `COST_BYTES`, `PUBLIC_BYTES` / `PUBLIC_BITS` | `16`, `1`, `17` / `136` | Sale per immagine e, nei formati da 3 a 5, costo di scrypt, scritti lungo il percorso pubblico (ADR-05); `public_bits(version)` restituisce 128 per i formati 6 e 7. |
 | `LENGTH_BYTES`, `NONCE_BYTES`, `TAG_BYTES` | `4`, `12`, `16` | Campi del frame. |
 | `FRAME_OVERHEAD` | `32` | Byte che il frame con chiave aggiunge a ogni carico. |
 | `SCRYPT_LOG_N`, `SCRYPT_R`, `SCRYPT_P` | `17`, `8`, `1` | Irrobustimento della passphrase per i nuovi inserimenti: N = 2^17, circa 128 MiB e 0,4 s per tentativo (la prima raccomandazione di OWASP). |
 | `SCRYPT_LOG_N_ACCEPTED` | `range(10, 19)` | Costi accettati in estrazione; il limite superiore impedisce a un'immagine contraffatta di richiedere gigabyte. |
 | `ELIGIBLE_MIN`, `ELIGIBLE_MAX` | `2`, `253` | I campioni fuori da questo intervallo non sono mai usati né prodotti (ADR-06). |
 | `MAX_FILL` | `2` | Si usa al massimo un campione idoneo su due (ADR-11). |
-| `ADAPTIVE_FLAG` | `0x80` | Impostato nel byte di costo di un'immagine in formato 4. |
+| `ADAPTIVE_FLAG` | `0x80` | Impostato nel byte di costo di un'immagine in formato 4 o in formato 5. |
 | `MAX_WIDTH`, `COLUMN_BUDGET`, `CHUNK_BITS` | `128`, `2^20`, `8192` | Codice del corpo più largo, numero massimo di campioni visitati dal traliccio di un carico, bit di carico per traliccio (ADR-12). |
 | `HEADER_WIDTH`, `LENGTH_BITS` | `64`, `32` | Codice più largo per i byte pubblici e la lunghezza del formato 4; campo lunghezza in bit. |
 | `_DOMAIN`, `_DOMAIN_V4` | `b"shardpix/stego/v3"`, `b"shardpix/stego/v4"` | Separazione di dominio per ogni derivazione, una per formato. |
@@ -308,8 +309,8 @@ anche quando il corpo non entra dopo i codici d'intestazione). Test:
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Prova il formato 4, poi il formato 3. Per ciascuno: legge il sale e il costo
-nel modo in cui quel formato li scrive, rifiuta un byte di costo dell'altro
+Prova il formato 6, poi il 4, poi il 3. Per ciascuno: legge il sale (e, nei
+formati 3 e 4, il costo) nel modo in cui quel formato li scrive, rifiuta un byte di costo dell'altro
 formato o un costo fuori dall'intervallo accettato prima di qualsiasi
 derivazione di chiave, deriva le chiavi, legge e smaschera la lunghezza, la
 confronta con il frame più grande possibile, legge il corpo e lo decifra.

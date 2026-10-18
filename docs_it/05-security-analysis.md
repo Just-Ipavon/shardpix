@@ -113,6 +113,16 @@ strategie, ed esegue i due attacchi classici. Si esegue con
 [data/benchmark.json](../docs/data/benchmark.json). Il §5.5.5 aggiunge
 rilevatori addestrati su un dataset standard di 10.000 fotografie.
 
+**Formati misurati.** Ogni misura di questa sezione è stata fatta sui formati
+3, 4 e 5. I formati 6 e 7 (01 §1.5.1) inseriscono esattamente come il 4 e il 5
+ma scrivono 128 bit pubblici anziché 136, quindi modificano gli stessi
+campioni meno al massimo una manciata; gli errori di rilevazione riportati
+sotto valgono anche per loro. Ciò che questi rilevatori non misurano è un
+lettore che decodifica il blocco pubblico senza chiave: nei formati da 3 a 5
+quel lettore trovava il byte di costo, uguale in ogni immagine, e riconosceva
+un'immagine shardpix qualunque cosa dicessero i rilevatori (06 §6.13, SR-07).
+I formati 6 e 7 lo eliminano.
+
 ### 5.5.1 Analisi RS
 
 <picture>
@@ -555,10 +565,12 @@ Cosa mostra:
    usate così come sono state scattate. Con l'aggregazione, l'insieme più
    grande, BOSSbase, mostra una tendenza lenta e debole - 47,4% con dieci
    immagini, 43,6% con cinquanta, un intervallo che include ancora il 50% -
-   che l'insieme più piccolo di ALASKA2 non riesce a risolvere. Un
-   avversario con decine di immagini della stessa cassaforte potrebbe quindi
-   ottenere un piccolo vantaggio anche a qualità 95; con le poche immagini
-   che una cassaforte ha davvero, nessuno.
+   che il piccolo sottoinsieme di ALASKA2 qui sopra non riesce a
+   risolvere; 10.000 immagini di ALASKA2 (§5.5.9) mostrano la stessa
+   tendenza con DCTR (44,3% con cinquanta). Un avversario con decine di
+   immagini della stessa cassaforte potrebbe quindi ottenere un piccolo
+   vantaggio anche a qualità 95; con le poche immagini che una cassaforte
+   ha davvero, nessuno.
 2. **A qualità 90 il formato 5 è al livello del caso su ALASKA2 fino a
    cinquanta immagini**, per entrambi i rilevatori, con intervalli di circa
    ±8 punti a dieci immagini.
@@ -579,16 +591,103 @@ Cosa mostra:
    pubblicati ne usano 5.000 o più; lo scarto è quello che questa carenza
    produrrebbe, e le conclusioni si basano su DCTR, il più forte dei due qui.
 
-Avvertenze: i rilevatori sono addestrati al carico esatto; due rilevatori,
-entrambi a caratteristiche progettate a mano; rilevatori profondi per JPEG
-come SRNet [8] sono in corso di misura sulle stesse immagini ALASKA2 e non
-sono ancora riportati.
+Avvertenze: i rilevatori sono addestrati al carico esatto; entrambi sono a
+caratteristiche progettate a mano. Un rilevatore profondo, SRNet [8], è
+misurato nel §5.5.9 su un insieme più grande di ALASKA2, insieme a DCTR
+sulle stesse immagini.
 
 **Che cosa questa valutazione non è.** L'attacco del chi-quadro che
 `analyze` esegue sui coefficienti di un JPEG (03 §3.10) scopre solo gli
 strumenti che sovrascrivono il bit meno significativo dei coefficienti, come
 JSteg; il formato 5 lo supera per costruzione, e non è una prova di
 sicurezza. La prova per il formato 5 è la misura con DCTR e GFR qui sopra.
+
+### 5.5.9 Un rilevatore profondo: SRNet
+
+SRNet (Boroumand, Chen e Fridrich [8]) è una rete residua addestrata
+direttamente sui pixel, senza caratteristiche progettate a mano, e uno dei
+rilevatori pubblicati più forti contro la steganografia JPEG adattiva. È
+stata addestrata su una GPU (Google Colab, NVIDIA L4) con
+[scripts/srnet_colab.py](../scripts/srnet_colab.py):
+
+- **Immagini di copertura.** 10.000 immagini di ALASKA2 [29] per qualità,
+  512x512 a colori, compresse dagli autori di ALASKA2 a qualità 75 e 95
+  (alaska.utt.fr); solo la luminanza. È un insieme più grande e diverso dal
+  sottoinsieme di ALASKA2 del §5.5.8.
+- **Ingresso.** La luminanza decompressa dai coefficienti DCT *senza
+  arrotondamento*, calcolata sulla GPU in singola precisione con TF32
+  disattivato (TF32 arrotonda gli ingressi di circa 0,1 livelli di grigio,
+  la grandezza del segnale).
+- **Addestramento.** Coppie di un'immagine di copertura e della sua
+  immagine stego; la stessa metà di test di 5.000 coppie di DCTR, 4.500
+  coppie per l'addestramento e 500 per la validazione; rotazioni e
+  riflessioni casuali applicate allo stesso modo alle due immagini di una
+  coppia; Adamax, conservando la rete con l'errore di validazione più basso.
+  I carichi piccoli si imparano per curriculum, come nell'articolo di
+  SRNet: 30 epoche a 0,4 bit per coefficiente AC non nullo, poi 15 epoche
+  ciascuna a 0,2, 0,1 e una quota, ogni fase partendo dalla precedente; la
+  qualità 95 parte dalla rete della qualità 75.
+- **Immagini stego.** Le stesse che vede DCTR: formato 5 con i semi di
+  `jpeg_benchmark`, e DCTR misurato di nuovo su queste 10.000 immagini.
+
+**Una sola immagine** (errore di rilevazione P_E con il suo intervallo al
+95%; 5.000 coppie di test; 50% significa tirare a indovinare):
+
+| Qualità | Carico | SRNet | DCTR, stesse immagini |
+| ---: | --- | ---: | ---: |
+| 75 | 0,4 | 3,2% [2,8, 3,5] | |
+| 75 | 0,2 | 28,9% [28,0, 29,7] | |
+| 75 | 0,1 | 37,4% [36,5, 38,4] | 25,0% [24,2, 25,9] |
+| 75 | **una quota** | **45,7%** [44,7, 46,7] | **43,6%** [42,6, 44,6] |
+| 95 | 0,4 | 21,4% [20,6, 22,2] | |
+| 95 | 0,2 | 38,4% [37,5, 39,4] | |
+| 95 | 0,1 | 45,4% [44,5, 46,4] | 29,7% [28,8, 30,6] |
+| 95 | **una quota** | **49,8%** [48,8, 50,7] | **48,9%** [48,0, 49,9] |
+
+Il riferimento non adattivo, con una quota, è al 3,3% (qualità 75) e al
+22,0% (qualità 95) per DCTR sulle stesse immagini.
+
+**Più immagini della stessa cassaforte** (una quota ciascuna, rapporto di
+verosimiglianza come nel §5.5.7):
+
+| Immagini | SRNet 75 | DCTR 75 | SRNet 95 | DCTR 95 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 45,4% | 43,9% | 49,9% | 49,1% |
+| 5 | 37,7% | 34,6% | 49,5% | 48,3% |
+| 10 | 33,0% [28,3, 36,1] | 28,3% [25,1, 31,7] | 49,6% [46,6, 52,8] | 47,0% [41,4, 50,8] |
+| 20 | 25,8% | 21,3% | 49,1% | 45,7% |
+| 50 | **16,3%** [11,0, 24,6] | **10,5%** [5,7, 15,4] | **49,2%** [39,3, 55,0] | **44,3%** [35,1, 50,7] |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-alaska-dctr-q95-dark.png">
+  <img alt="Errore di rilevazione di DCTR in funzione del numero di immagini JPEG della stessa cassaforte a qualità 95 su 10.000 immagini di ALASKA2: il formato 5 passa dal 49% con un'immagine al 44% con cinquanta; il riferimento non adattivo scende sotto l'1% già con dieci" src="../assets/pooled-jpeg-alaska-dctr-q95-light.png">
+</picture>
+
+Dati grezzi: `docs/data/srnet_alaska_q{75,95}.json` (con i punteggi di test
+in `.scores.npz`), `docs/data/jpeg_benchmark_alaska_q{75,95}.json` e
+`docs/data/pooled_jpeg_alaska_dctr_q{75,95}.json`.
+
+Cosa mostra:
+
+1. **SRNet impara il formato 5 quando c'è abbastanza da imparare.** A 0,4
+   bit per coefficiente è quasi certa a qualità 75 (3,2%) e ben sopra il
+   caso a 95 (21,4%): la rete, il suo ingresso e il suo addestramento
+   funzionano.
+2. **Con una quota SRNet non trova nulla che DCTR non veda.** A qualità 95 è
+   al livello del caso su un'immagine (49,8%) e con cinquanta aggregate
+   (49,2%); a qualità 75 riproduce il debole segnale per immagine (45,7%) e
+   la sua crescita con l'aggregazione (16,3% con cinquanta).
+3. **Qui SRNet è più debole di DCTR**, non più forte come in letteratura: a
+   0,1 bit per coefficiente 37,4% contro 25,0% (qualità 75) e 45,4% contro
+   29,7% (95). Le reti pubblicate sono addestrate su decine di migliaia di
+   immagini, molte più di 4.500 coppie; una rete addestrata su più dati
+   potrebbe fare meglio. Le conclusioni si basano quindi sul rilevatore più
+   forte in ogni caso, DCTR, e SRNet aggiunge che una rete profonda
+   addestrata così non le ribalta.
+4. **La tendenza debole a qualità 95 è reale ma piccola.** Su queste 10.000
+   immagini DCTR la mostra come su BOSSbase (§5.5.8): 47,0% con dieci
+   immagini, 44,3% con cinquanta, un intervallo che arriva ancora al 50%.
+   SRNet non la vede.
 
 ## 5.6 Limiti noti
 
@@ -600,10 +699,11 @@ del caso per SPAM e SRM-lite (§5.5.6), e una quota nel formato 5 a qualità
 JPEG 90-95 è al livello del caso su un'immagine per DCTR e GFR, su BOSSbase e
 ALASKA2 (§5.5.8). I rilevatori usati sono SPAM, un sottoinsieme di 3.125
 caratteristiche dello spatial rich model, una piccola CNN addestrata su una
-CPU (solo per il formato 3), DCTR e GFR. L'SRM completo (34.671
+CPU (solo per il formato 3), DCTR, GFR e SRNet (solo per il formato 5,
+addestrata su 4.500 coppie, §5.5.9). L'SRM completo (34.671
 caratteristiche), maxSRM e gli altri modelli che conoscono il canale di
-selezione e reti profonde come SRNet sono più potenti e non sono stati
-eseguiti (SRNet sul formato 5 è in corso): "al livello del caso" qui
+selezione, SRNet sui pixel e reti profonde addestrate su molte più immagini
+sono più potenti e non sono stati eseguiti: "al livello del caso" qui
 significa al livello del caso per questi rilevatori. I controlli positivi
 (§5.5.6, §5.5.8) mostrano che gli stessi rilevatori vedono i formati 4 e 5
 con carichi maggiori, e i risultati negativi - il formato 3 e i JPEG a
