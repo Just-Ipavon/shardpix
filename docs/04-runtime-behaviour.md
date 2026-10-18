@@ -327,7 +327,7 @@ graph LR
 
     subgraph manual["Measured on real photographs"]
         M1["Benchmark<br/>10 public-domain photos"]
-        M2["Independent code review"]
+        M2["Security reviews (06)"]
     end
 
     offline --> CI["CI: Python 3.10–3.13<br/>ruff + pytest"]
