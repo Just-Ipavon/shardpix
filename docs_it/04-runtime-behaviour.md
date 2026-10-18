@@ -151,11 +151,11 @@ usati solo dai benchmark, scrivono un bit per campione senza costi né codici.
 
 ## 4.5 Estrazione di un carico
 
-L'estrazione rispecchia l'inserimento. Prova prima il formato 4 e, se non
-trova nulla, il formato 3; un byte di costo appartenente all'altro formato, o
-un costo fuori intervallo, termina un tentativo prima di qualsiasi derivazione
-della chiave, quindi la lettura di un'immagine in formato 3 non costa quasi mai
-un secondo scrypt. Nel formato 4 ogni lettura descritta sotto è una sindrome
+L'estrazione rispecchia l'inserimento. Prova il formato 6, poi il 4, poi il 3
+(il 7, poi il 5, su un JPEG). Il formato 6 non ha byte di costo, quindi costa
+sempre uno scrypt; nei formati precedenti un byte di costo appartenente a un
+altro formato, o un costo fuori intervallo, termina un tentativo prima di
+qualsiasi derivazione della chiave. Nei formati 4 e 6 ogni lettura descritta sotto è una sindrome
 su `w0` o `w` candidati per bit anziché un singolo LSB; il diagramma mostra il
 formato 3. In entrambi i casi il percorso viene letto due volte. L'estrattore
 ha prima bisogno di 32 posizioni per leggere la lunghezza, e solo allora sa

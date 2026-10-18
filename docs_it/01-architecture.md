@@ -300,16 +300,17 @@ Tre formati hanno versioni indipendenti; ciascuno porta il proprio magic e la
 propria versione, in modo che una modifica futura possa essere rilevata invece
 che interpretata in modo errato.
 
-### 1.5.1 Carico all'interno di un'immagine (formati stego v4 e v3)
+### 1.5.1 Carico all'interno di un'immagine (formati stego da 3 a 7)
 
-Entrambi i formati contengono gli stessi campi; differiscono nel modo in cui i
-bit raggiungono i campioni. shardpix scrive il formato 4 per impostazione
-predefinita e legge entrambi.
+Tutti i formati contengono gli stessi campi, salvo che i formati 6 e 7 non
+hanno il byte di costo; differiscono nel modo in cui i bit raggiungono i
+campioni. shardpix scrive il formato 6 (pixel) o 7 (JPEG) e legge tutti e
+cinque.
 
 | Campo | Dimensione | Contenuto |
 | --- | --- | --- |
 | salt | 16 B | Casuale per ogni inserimento |
-| cost | 1 B | log2 del parametro N di scrypt (oggi 17; in lettura si accettano valori 10–18); bit 7 impostato nel formato 4 |
+| cost | 1 B | Solo formati da 3 a 5: log2 del parametro N di scrypt (17; in lettura si accettano valori 10–18); bit 7 impostato nei formati 4 e 5. I formati 6 e 7 fissano N = 2^17 tramite la loro versione |
 | length | 4 B | Dimensione di nonce + body, mascherata in XOR con una maschera derivata dalla chiave |
 | nonce | 12 B | Nonce AES-256-GCM |
 | body | n + 16 B | Testo cifrato e tag AES-256-GCM; AAD = dominio, versione del formato, lunghezza |
@@ -337,6 +338,15 @@ e un coefficiente a ±1 si allontana sempre da zero, così l'insieme idoneo
 non cambia mai. Le chiavi derivano dal dominio `shardpix/jpeg/v1`. L'output
 è un JPEG con le tabelle di quantizzazione e i metadati dell'immagine di
 copertura.
+
+**Formati 6 e 7 (06 §6.13, SR-07).** I formati 4 e 5 senza il byte di
+costo: il blocco pubblico è il solo sale a 128 bit, letto dai primi
+128 × w₀ campioni del percorso pubblico (w₀ = min(64, idonei / 1280)). Il
+byte di costo era un'impronta leggibile senza chiave, perché chiunque può
+decodificare il blocco pubblico e vi trovava lo stesso valore in ogni
+immagine. Domini `shardpix/stego/v6` e `shardpix/jpeg/v2`. L'estrattore
+prova 6, 4, 3 sui pixel e 7, 5 sul JPEG. Un output JPEG mantiene la
+disposizione dei marker dell'immagine di copertura (06 §6.13, SR-09).
 
 **Formato 3 (matching, replacement).** Un bit per campione, sale e costo sul
 percorso pubblico, il resto sul percorso con chiave; dominio

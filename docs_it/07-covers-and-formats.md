@@ -93,8 +93,8 @@ termine di confronto per i benchmark.
 
 | File in ingresso | Che cosa fa shardpix | File in uscita | Giudizio |
 | --- | --- | --- | --- |
-| JPEG da smartphone o fotocamera | Inserisce i dati nei coefficienti (formato 5) | JPEG | **Buona immagine di copertura**, così com'è |
-| Foto PNG, TIFF o BMP a 8 bit | Inserisce i dati nei pixel (formato 4) | PNG | **Buona immagine di copertura** |
+| JPEG da smartphone o fotocamera | Inserisce i dati nei coefficienti (formato 7) | JPEG | **Buona immagine di copertura**, così com'è |
+| Foto PNG, TIFF o BMP a 8 bit | Inserisce i dati nei pixel (formato 6) | PNG | **Buona immagine di copertura** |
 | RAW / DNG (iPhone ProRAW, RAW di Android) | Non viene letta direttamente: esportala in PNG o TIFF a 8 bit | PNG | **Buona immagine di copertura**, dopo l'esportazione |
 | HEIC ("Alta efficienza" dell'iPhone) | Non leggibile (Pillow non supporta HEIF) | — | Imposta la fotocamera su JPEG; convertire un HEIC in JPEG comprime la foto due volte |
 | PNG o TIFF a 16 bit | Rifiutata | — | Esportala a 8 bit |
@@ -143,13 +143,15 @@ file in uscita deve avere l'estensione corrispondente (`.jpg` o `.png`).
   qualità di ogni JPEG dalla sua tabella di quantizzazione e avvisano sotto
   90; `capacity` mostra la stima.
 - **Rilevatori.** Il formato 5 è stato misurato contro DCTR e GFR, su
-  BOSSbase e ALASKA2; reti profonde come SRNet sono in corso di misura.
+  BOSSbase e ALASKA2, e contro la rete profonda SRNet su 10.000 foto di
+  ALASKA2: una quota è al livello del caso per SRNet a qualità 95, anche su
+  cinquanta immagini (05 §5.5.9).
 
 ## 7.7 Riepilogo: quale immagine di copertura dovrei usare?
 
 | Se hai | Cosa fare |
 | --- | --- |
 | Uno smartphone | Usa le sue foto JPEG così come sono: con texture, a piena risoluzione, mai condivise |
-| Esportazioni da RAW o foto PNG | Usale: danno file in uscita PNG (formato 4) |
+| Esportazioni da RAW o foto PNG | Usale: danno file in uscita PNG (formato 6) |
 | Foto HEIC | Imposta la fotocamera su JPEG per le foto che userai |
 | Immagini prese dal web | Non usarle: basta una ricerca inversa per immagini per trovare l'originale |

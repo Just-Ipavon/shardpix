@@ -120,7 +120,7 @@ modo indipendente.
 | A4 | Un output esiste già | Errore, salvo con `--force`. |
 | A5 | Un'immagine di copertura è troppo piccola o troppo satura per una quota | Errore che indica l'immagine di copertura; non viene scritto nulla. |
 | A6 | Un'immagine di copertura è un JPEG (una foto del telefono) | La sua quota va nei suoi coefficienti (formato 5) e l'output è un `.jpg` con le stesse tabelle e gli stessi metadati. |
-| A7 | Nessuna opzione di passphrase fornita | La sigillatura procede; un avviso segnala che chiunque abbia shardpix può leggere ogni quota, anche se ne servono comunque k. |
+| A7 | Nessuna opzione di passphrase fornita | Errore: è richiesta una passphrase. Con `--insecure-no-passphrase` la sigillatura procede e un avviso segnala che chiunque abbia shardpix può leggere ogni quota, anche se ne servono comunque k. |
 | A8 | Il file è più grande di 2 GiB | Errore: AES-GCM, così come esposto da `cryptography`, è limitato a 2 GiB per chiamata. |
 
 ---
