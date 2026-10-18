@@ -243,9 +243,13 @@ shardpix with this work.) The measurements:
   is at chance (49-50%), where the non-adaptive baseline is caught on one
   image (16-33% error) and certainly with ten; over fifty images of one
   vault DCTR shows at most a weak trend at quality 95 (43.6%, an interval
-  that still includes 50%). At quality 75, typical of photos recompressed
-  by chat apps, format 5 falls to 7% with fifty, the same trap as format 3
-  ([docs/05 §5.5.8](docs/05-security-analysis.md#558-jpeg-covers-format-5)).
+  that still includes 50%). The deep network SRNet, trained on 10,000
+  ALASKA2 photos, finds nothing more: at quality 95 it is at chance on one
+  image and on fifty (49.8% and 49.2%). At quality 75, typical of photos
+  recompressed by chat apps, format 5 falls to 7-16% with fifty, the same
+  trap as format 3
+  ([docs/05 §5.5.8](docs/05-security-analysis.md#558-jpeg-covers-format-5),
+  [§5.5.9](docs/05-security-analysis.md#559-a-deep-detector-srnet)).
   Use original camera files.
 - **Everything is reproducible.** The detectors, the datasets, the positive
   controls and the confidence intervals are in the repository; every number
@@ -357,7 +361,7 @@ shardpix/
 ├── vault.py            seal and unseal: AES-256-GCM + Shamir + steganography
 ├── media.py            JPEG or pixels: picks the format from the file
 ├── jpeg.py             formats 7 and 5: embedding in JPEG coefficients
-├── stego.py            key derivation, keyed walk, formats v4 (adaptive) and v3, framing
+├── stego.py            key derivation, keyed walk, formats 6 and 4 (adaptive) and 3, framing
 ├── stc.py              syndrome-trellis codes (Viterbi)
 ├── costs.py            HiLL and UERD embedding costs
 ├── shamir.py           secret sharing, share format, MACs, robust recovery
@@ -375,6 +379,9 @@ shardpix/
     ├── jpeg_benchmark.py the same for JPEG covers (format 5)
     └── pooled.py       an adversary holding several images of one vault
 ```
+
+`scripts/srnet_colab.py` trains and tests SRNet on a Colab GPU
+(docs/05 §5.5.9); it is not part of the package.
 
 ## Documentation
 

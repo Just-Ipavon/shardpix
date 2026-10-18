@@ -254,10 +254,13 @@ confronta shardpix con questi lavori.) Le misure:
   scoperto già su un'immagine (errore del 16-33%) e con certezza con dieci;
   su cinquanta immagini della stessa cassaforte DCTR mostra al più una
   tendenza debole a qualità 95 (43,6%, un intervallo che include ancora il
-  50%). A qualità 75, tipica delle foto ricompresse dalle app di
-  messaggistica, il formato 5 scende al 7% con cinquanta, la stessa
-  trappola del formato 3
-  ([docs_it/05 §5.5.8](docs_it/05-security-analysis.md#558-immagini-di-copertura-jpeg-formato-5)).
+  50%). La rete neurale SRNet, addestrata su 10.000 foto di ALASKA2, non
+  trova di più: a qualità 95 è al livello del caso su un'immagine e su
+  cinquanta (49,8% e 49,2%). A qualità 75, tipica delle foto ricompresse
+  dalle app di messaggistica, il formato 5 scende al 7-16% con cinquanta,
+  la stessa trappola del formato 3
+  ([docs_it/05 §5.5.8](docs_it/05-security-analysis.md#558-immagini-di-copertura-jpeg-formato-5),
+  [§5.5.9](docs_it/05-security-analysis.md#559-un-rilevatore-profondo-srnet)).
   Usa i file originali della fotocamera.
 - **Tutto è riproducibile.** Rilevatori, dataset, controlli positivi e
   intervalli di confidenza sono nel repository; ogni numero di questo README
@@ -379,7 +382,7 @@ shardpix/
 ├── vault.py            seal e unseal: AES-256-GCM + Shamir + steganografia
 ├── media.py            JPEG o pixel: sceglie il formato dal file
 ├── jpeg.py             formati 7 e 5: inserimento nei coefficienti JPEG
-├── stego.py            derivazione delle chiavi, percorso, formati v4 (adattivo) e v3, framing
+├── stego.py            derivazione delle chiavi, percorso, formati 6 e 4 (adattivi) e 3, framing
 ├── stc.py              codici a traliccio di sindrome (Viterbi)
 ├── costs.py            costi HiLL e UERD delle modifiche
 ├── shamir.py           condivisione del segreto, formato delle quote, MAC, recupero robusto
@@ -397,6 +400,9 @@ shardpix/
     ├── jpeg_benchmark.py lo stesso per le immagini JPEG (formato 5)
     └── pooled.py       un avversario con più immagini della stessa cassaforte
 ```
+
+`scripts/srnet_colab.py` addestra e verifica SRNet su una GPU di Colab
+(docs_it/05 §5.5.9); non fa parte del pacchetto.
 
 ## Documentazione
 

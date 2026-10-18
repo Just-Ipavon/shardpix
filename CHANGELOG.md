@@ -51,6 +51,16 @@ formats 6 and 7; older images still open.
 
 ### Documentation
 
+- docs/05 §5.5.9 (EN and IT): **SRNet**, trained on a GPU on 10,000 ALASKA2
+  photographs at quality 75 and 95 (curriculum 0.4, 0.2, 0.1, one share),
+  with DCTR measured again on the same images. One share at quality 95 is
+  at chance for SRNet on one image (49.8%) and on fifty pooled (49.2%); at
+  quality 75 it is weakly detectable (45.7%) and more so pooled (16.3% with
+  fifty). SRNet trained on 4,500 pairs is weaker than DCTR at 0.1 bits per
+  coefficient, so DCTR remains the reference. The script is
+  `scripts/srnet_colab.py`.
+- docs_it: the changes of the second security review (formats 6 and 7,
+  §6.13) are now in the Italian documentation too.
 - docs/06 §6.13: the second review, its findings and what was accepted
   (secrets not wiped, PNG re-encoding, asymmetries of the embedding) and
   why. docs/05 §5.5 and the README say the measurements were made on

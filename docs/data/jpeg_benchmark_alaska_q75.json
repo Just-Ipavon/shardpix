@@ -1,0 +1,54 @@
+{
+  "dataset": "ALASKA2 (alaska.utt.fr), 512x512 colour JPEG (luminance)",
+  "features_version": 2,
+  "quality": 75,
+  "images": 10000,
+  "seed": 0,
+  "detector": "ensemble classifier on DCTR (8,000 features)",
+  "strategies": {
+    "jpeg": "format 5: syndrome-trellis codes with UERD costs on non-zero AC coefficients",
+    "naive": "one bit per coefficient at random non-zero AC positions, +-1 away from zero"
+  },
+  "rows": [
+    {
+      "detector": "dctr",
+      "strategy": "naive",
+      "payload": "share",
+      "p_e": 0.03260000000000002,
+      "p_e_low": 0.029119289423350472,
+      "p_e_high": 0.03608071057664956,
+      "auc": 0.99611592,
+      "test_pairs": 5000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "naive",
+      "payload": "0.1",
+      "p_e": 0.0003,
+      "p_e_low": 0.0,
+      "p_e_high": 0.0006394310321700123,
+      "auc": 0.99999882,
+      "test_pairs": 5000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "jpeg",
+      "payload": "share",
+      "p_e": 0.43620000000000003,
+      "p_e_low": 0.42648010803714365,
+      "p_e_high": 0.4459198919628564,
+      "auc": 0.5977378,
+      "test_pairs": 5000
+    },
+    {
+      "detector": "dctr",
+      "strategy": "jpeg",
+      "payload": "0.1",
+      "p_e": 0.2502,
+      "p_e_low": 0.24171068903658252,
+      "p_e_high": 0.25868931096341746,
+      "auc": 0.82953124,
+      "test_pairs": 5000
+    }
+  ]
+}
