@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-05 — Security analysis |
-| System | shardpix 2.0.0 |
+| System | shardpix 3.0.0 |
 | Status | Approved |
-| Last revised | 2026-10-07 |
+| Last revised | 2026-10-18 |
 
 ## 5.1 Purpose and scope
 
@@ -15,8 +15,8 @@ that back the claims about detectability.
 
 shardpix is a portfolio and learning project. Its cryptography comes from
 audited libraries (ADR-02), its own code is tested against independent
-references, and it has been through the internal review documented in
-[06-security-review.md](06-security-review.md), but **the system as a whole
+references, and it has been through the two reviews documented in
+[06-security-review.md](06-security-review.md), neither of them independent, but **the system as a whole
 has not been audited by an independent third party**. For secrets whose loss would really hurt, prefer established tools
 — for example [age](https://age-encryption.org) for file encryption and
 [SLIP-0039](https://github.com/satoshilabs/slips/blob/master/slip-0039.md)
@@ -61,19 +61,24 @@ way to understand how such tools are built.
 | SP-02 | The file and its metadata are authentic | ADV-4 | GCM tag over the ciphertext; the header (group id, k, n, nonce) is the associated data; the file name is inside the ciphertext. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
 | SP-03 | k − 1 shares reveal nothing about the key | ADV-1 | Each byte of key ‖ MAC key has its own random polynomial of degree k − 1, so any k − 1 values are uniform whatever the key. The MACs depend only on the MAC key, which is shared the same way, so they add nothing — even for a low-entropy secret (ADR-08). Only the secret's length leaks. | `TestSecrecy` (exhaustive over all coefficients), `test_mac_is_not_keyed_with_the_secret` |
 | SP-04 | Damaged or altered shares are detected and identified | ADV-4 | The checksum catches accidental damage without a key; once k good shares reconstruct the MAC key, every other share is checked and reported. | `TestAuthentication`, `TestRobustSearch` |
-| SP-05 | An image reveals neither its payload nor which samples hold it | ADV-2, ADV-3 | Payload sealed with AES-256-GCM; positions from a ChaCha20 walk keyed by scrypt(passphrase, per-image salt); length masked. Without the passphrase the written bits are indistinguishable from random. | `TestAuthentication`, `TestKeyDerivation` |
+| SP-05 | An image reveals neither its payload nor which samples hold it | ADV-2, ADV-3 | Payload sealed with AES-256-GCM; positions from a ChaCha20 walk keyed by scrypt(passphrase, per-image salt); length masked. Without the passphrase the written bits are indistinguishable from random (formats 6 and 7; in formats 3-5 the public cost byte is a constant, 06 SR-07). | `TestAuthentication`, `TestKeyDerivation` |
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. | `TestForgedSets` |
 | SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
-| SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 4 | ADV-3, ADV-5 | Adaptive ±1 embedding with syndrome-trellis codes and HiLL costs (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,264 bits. At chance on BOSSbase 512x512 (§5.5.6), also when up to fifty images of one vault are pooled (§5.5.7); format 3 was weakly detectable, and strongly so once pooled (§5.5.5, §5.5.7). | Benchmarks (§5.5.1–5.5.7) |
+| SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 6 | ADV-3, ADV-5 | Adaptive ±1 embedding with syndrome-trellis codes [31] and HiLL costs [30] (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,256 bits (1,264 in formats 3-5). Measured on format 4, which differs only by the public cost byte (format-4 images themselves are recognisable without a key, 06 SR-07): at chance on BOSSbase 512x512 (§5.5.6), also when up to fifty images of one vault are pooled (§5.5.7); format 3 was weakly detectable, and strongly so once pooled (§5.5.5, §5.5.7). | Benchmarks (§5.5.1–5.5.7) |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters and replaces reserved names. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | No input is ever overwritten | User error | Case-folded path identity checks in the CLI and in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
+| SP-12 | Trained steganalysis (DCTR, GFR, SRNet) does not detect one vault share in a JPEG cover of quality 90-95 in format 7 | ADV-3, ADV-5 | The same embedding in the DCT coefficients with UERD costs [32] (ADR-13). Measured on format 5, which differs only by the public cost byte (format-5 images themselves are recognisable without a key, 06 SR-07): at chance on one image at quality 90-95 (§5.5.8, §5.5.9), and with up to fifty images pooled except for a weak DCTR trend at quality 95 over dozens of images; at quality 75 a weak per-image signal becomes detectable when pooled, and the CLI warns below quality 90. | Benchmarks (§5.5.8–5.5.9) |
 
 What shardpix deliberately does **not** claim: that a share is invisible to
 *every* trained detector — format 4 is at chance against SPAM and SRM-lite
 (§5.5.6), but stronger detectors were not run — that format 3 shares are
-invisible in small covers (they are not, §5.5.5), or that the vault file
-itself is inconspicuous — it is recognisable ciphertext.
+invisible in small covers (they are not, §5.5.5), that format 7 is invisible
+in heavily compressed JPEGs (at quality 75 it is detectable once pooled,
+about 7-16% detection error with fifty images, §5.5.8–5.5.9), that it is
+invisible to an adversary pooling dozens of images at quality 95 (DCTR shows
+a weak trend there, §5.5.9), or that the vault file itself is inconspicuous
+— it is recognisable ciphertext.
 
 ## 5.4 Cryptographic parameters
 
@@ -81,7 +86,7 @@ itself is inconspicuous — it is recognisable ciphertext.
 | --- | --- | --- | --- |
 | File encryption | AES-256-GCM | 256-bit random key, 96-bit random nonce, 35-byte AAD | `cryptography` |
 | Stego payload encryption | AES-256-GCM | 256-bit derived key, 96-bit random nonce, AAD = domain ‖ version ‖ length | `cryptography` |
-| Passphrase hardening | scrypt | N = 2^17, r = 8, p = 1, 128-bit salt per image; cost stored in the image, at most 2^18 accepted | `hashlib` |
+| Passphrase hardening | scrypt [9] | N = 2^17, r = 8, p = 1, 128-bit salt per image; N fixed by the format version (6, 7); formats 3-5 store it in the image, 2^10 to 2^18 accepted when reading | `hashlib` |
 | Key separation | HKDF-SHA256 | Labels `order`, `aead`, `length` | `cryptography` |
 | Sample positions | ChaCha20 keystream | 256-bit key, rejection-sampled modular reduction | `cryptography` |
 | Share authentication | HMAC-SHA256 | 256-bit shared MAC key, tag truncated to 128 bits | `hmac` |
@@ -105,8 +110,10 @@ adds trained detectors on a standard dataset of 10,000 photographs.
 
 **Formats measured.** Every measurement in this section was made on formats
 3, 4 and 5. Formats 6 and 7 (01 §1.5.1) embed exactly like 4 and 5 but write
-128 public bits instead of 136, so they change the same samples minus at
-most a handful; the detection errors below apply to them. What these
+128 public bits instead of 136. Their key domains differ, so the keyed
+positions differ, but they make the same number and kind of changes, chosen
+by the same costs, minus at most a handful; the detection errors below apply
+to them. What these
 detectors do not measure is a reader who decodes the public block without
 a key: in formats 3 to 5 that reader found the cost byte, the same in every
 image, and recognised a shardpix image whatever the detectors said (06
@@ -119,7 +126,7 @@ image, and recognised a shardpix image whatever the detectors said (06
   <img alt="RS estimate against true embedding rate: LSB replacement follows the diagonal, shardpix stays near zero at every rate" src="../assets/rs-estimate-light.png">
 </picture>
 
-Mean RS estimate over the ten photographs:
+Mean RS estimate (Fridrich, Goljan and Du [3]) over the ten photographs:
 
 | Strategy | 0% | 5% | 10% | 20% | 50% | 75% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -133,7 +140,7 @@ ADR-06:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/rs-clipped-dark.png">
-  <img alt="On the astronaut photo, naive LSB matching reaches a 30% RS estimate at 75% embedding while shardpix stays at 3%" src="../assets/rs-clipped-light.png">
+  <img alt="On the astronaut photo, naive LSB matching reaches a 29% RS estimate at 75% embedding while shardpix stays at 3%" src="../assets/rs-clipped-light.png">
 </picture>
 
 RS estimate per photograph with 50% of the samples carrying data:
@@ -161,7 +168,8 @@ average over.
 ### 5.5.2 The operating point: one vault share
 
 The figures above go up to 75% to show the shape of each curve. A vault puts
-158 bytes into each image:
+158 bytes into each image in formats 3 to 5 (157 in formats 6 and 7). The
+table was measured on format 4 (`benchmark.py` pins `version=4`):
 
 | Cover | Size | Share embedding rate | RS, clean | RS, with share | Change |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -188,7 +196,7 @@ sealed image from the photo it came from.
   <img alt="Chi-square probability over the share of the image scanned: sequential replacement stays at 1 until the payload ends, scattered replacement and shardpix drop to 0 within a few percent like the clean cover" src="../assets/chi-square-light.png">
 </picture>
 
-The chi-square attack is decisive against what naive tools do — write the
+The chi-square attack (Westfeld and Pfitzmann [2]) is decisive against what naive tools do — write the
 payload from the first pixel with LSB replacement — and reads the payload
 length off the curve (it ends a little after the true 50%, because the test
 statistic is cumulative). Scattered replacement at the same rate keeps it
@@ -218,11 +226,11 @@ examples. This section runs three such detectors against shardpix:
 
 | Detector | Features | Classifier |
 | --- | --- | --- |
-| SPAM | 686 Markov transition probabilities of pixel differences, designed against LSB matching (Pevný, Bas and Fridrich) | Ensemble of Fisher linear discriminants on random subspaces (Kodovský, Fridrich and Holub) |
-| SRM-lite | 3,125 co-occurrences of five rich-model residuals (Fridrich and Kodovský); the full SRM has 34,671 | The same ensemble |
-| CNN | Learnt, after a fixed bank of 14 SRM high-pass filters and a truncation unit | Five convolutional blocks of the Xu-Net / Yedroudj-Net family, trained with curriculum from high to low rates |
+| SPAM | 686 Markov transition probabilities of pixel differences, designed against LSB matching (Pevný, Bas and Fridrich [12]) | Ensemble of Fisher linear discriminants on random subspaces (Kodovský, Fridrich and Holub [13]) |
+| SRM-lite | 3,125 co-occurrences of five rich-model residuals (Fridrich and Kodovský [7]); the full SRM has 34,671 | The same ensemble |
+| CNN | Learnt, after a fixed bank of 14 SRM high-pass filters and a truncation unit | Five convolutional blocks of the Xu-Net [15] / Yedroudj-Net [16] family, trained with curriculum from high to low rates |
 
-**Data.** BOSSbase 1.01, the reference set for spatial-domain steganalysis:
+**Data.** BOSSbase 1.01 [14], the reference set for spatial-domain steganalysis:
 10,000 greyscale 512x512 photographs converted from RAW, never
 JPEG-compressed. Every cover is embedded with shardpix's own strategy
 (LSB matching on samples 2–253, keyed positions, random bits) at each rate.
@@ -296,17 +304,17 @@ What this shows:
    almost every alarm it raises would be false. The expectation stated
    before this measurement, that trained detectors would not see a share at
    all, was wrong for covers this small.
-3. **Smaller covers are worse.** At 256x256 the same 158 bytes are 1.93% of
+3. **Smaller covers are worse.** At 256x256 the same 158 bytes (format 3) are 1.93% of
    the samples and SRM-lite drops to 29.6%. The CNN reaches 31.6%: a
    network of this size, trained on a CPU, matches the rich model rather
    than beating it, so deep learning does not change the picture at this
    scale.
 4. **What matters is the payload against the square root of the cover.**
-   The *square-root law* of steganographic capacity (Ker et al.) says a fixed
+   The *square-root law* of steganographic capacity (Ker et al. [17]) says a fixed
    payload of M bits in a cover of N samples becomes harder to detect as
-   M/√N decreases, not merely as M/N does. The share is fixed at 1,264 bits,
-   so the cover size alone decides. At M/√N ≈ 0.5 SPAM is at chance within
-   its interval and SRM-lite is 1.5 points from it (48.5%, AUC 0.52). The two image sizes agree with the law only
+   M/√N decreases, not merely as M/N does. The share is fixed at 1,264 bits (1,256 in formats 6 and 7),
+   so the cover size alone decides. At M/√N ≈ 0.5 SPAM is at the edge of
+   chance (49.0%, interval up to 50.0%) and SRM-lite is 1.5 points from it (48.5%, AUC 0.52). The two image sizes agree with the law only
    roughly (at M/√N = 1.3, SRM-lite reads 45.6% at 512 and 42.9% at 256),
    because resizing changes the noise the detectors rely on.
 
@@ -314,8 +322,8 @@ What it means for a real cover: a share in a 512x512 greyscale image has
 M/√N ≈ 2.5; in a 1-megapixel colour photo (3 million samples) ≈ 0.7; in a
 2-megapixel colour photo ≈ 0.5, the lowest point measured; in a
 12-megapixel phone photo ≈ 0.2, more than twice below it. **Use colour photos of at least
-2 megapixels** — the advice was derived for format 3; format 4 is already
-at chance at 512x512 (§5.5.6), and more samples remain the safer choice. That threshold is an extrapolation along the square-root law
+2 megapixels** — the advice was derived for format 3; format 6 (measured as format 4) is
+already at chance at 512x512 (§5.5.6), and more samples remain the safer choice. That threshold is an extrapolation along the square-root law
 from greyscale 512x512 images, not a measurement on large photos, which
 BOSSbase does not contain.
 
@@ -334,12 +342,13 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0
 
 §5.5.5 found that format 3 is weakly visible to trained detectors in small
 covers. Format 4 (01 ADR-12) writes the same payload as a syndrome-trellis
-code whose changes follow HiLL costs: about a third as many changes (208
-against 633 per share in BOSSbase 512x512, 07 §7.3), all in texture. The
+code [31] whose changes follow HiLL costs [30]: about a third as many changes (208
+against 633 per share in BOSSbase 512x512, 01 ADR-12), all in texture. The
 same experiment, the same 10,000 BOSSbase images, the same split and the
 same detectors were run against it; the stego images are produced by
-`stego.embed` itself (`ml_benchmark --strategy adaptive`), so what is
-measured is exactly what the tool writes.
+`stego.embed` pinned to format 4 (`ml_benchmark --strategy adaptive`).
+Format 6, which the tool writes now, differs only by the public cost byte
+(§5.5, Formats measured).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/ml-format-comparison-512-dark.png">
@@ -520,7 +529,7 @@ What this shows:
 
 1. **At quality 95 format 5 is at chance on one image**, on both cover
    sources and for both detectors, where the non-adaptive baseline has a
-   detection error of 16-33%. This is the case of phone photographs used as
+   detection error of 16-39%. This is the case of phone photographs used as
    taken. Pooled, the larger BOSSbase set shows a slow, weak trend - 47.4%
    with ten images, 43.6% with fifty, an interval that still includes 50% -
    which the small ALASKA2 subset above cannot resolve; 10,000 ALASKA2
@@ -577,7 +586,7 @@ published detectors for adaptive JPEG steganography. It was trained on a GPU
   are learnt by curriculum, as in the SRNet paper: 30 epochs at 0.4 bits
   per non-zero AC coefficient, then 15 epochs each at 0.2, 0.1 and one
   share, each stage starting from the previous one; quality 95 starts from
-  the quality-75 network.
+  the quality-75 network and runs 15 epochs at every stage, 0.4 included.
 - **Stego images.** The same ones DCTR sees: format 5 with the seeds of
   `jpeg_benchmark`, and DCTR measured again on these 10,000 images.
 
@@ -646,17 +655,18 @@ What this shows:
 **Trained steganalysis: measured against a few detectors, not the state of
 the art.** A format-4 share on BOSSbase 512x512 is at chance for SPAM and
 SRM-lite (§5.5.6), and a format-5 share at JPEG quality 90-95 is at chance on
-one image for DCTR and GFR, on BOSSbase and ALASKA2 (§5.5.8). The detectors
-used are SPAM, a 3,125-feature subset of the spatial rich model, a small CNN
-trained on a CPU (format 3 only), DCTR, GFR and SRNet (format 5 only, trained
-on 4,500 pairs, §5.5.9). The full SRM (34,671 features), maxSRM and other
+one image for DCTR (BOSSbase, ALASKA2), GFR (the ALASKA2 subset, §5.5.8)
+and SRNet (quality 95, §5.5.9). Formats 6 and 7 were measured as formats 4
+and 5 (§5.5). The detectors used are SPAM, a 3,125-feature subset of the
+spatial rich model, a small CNN trained on a CPU (format 3 only), DCTR, GFR
+and SRNet (all on format 5; SRNet trained on 4,500 pairs, §5.5.9). The full SRM (34,671 features), maxSRM and other
 selection-channel-aware models, SRNet on pixels and deep networks trained on
 far more images are stronger and were not run: "at chance" here means at
 chance for these detectors. The
 positive controls (§5.5.6, §5.5.8) show that the same detectors do see
 formats 4 and 5 at larger payloads, and the negative results - format 3 and
 quality-75 JPEG falling once pooled, and a weak trend at quality 95 over
-fifty BOSSbase images - would only become clearer with stronger detectors.
+fifty BOSSbase and ALASKA2 images (§5.5.9) - would only become clearer with stronger detectors.
 The pixel measurements use one image source (BOSSbase); the JPEG ones two
 (BOSSbase and ALASKA2), which agree. In the field, cover-source mismatch
 works against the detector.
@@ -678,18 +688,28 @@ images, which destroys the payload. Images must travel as files.
 
 **Metadata.** Output JPEGs keep their EXIF and ICC metadata; output PNGs
 keep the ICC profile but not EXIF data. The JPEG file is rewritten by
-libjpeg, so its Huffman tables or marker order can differ from what a given
-phone writes (07 §7.6).
+libjpeg; since 06 SR-09 its marker layout, metadata and kind of Huffman
+tables (standard or optimised) follow the cover. Only progressive files and
+files with restart markers come out different, and `embed` and `seal` warn
+about them (07 §7.6).
+
+**PNG re-encoding.** PNG outputs are written by Pillow: ancillary chunks
+(`tEXt`, `pHYs`, `gAMA`, `tIME`) are dropped, a palette cover becomes 24-bit
+RGB, and TIFF and BMP covers become PNG (06 SR-14). Use photographs, not
+palette graphics, as PNG covers.
 
 **The vault file is not hidden.** Its magic, group id, threshold and number
 of shares are in clear (authenticated, not encrypted). Anyone who finds it
 knows it is a shardpix vault and how many images open it — but not its file
-name, contents or which images belong to it.
+name, contents or which images belong to it. The ciphertext is not padded,
+so the vault file's size reveals the length of the plaintext plus its name.
 
 **One passphrase per vault.** All images of a vault use the same passphrase,
 so every holder who must be able to take part in a recovery knows it. The
 passphrase protects the images against outsiders (ADV-2); confidentiality
 among holders rests on the threshold (SP-03), not on the passphrase.
+Passphrase strength is not checked: a guessable passphrase leaves only the
+scrypt cost (SP-07) between ADV-2 and the shares.
 
 **Python is not constant-time.** GF(256) table lookups and other operations
 on secret data have data-dependent timing, and Python cannot reliably wipe
@@ -704,10 +724,11 @@ error. They cannot turn it into a wrong answer.
 direction when they carry a mismatching bit. They are far rarer than clipped
 samples and did not register in the benchmark.
 
-**Format v3.** The stego format changed twice (ADR-04, ADR-05, and the scrypt
-cost raised in 1.1, see 06); images produced by 0.x or 1.0 cannot be read by
-1.1. Because the cost is now stored in each image, future increases will not
-break compatibility.
+**Stego format versions.** Formats 3 to 7 are read; 6 (PNG) and 7 (JPEG)
+are written. Images produced by 0.x or 1.0 cannot be read (ADR-04, ADR-05,
+06 SR-01). From format 6 the scrypt cost is fixed by the version, so raising
+it means a new format version. Images in formats 3 to 5 keep the public cost
+byte, a keyless fingerprint (06 SR-07): re-seal them to obtain format 6 or 7.
 
 ## 5.7 Related work
 
@@ -741,7 +762,8 @@ spread the payload.
 
 **What shardpix adds.** A threshold scheme removes that choice and puts the
 steganographer in the worst case of batch steganography: every image must
-carry a whole share - a fixed payload of 1,264 bits, with no clean images
+carry a whole share - a fixed payload of 1,256 bits (1,264 in formats 3 to
+5), with no clean images
 allowed - and the adversary's batch is the set of shares of one vault,
 which the holders' relations make easy to gather. shardpix measures what
 this constraint costs and implements the defence against it. The cost: the
@@ -749,11 +771,13 @@ LSB-type embedding of the schemes above, weakly visible on one image, is
 broken once the shares are pooled (format 3, §5.5.7), and so is adaptive
 embedding in heavily recompressed JPEG (§5.5.8). The defence: split only the
 key (01 ADR-01), so the payload per image is the smallest possible whatever
-the file, and place it by adaptive embedding (formats 4 and 5), so that each
-image adds almost no evidence; pooled up to fifty images it stays at chance
-for the detectors used (§5.5.7, §5.5.8), and the CLI warns about the covers
-where it does not hold (recompressed JPEGs). All of it is measured on
-10,000 images with positive controls and confidence intervals. The
+the file, and place it by adaptive embedding (formats 6 and 7, measured as 4
+and 5), so that each image adds almost no evidence; pooled up to fifty
+images it stays at chance for the detectors used for PNG covers and JPEG
+quality 90 (§5.5.7, §5.5.8), while at quality 95 DCTR shows a weak trend
+over dozens of images (§5.5.8–5.5.9), and the CLI warns below quality 90.
+All of it is measured on 10,000 images per set, plus a 1,018-2,000-image
+ALASKA2 subset, with positive controls and confidence intervals. The
 pooled-steganalysis question is Ker's; the contribution is applying it to
 the shares of a secret-sharing scheme, showing the constraint's cost and
 building and measuring the countermeasure. As far as the work cited here
@@ -826,3 +850,11 @@ measured.
 29. R. Cogranne, Q. Giboulot and P. Bas, "ALASKA#2: challenging academic
     research on steganalysis with realistic images", *IEEE WIFS*, 2020
     (ALASKA2).
+30. B. Li, M. Wang, J. Huang and X. Li, "A new cost function for spatial
+    image steganography" (HiLL), *IEEE ICIP*, 2014.
+31. T. Filler, J. Judas and J. Fridrich, "Minimizing additive distortion in
+    steganography using syndrome-trellis codes", *IEEE Transactions on
+    Information Forensics and Security*, 2011.
+32. L. Guo, J. Ni, W. Su, C. Tang and Y.-Q. Shi, "Using statistical image
+    model for JPEG steganography: uniform embedding revisited" (UERD), *IEEE
+    Transactions on Information Forensics and Security*, 2015.
