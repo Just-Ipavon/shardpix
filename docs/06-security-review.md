@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Document | SDD-06 — Internal security review report |
-| System | shardpix 1.1.0 (review started on 1.0.0); second review on 2.0.0 (§6.13) |
+| System | shardpix 3.0.0 (first review on 1.0.0-1.1.0, second review on 2.0.0, §6.13) |
 | Status | Complete |
-| Last revised | 2026-10-14 |
+| Last revised | 2026-10-18 |
 
 ## 6.1 Purpose, scope and independence
 
@@ -18,7 +18,9 @@ start from it.
 development of the code it reviews. Its value lies in the method being
 explicit and reproducible — every tool, configuration and result below can
 be re-run from the repository — not in the independence of the reviewer.
-See §6.12 for what an independent review should focus on.
+The second review (§6.13) used reviewers and tools outside the development
+of the code, but no independent third party; it is not an independent audit
+either. See §6.12 for what an independent review should focus on.
 
 **In scope:** every module of the `shardpix` package, with emphasis on
 `stego.py`, `shamir.py`, `gf256.py` and `vault.py`; the on-disk formats; the
@@ -47,29 +49,32 @@ property or a stated parameter), **Low** (robustness or defence in depth),
 
 | | |
 | --- | --- |
-| Findings | 8: 0 High, 1 Medium, 2 Low, 5 Info |
-| Fixed | 5 (all Medium and Low, 2 Info) |
-| Accepted with rationale | 3 Info |
-| Static analysis | 0 issues (bandit, 112 semgrep rules); 0 known vulnerabilities in 9 dependencies |
-| Fuzzing | 16 properties, 48,000 generated cases per run in the fuzz profile; 1 crash found and fixed |
-| Mutation testing | 1,575 mutants; 90.9% detected, 95.6% of the non-equivalent ones; every survivor inspected (§6.8) |
-| Tests | 255 before the review, 310 after |
+| Findings | 17 (both reviews): 2 High, 6 Medium, 5 Low, 4 Info |
+| Fixed | 11 (SR-01 to SR-05, SR-07, SR-09 to SR-12, SR-16) |
+| Accepted with rationale | 6 (SR-06, SR-08, SR-13, SR-14, SR-15, SR-17) |
+| Static analysis (first review) | 0 issues (bandit, 112 semgrep rules); 0 known vulnerabilities in 9 dependencies |
+| Fuzzing (first review) | 16 properties, 48,000 generated cases per run in the fuzz profile; 1 crash found and fixed |
+| Mutation testing (first review) | 1,575 mutants; 90.9% detected, 95.6% of the non-equivalent ones; every survivor inspected (§6.8) |
+| Tests (first review) | 255 before the review, 310 after |
 
-No finding compromised the confidentiality or integrity of sealed files. The
-most significant result is SR-01: the passphrase hardening was below the
-current OWASP recommendation, and the image format had no room to raise it
-without breaking existing images. Both are fixed in 1.1.0.
+No finding compromised the confidentiality or integrity of sealed files.
+The most significant results are SR-07 and SR-09, both from the second
+review (§6.13): the public cost byte is a keyless fingerprint of every image
+made in formats 3 to 5, and JPEG outputs were structurally unlike their
+covers. Both defeat the hiding layer without any statistics; both are fixed
+in 3.0.0 (formats 6 and 7, and the JPEG structure kept where it can be).
 
-**Correction (2.0.0).** The statement above no longer holds. A second
-review (§6.13) found that SR-07, accepted as Info, was wrong: the cost byte
-is a keyless fingerprint of every image made in formats 3 to 5. It is
-reclassified High and fixed by formats 6 and 7.
+The first review's most significant result was SR-01: the passphrase
+hardening was below the current OWASP recommendation, and the image format
+had no room to raise it without breaking existing images. Both were fixed
+in 1.1.0. It had accepted SR-07 as Info; the second review found that
+assessment wrong and reclassified it High.
 
 ## 6.4 Findings
 
 | Id | Severity | Title | Found by | Status |
 | --- | --- | --- | --- | --- |
-| SR-01 | Medium | scrypt cost below the OWASP recommendation, and not stored in the image | Manual review | Fixed in 1.1.0 |
+| SR-01 | Medium | scrypt cost below the OWASP recommendation, and not stored in the image | Manual review | Fixed in 1.1.0 (superseded: formats 6/7 fix the cost by version, SR-07) |
 | SR-02 | Low | `chi2_sf` crashes on a subnormal statistic | Fuzzing | Fixed in 1.1.0 |
 | SR-03 | Low | Outputs created with check-then-write: a race window, and dangling symbolic links followed | Manual review | Fixed in 1.1.0 |
 | SR-04 | Info | Test gaps: public-mode key derivation, report fields and error details not pinned | Mutation testing | Fixed in 1.1.0 (31 tests added) |
@@ -168,7 +173,8 @@ output.
 
 ### SR-07 — Public salt positions (High, fixed in formats 6 and 7)
 
-The 136 positions holding the salt and the cost are derived from a public
+The 136 bits holding the salt and the cost (coded on 136 × w₀ samples in
+formats 4 and 5) sit at positions derived from a public
 key and the set of eligible samples, so anyone can locate and read them. They
 must be readable before any key exists.
 
@@ -200,7 +206,7 @@ CLI never passes one; the parameter is documented as a test hook. Accepted.
 
 ## 6.5 Earlier review (before 1.0.0)
 
-An independent code read before the 1.0.0 release reported issues that were
+A separate code read (not an audit) before the 1.0.0 release reported issues that were
 fixed before that release; they are listed here for completeness.
 
 | Severity | Issue | Fix |
@@ -341,9 +347,11 @@ Examples of mutants that survive because they are equivalent:
 
 ## 6.10 Accepted risks
 
-Beyond SR-06 to SR-08, the limitations listed in 05 §5.6 remain accepted:
-trained steganalysis measured against SPAM and SRM-lite only (format 4 at
-chance, 05 §5.5.6; format 3 weakly detectable in small covers, §5.5.5), JPEG covers, cover availability,
+Beyond SR-06, SR-08, SR-13 to SR-15 and SR-17, the limitations listed in
+05 §5.6 remain accepted: trained steganalysis measured against SPAM,
+SRM-lite and a CPU CNN in pixels and DCTR, GFR and SRNet in JPEG (05 §5.6;
+format 4 at chance, 05 §5.5.6; format 3 weakly detectable in small covers,
+§5.5.5), JPEG covers, cover availability,
 transport re-compression, visible vault metadata, one passphrase per vault,
 non-constant-time arithmetic and memory that cannot be wiped, and the search
 budget as a denial-of-service limit.
@@ -365,8 +373,8 @@ mutmut results      # then re-run each survivor against the full suite
 
 ## 6.12 Handover for an independent review
 
-An external reviewer would add most value by attacking what this review
-could only argue:
+An independent reviewer would add most value by attacking what these
+reviews could only argue:
 
 1. **SP-03, secrecy of k − 1 shares with the shared MAC key** (ADR-08). The
    argument is in 05 §5.3 and a test enumerates the k = 2 case exhaustively;
@@ -386,7 +394,8 @@ could only argue:
 
 ## 6.13 Second review (2.0.0)
 
-An external review of 2.0.0 examined the cryptography (Shamir, the vault,
+A second review of 2.0.0, which, like the first, is not an independent
+audit, examined the cryptography (Shamir, the vault,
 key derivation), the embedding and the files shardpix writes, and verified
 its main findings experimentally. It found Shamir and the vault sound and
 the hiding layer flawed. Its findings, and what was done:
@@ -471,7 +480,8 @@ be photographs, not palette graphics.
 In JPEG, a coefficient of ±1 can only move to ±2, never to 0, so the
 histogram loses ones and gains twos; in pixels, 2 and 253 have one allowed
 direction. The effect is part of what the trained detectors of 05 §5.5
-measure: DCTR, GFR and SRNet see the actual changes, including these.
+measure: SPAM and SRM-lite see the actual changes in pixels, including 2 and
+253, and DCTR, GFR and SRNet those in JPEG.
 Changing the rule would change the embedding and invalidate those
 measurements; it stays, and the measurements stand for it.
 
@@ -491,10 +501,12 @@ covers). All are listed in 05 §5.6.
 
 ### What the measurements in 05 §5.5 cover
 
-The steganalysis of 05 §5.5 (SPAM, SRM-lite, DCTR, GFR, SRNet) was run on
-formats 4 and 5. Formats 6 and 7 embed the same way with 8 fewer public
-bits, so their changes are those of formats 4 and 5 minus at most a handful;
-the measured detection errors apply to them. What the measurements never
+The steganalysis of 05 §5.5 (SPAM, SRM-lite, the CNN, DCTR, GFR, SRNet) was
+run on formats 3, 4 and 5 (SRNet on 5, the CNN on 3). Formats 6 and 7 embed
+the same way with 8 fewer public bits; their key domains differ, so the
+keyed positions differ, but they make the same number and kind of changes,
+chosen by the same costs, minus at most a handful. The measured detection
+errors of formats 4 and 5 apply to them. What the measurements never
 covered is a keyless reader of the public block (SR-07) and the file
 structure (SR-09, SR-14): those are the findings this review fixed or
 documented.
