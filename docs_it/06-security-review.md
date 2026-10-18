@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-06 — Rapporto della revisione di sicurezza interna |
-| Sistema | shardpix 1.1.0 (revisione iniziata sulla 1.0.0); seconda revisione sulla 2.0.0 (§6.13) |
+| Sistema | shardpix 3.0.0 (prima revisione sulla 1.0.0-1.1.0, seconda revisione sulla 2.0.0, §6.13) |
 | Stato | Completo |
-| Ultima revisione | 2026-10-14 |
+| Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/06-security-review.md](../docs/06-security-review.md); in caso di differenze fa fede l'inglese) |
 
 ## 6.1 Scopo, ambito e indipendenza
@@ -19,8 +19,10 @@ in modo che un futuro auditor indipendente possa partire da qui.
 allo sviluppo del codice che esamina. Il suo valore sta nel fatto che il metodo
 è esplicito e riproducibile — ogni strumento, configurazione e risultato
 riportati di seguito possono essere rieseguiti a partire dal repository — non
-nell'indipendenza del revisore. Si veda il §6.12 per ciò su cui dovrebbe
-concentrarsi una revisione indipendente.
+nell'indipendenza del revisore. La seconda revisione (§6.13) si è avvalsa di
+revisori e strumenti esterni allo sviluppo del codice, ma di nessuna terza
+parte indipendente; non è nemmeno essa un audit indipendente. Si veda il
+§6.12 per ciò su cui dovrebbe concentrarsi una revisione indipendente.
 
 **Nell'ambito:** ogni modulo del pacchetto `shardpix`, con particolare
 attenzione a `stego.py`, `shamir.py`, `gf256.py` e `vault.py`; i formati su
@@ -51,31 +53,36 @@ processo o documentazione).
 
 | | |
 | --- | --- |
-| Problemi rilevati | 8: 0 Alta, 1 Media, 2 Bassa, 5 Info |
-| Corretti | 5 (tutti quelli di gravità Media e Bassa, 2 Info) |
-| Accettati con motivazione | 3 Info |
-| Analisi statica | 0 problemi (bandit, 112 regole semgrep); 0 vulnerabilità note in 9 dipendenze |
-| Fuzzing | 16 proprietà, 48.000 casi generati per esecuzione nel profilo fuzz; 1 crash trovato e corretto |
-| Mutation testing | 1.575 mutanti; 90,9% rilevati, 95,6% di quelli non equivalenti; ogni sopravvissuto esaminato (§6.8) |
-| Test | 255 prima della revisione, 310 dopo |
+| Problemi rilevati | 17 (entrambe le revisioni): 2 Alta, 6 Media, 5 Bassa, 4 Info |
+| Corretti | 11 (da SR-01 a SR-05, SR-07, da SR-09 a SR-12, SR-16) |
+| Accettati con motivazione | 6 (SR-06, SR-08, SR-13, SR-14, SR-15, SR-17) |
+| Analisi statica (prima revisione) | 0 problemi (bandit, 112 regole semgrep); 0 vulnerabilità note in 9 dipendenze |
+| Fuzzing (prima revisione) | 16 proprietà, 48.000 casi generati per esecuzione nel profilo fuzz; 1 crash trovato e corretto |
+| Mutation testing (prima revisione) | 1.575 mutanti; 90,9% rilevati, 95,6% di quelli non equivalenti; ogni sopravvissuto esaminato (§6.8) |
+| Test (prima revisione) | 255 prima della revisione, 310 dopo |
 
 Nessun problema rilevato ha compromesso la riservatezza o l'integrità dei file
-sigillati. Il risultato più significativo è SR-01: il rafforzamento della
-passphrase era al di sotto dell'attuale raccomandazione OWASP, e il formato
-dell'immagine non aveva spazio per aumentarlo senza rendere illeggibili le
-immagini esistenti. Entrambi gli aspetti sono corretti nella 1.1.0.
+sigillati. I risultati più significativi sono SR-07 e SR-09, entrambi della
+seconda revisione (§6.13): il byte di costo pubblico è un'impronta leggibile
+senza chiave di ogni immagine creata nei formati da 3 a 5, e gli output JPEG
+erano strutturalmente diversi dalle loro immagini di copertura. Entrambi
+vanificano lo strato di occultamento senza alcuna statistica; entrambi sono
+corretti nella 3.0.0 (formati 6 e 7, e la struttura JPEG mantenuta dove è
+possibile).
 
-**Rettifica (2.0.0).** L'affermazione precedente non è più valida. Una
-seconda revisione (§6.13) ha rilevato che SR-07, accettato come Info, era
-errato: il byte di costo è un'impronta leggibile senza chiave di ogni immagine
-creata nei formati da 3 a 5. Viene riclassificato come Alta e corretto dai
-formati 6 e 7.
+Il risultato più significativo della prima revisione era SR-01: il
+rafforzamento della passphrase era al di sotto dell'attuale raccomandazione
+OWASP, e il formato dell'immagine non aveva spazio per aumentarlo senza
+rendere illeggibili le immagini esistenti. Entrambi gli aspetti sono stati
+corretti nella 1.1.0. Quella revisione aveva accettato SR-07 come Info; la
+seconda revisione ha giudicato errata quella valutazione e lo ha
+riclassificato come Alta.
 
 ## 6.4 Problemi rilevati
 
 | Id | Gravità | Titolo | Rilevato da | Stato |
 | --- | --- | --- | --- | --- |
-| SR-01 | Media | Costo di scrypt inferiore alla raccomandazione OWASP e non memorizzato nell'immagine | Revisione manuale | Corretto nella 1.1.0 |
+| SR-01 | Media | Costo di scrypt inferiore alla raccomandazione OWASP e non memorizzato nell'immagine | Revisione manuale | Corretto nella 1.1.0 (superato: i formati 6/7 fissano il costo tramite la versione, SR-07) |
 | SR-02 | Bassa | `chi2_sf` va in crash con una statistica subnormale | Fuzzing | Corretto nella 1.1.0 |
 | SR-03 | Bassa | Output creati con verifica-poi-scrittura: una finestra di race e link simbolici pendenti seguiti | Revisione manuale | Corretto nella 1.1.0 |
 | SR-04 | Info | Lacune nei test: derivazione della chiave in modalità pubblica, campi del rapporto e dettagli degli errori non vincolati | Mutation testing | Corretto nella 1.1.0 (31 test aggiunti) |
@@ -179,8 +186,9 @@ falliscono se l'aggiornamento di una dipendenza cambia un qualsiasi output.
 
 ### SR-07 — Posizioni pubbliche del sale (Alta, corretto nei formati 6 e 7)
 
-Le 136 posizioni che contengono il sale e il costo sono derivate da una chiave
-pubblica e dall'insieme dei campioni idonei, quindi chiunque può localizzarle e
+I 136 bit che contengono il sale e il costo (codificati su 136 × w₀ campioni
+nei formati 4 e 5) si trovano in posizioni derivate da una chiave pubblica e
+dall'insieme dei campioni idonei, quindi chiunque può localizzarle e
 leggerle. Devono essere leggibili prima che esista qualsiasi chiave.
 
 *Valutazione originale, errata:* "il sale è uniformemente casuale e il byte
@@ -215,7 +223,7 @@ documentato come hook per i test. Accettato.
 
 ## 6.5 Revisione precedente (prima della 1.0.0)
 
-Una lettura indipendente del codice prima del rilascio 1.0.0 ha segnalato
+Una lettura separata del codice (non un audit) prima del rilascio 1.0.0 ha segnalato
 problemi che sono stati corretti prima di quel rilascio; sono elencati qui per
 completezza.
 
@@ -360,9 +368,10 @@ Esempi di mutanti che sopravvivono perché equivalenti:
 
 ## 6.10 Rischi accettati
 
-Oltre a SR-06–SR-08, restano accettate le limitazioni elencate in 05 §5.6: la
-steganalisi addestrata misurata solo contro SPAM e SRM-lite (formato 4 al
-livello del caso, 05 §5.5.6; formato 3 debolmente rilevabile in immagini
+Oltre a SR-06, SR-08, da SR-13 a SR-15 e SR-17, restano accettate le
+limitazioni elencate in 05 §5.6: la steganalisi addestrata misurata contro
+SPAM, SRM-lite e una CNN su CPU nei pixel e DCTR, GFR e SRNet nei JPEG
+(05 §5.6; formato 4 al livello del caso, 05 §5.5.6; formato 3 debolmente rilevabile in immagini
 piccole, §5.5.5), le immagini di copertura JPEG, la
 disponibilità delle immagini di copertura, la ricompressione durante il
 trasporto, i metadati visibili del vault, una sola passphrase per vault,
@@ -386,8 +395,8 @@ mutmut results      # then re-run each survivor against the full suite
 
 ## 6.12 Consegna per una revisione indipendente
 
-Un revisore esterno darebbe il massimo contributo attaccando ciò che questa
-revisione ha potuto soltanto argomentare:
+Un revisore indipendente darebbe il massimo contributo attaccando ciò che
+queste revisioni hanno potuto soltanto argomentare:
 
 1. **SP-03, segretezza di k − 1 quote con la chiave MAC condivisa** (ADR-08).
    L'argomentazione è in 05 §5.3 e un test enumera esaustivamente il caso
@@ -410,9 +419,9 @@ revisione ha potuto soltanto argomentare:
 
 ## 6.13 Seconda revisione (2.0.0)
 
-Una revisione esterna della 2.0.0 ha esaminato la crittografia (Shamir, il
-vault, la derivazione delle chiavi), l'inserimento e i file che shardpix
-scrive, e ha verificato sperimentalmente i suoi risultati principali. Ha
+Una seconda revisione della 2.0.0, che, come la prima, non è un audit
+indipendente, ha esaminato la crittografia (Shamir, il vault, la
+derivazione delle chiavi), l'inserimento e i file che shardpix scrive, e ha verificato sperimentalmente i suoi risultati principali. Ha
 giudicato solidi Shamir e il vault e difettoso lo strato di occultamento. I
 suoi problemi rilevati, e che cosa si è fatto:
 
@@ -502,8 +511,8 @@ siano fotografie, non grafica a palette.
 Nel JPEG un coefficiente a ±1 può solo passare a ±2, mai a 0, quindi
 l'istogramma perde degli uno e guadagna dei due; nei pixel, 2 e 253 hanno una
 sola direzione consentita. L'effetto fa parte di ciò che misurano i rilevatori
-addestrati di 05 §5.5: DCTR, GFR e SRNet vedono le modifiche effettive,
-comprese queste. Cambiare la regola cambierebbe l'inserimento e
+addestrati di 05 §5.5: SPAM e SRM-lite vedono le modifiche effettive nei
+pixel, compresi 2 e 253, e DCTR, GFR e SRNet quelle nei JPEG. Cambiare la regola cambierebbe l'inserimento e
 invaliderebbe quelle misure; la regola resta, e le misure valgono per essa.
 
 ### SR-16 — Dimensione controllata prima della lettura (Bassa, corretto)
@@ -523,10 +532,12 @@ dice di non pubblicare mai le immagini di copertura). Sono tutti elencati in
 
 ### Che cosa coprono le misure di 05 §5.5
 
-La steganalisi di 05 §5.5 (SPAM, SRM-lite, DCTR, GFR, SRNet) è stata eseguita
-sui formati 4 e 5. I formati 6 e 7 inseriscono allo stesso modo con 8 bit
-pubblici in meno, quindi le loro modifiche sono quelle dei formati 4 e 5 meno
-al massimo una manciata; gli errori di rilevazione misurati valgono anche per
-loro. Ciò che le misure non hanno mai coperto è un lettore senza chiave del
+La steganalisi di 05 §5.5 (SPAM, SRM-lite, la CNN, DCTR, GFR, SRNet) è stata
+eseguita sui formati 3, 4 e 5 (SRNet sul 5, la CNN sul 3). I formati 6 e 7
+inseriscono allo stesso modo con 8 bit pubblici in meno; i loro domini delle
+chiavi sono diversi, quindi le posizioni con chiave sono diverse, ma
+effettuano lo stesso numero e lo stesso tipo di modifiche, scelte dagli
+stessi costi, meno al massimo una manciata. Gli errori di rilevazione
+misurati dei formati 4 e 5 valgono anche per loro. Ciò che le misure non hanno mai coperto è un lettore senza chiave del
 blocco pubblico (SR-07) e la struttura del file (SR-09, SR-14): sono i
 problemi che questa revisione ha corretto o documentato.

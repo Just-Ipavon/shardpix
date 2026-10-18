@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-01 — Vista architetturale |
-| Sistema | shardpix 2.0.0 |
+| Sistema | shardpix 3.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-07 |
+| Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/01-architecture.md](../docs/01-architecture.md); in caso di differenze fa fede l'inglese) |
 
 ## 1.1 Scopo
@@ -28,9 +28,9 @@ privilegi.
 graph LR
     O["Proprietario"] -->|"shardpix seal"| S["shardpix"]
     S -->|"file vault (.spx)"| ST["Qualsiasi archivio<br/>(cloud, USB, e-mail)"]
-    S -->|"un PNG per custode"| H1["Custode 1"]
-    S -->|"un PNG per custode"| H2["Custode 2"]
-    S -->|"un PNG per custode"| H3["Custode n"]
+    S -->|"un'immagine per custode<br/>(JPEG o PNG)"| H1["Custode 1"]
+    S -->|"un'immagine per custode<br/>(JPEG o PNG)"| H2["Custode 2"]
+    S -->|"un'immagine per custode<br/>(JPEG o PNG)"| H3["Custode n"]
     H1 -->|"immagine"| R["Chi esegue il recupero"]
     H2 -->|"immagine"| R
     ST -->|"file vault"| R
@@ -68,7 +68,7 @@ graph TD
         COSTS["costs.py<br/><i>costi di inserimento HiLL</i>"]
         SHAMIR["shamir.py<br/><i>condivisione di segreti autenticata</i>"]
         GF["gf256.py<br/><i>aritmetica su campo finito</i>"]
-        IMG["images.py<br/><i>supporti, I/O PNG</i>"]
+        IMG["images.py<br/><i>supporti, limite di dimensione, creazione dei file</i>"]
     end
 
     subgraph analysis["Livello di analisi"]
@@ -76,6 +76,8 @@ graph TD
         RS["analysis/rs.py"]
         BENCH["analysis/benchmark.py"]
         ML["analysis/ml_benchmark.py<br/><i>feature, ensemble, cnn</i>"]
+        JB["analysis/jpeg_benchmark.py"]
+        POOL["analysis/pooled.py"]
     end
 
     subgraph foundation["Livello di base"]
@@ -84,11 +86,14 @@ graph TD
 
     CLI --> VAULT
     CLI --> MEDIA
+    CLI --> JPEG
     VAULT --> MEDIA
     MEDIA --> STEGO
     MEDIA --> JPEG
+    MEDIA --> IMG
     JPEG --> STEGO
     JPEG --> COSTS
+    JPEG --> IMG
     CLI --> STEGO
     CLI --> SHAMIR
     CLI --> CHI
@@ -108,6 +113,9 @@ graph TD
     BENCH --> IMG
     ML --> STEGO
     ML --> BENCH
+    JB --> JPEG
+    JB --> ML
+    POOL --> BENCH
     STEGO --> ERR
     SHAMIR --> ERR
     VAULT --> ERR
@@ -128,8 +136,11 @@ quote.
 
 Il livello di analisi sta accanto alla pila anziché al suo interno. Gli
 attacchi non servono a inserire nulla; misurano il core dall'esterno, come
-farebbe un avversario, e il benchmark pilota il core (e legge la dimensione
-delle quote del vault) per produrre i suoi esperimenti.
+farebbe un avversario, e i benchmark pilotano il core (e leggono la
+dimensione delle quote del vault) per produrre i loro esperimenti.
+`progress.py` (callback che riportano la frazione completata) è usato dal
+core, dal vault e dalla CLI e non dipende da nulla; è omesso dal grafo per
+leggibilità.
 
 ### 1.3.1 Responsabilità per file
 
@@ -137,24 +148,27 @@ delle quote del vault) per produrre i suoi esperimenti.
 | --- | --- | --- |
 | [`shardpix/__init__.py`](../shardpix/__init__.py) | Espone `__version__` | — |
 | [`shardpix/__main__.py`](../shardpix/__main__.py) | Punto di ingresso per `python -m shardpix` | `cli` |
-| [`shardpix/cli.py`](../shardpix/cli.py) | Parsing degli argomenti, inserimento della passphrase, protezione dalla sovrascrittura, output sul terminale, codici di uscita | `vault`, `stego`, `shamir`, `images`, `analysis` |
-| [`shardpix/vault.py`](../shardpix/vault.py) | Cifra un file, ne divide la chiave, distribuisce le quote sulle immagini, ed esegue il procedimento inverso | `stego`, `shamir`, `images` |
-| [`shardpix/stego.py`](../shardpix/stego.py) | Derivazione delle chiavi, percorso con chiave, framing, inserimento adattivo (formato 4) e LSB matching/replacement (formato 3), estrazione di entrambi i formati | `images`, `stc`, `costs` |
-| [`shardpix/media.py`](../shardpix/media.py) | Apre un'immagine di copertura nel dominio usato dal suo file (coefficienti JPEG o pixel), nasconde e rivela tramite il formato corrispondente | `jpeg`, `stego`, `images` |
-| [`shardpix/jpeg.py`](../shardpix/jpeg.py) | Formato 5: carico nei coefficienti AC di luminanza non nulli, letti e scritti senza decodifica | `stego`, `costs` |
+| [`shardpix/cli.py`](../shardpix/cli.py) | Parsing degli argomenti, inserimento della passphrase, protezione dalla sovrascrittura, barra di avanzamento, output sul terminale, codici di uscita | `vault`, `media`, `jpeg`, `stego`, `shamir`, `images`, `progress`, `analysis` |
+| [`shardpix/vault.py`](../shardpix/vault.py) | Cifra un file, ne divide la chiave, distribuisce le quote sulle immagini, ed esegue il procedimento inverso | `media`, `stego`, `shamir`, `images`, `progress` |
+| [`shardpix/stego.py`](../shardpix/stego.py) | Derivazione delle chiavi, percorso con chiave, framing, inserimento adattivo (formato 6; formato 4 con `version=4`) e LSB matching/replacement (formato 3, riferimenti di base dei benchmark), estrazione dei formati 6, 4 e 3 | `images`, `stc`, `costs`, `progress` |
+| [`shardpix/media.py`](../shardpix/media.py) | Apre un'immagine di copertura nel dominio usato dal suo file (coefficienti JPEG o pixel), nasconde e rivela tramite il formato corrispondente | `jpeg`, `stego`, `images`, `progress` |
+| [`shardpix/jpeg.py`](../shardpix/jpeg.py) | Formato 7 (il formato 5 è ancora letto): carico nei coefficienti AC di luminanza non nulli, letti e scritti senza decodifica; output disposto come l'immagine di copertura | `stego`, `costs`, `images`, `progress` |
 | [`shardpix/stc.py`](../shardpix/stc.py) | Codici a traliccio di sindrome: inserimento a costo minimo con l'algoritmo di Viterbi, estrazione della sindrome | — |
-| [`shardpix/costs.py`](../shardpix/costs.py) | Costo HiLL di una modifica di ±1 su ogni campione; costo UERD di una modifica di ±1 su ogni coefficiente JPEG | — |
+| [`shardpix/costs.py`](../shardpix/costs.py) | Costo HiLL di una modifica di ±1 su ogni campione; costo UERD di una modifica di ±1 su ogni coefficiente JPEG | `progress` |
 | [`shardpix/shamir.py`](../shardpix/shamir.py) | Suddivisione di Shamir, formato delle quote, MAC, recupero robusto | `gf256` |
 | [`shardpix/gf256.py`](../shardpix/gf256.py) | Aritmetica in GF(2^8), valutazione di polinomi, interpolazione di Lagrange | — |
-| [`shardpix/images.py`](../shardpix/images.py) | Caricamento di qualsiasi immagine come supporto a 8 bit, scrittura di PNG senza perdita | — |
+| [`shardpix/images.py`](../shardpix/images.py) | Caricamento di qualsiasi immagine come supporto a 8 bit, limite di dimensione verificato dall'intestazione (`MAX_PIXELS`), creazione esclusiva dei file con permessi riservati al proprietario (`write_new`) | — |
+| [`shardpix/progress.py`](../shardpix/progress.py) | Tipo della callback di avanzamento e `span`, che mappa un passo su una parte dell'intervallo del chiamante | — |
 | [`shardpix/errors.py`](../shardpix/errors.py) | Gerarchia delle eccezioni con radice in `ShardpixError` | — |
 | [`shardpix/analysis/chi_square.py`](../shardpix/analysis/chi_square.py) | Attacco chi-quadro di Westfeld–Pfitzmann, funzione di sopravvivenza del chi-quadro | — |
 | [`shardpix/analysis/rs.py`](../shardpix/analysis/rs.py) | Analisi RS di Fridrich–Goljan–Du | — |
 | [`shardpix/analysis/benchmark.py`](../shardpix/analysis/benchmark.py) | Esperimenti di rilevabilità, grafici e tabelle per il 05 | `stego`, `vault`, `chi_square`, `rs` |
-| [`shardpix/analysis/features.py`](../shardpix/analysis/features.py) | Feature di steganalisi SPAM e SRM-lite | — |
+| [`shardpix/analysis/features.py`](../shardpix/analysis/features.py) | Feature SPAM e SRM-lite (pixel); feature DCTR e GFR (coefficienti JPEG) | — |
 | [`shardpix/analysis/ensemble.py`](../shardpix/analysis/ensemble.py) | Classificatore ensemble di Kodovský–Fridrich–Holub, metriche di rilevamento | — |
 | [`shardpix/analysis/cnn.py`](../shardpix/analysis/cnn.py) | Rete convoluzionale per la steganalisi (opzionale, PyTorch) | `features` |
 | [`shardpix/analysis/ml_benchmark.py`](../shardpix/analysis/ml_benchmark.py) | Esperimenti con rilevatori addestrati su BOSSbase, grafici e tabelle per il 05 §5.5.5–5.5.6 | `stego`, `vault`, `benchmark`, `features`, `ensemble`, `cnn` |
+| [`shardpix/analysis/pooled.py`](../shardpix/analysis/pooled.py) | Steganalisi aggregata su più immagini di uno stesso vault (05 §5.5.7) | `ensemble`, `benchmark` |
+| [`shardpix/analysis/jpeg_benchmark.py`](../shardpix/analysis/jpeg_benchmark.py) | Esperimenti con rilevatori addestrati sui JPEG di BOSSbase (formato 5 contro un riferimento di base non adattivo, DCTR e GFR), tabelle per il 05 §5.5.8 | `jpeg`, `stego`, `vault`, `ensemble`, `features`, `ml_benchmark` |
 
 ## 1.4 Modello dei dati
 
@@ -184,6 +198,7 @@ classDiagram
         +bytes aead
         +bytes length_mask
         +bool keyed
+        +bytes code
     }
 
     class SampleOrder {
@@ -202,6 +217,7 @@ classDiagram
         +int eligible_samples
         +int bits_written
         +int samples_changed
+        +bool structure_kept
         +embedding_rate float
         +change_rate float
     }
@@ -262,6 +278,8 @@ classDiagram
         +int share_index
         +EmbedReport report
         +bool from_jpeg
+        +str format
+        +int|None jpeg_quality
     }
 
     class UnsealResult {
@@ -321,15 +339,15 @@ altezza 10 (`stc.py`):
 
 | Parte | Candidati | Larghezza del codice | Matrice del codice |
 | --- | --- | --- | --- |
-| sale + costo (136 bit) | Primi 136 × w₀ campioni del percorso pubblico | w₀ = min(64, idonei / 1344) | Pubblica: SHAKE-256 di un'etichetta fissa |
+| sale + costo (136 bit) | Primi 136 × w₀ campioni del percorso pubblico | w₀ = max(1, min(64, idonei // 1344)) | Pubblica: SHAKE-256 di un'etichetta fissa |
 | lunghezza (32 bit) | Primi 32 × w₀ campioni del percorso con chiave | w₀ | SHAKE-256 di un seme derivato dalla chiave |
 | nonce + body (8·length bit) | I successivi w × 8·length campioni del percorso con chiave | w = min(128, liberi / bit, 2^20 / bit) | SHAKE-256 di un secondo seme derivato dalla chiave |
 
 I carichi oltre 8.192 bit sono codificati in tralicci consecutivi di quella
 dimensione. Le chiavi derivano dal dominio `shardpix/stego/v4`, quindi i
-formati 3 e 4 non condividono mai una chiave. L'estrattore prova prima il
-formato 4, poi il formato 3; un byte di costo che non corrisponde al formato
-in prova fa terminare quel tentativo.
+formati 3 e 4 non condividono mai una chiave. L'estrattore prova il
+formato 6, poi il 4, poi il 3; un byte di costo che non corrisponde al
+formato in prova fa terminare quel tentativo.
 
 **Formato 5 (JPEG, ADR-13).** Gli stessi tre codici del formato 4, applicati
 ai coefficienti di luminanza del JPEG anziché ai campioni dei pixel:
@@ -339,21 +357,25 @@ non cambia mai. Le chiavi derivano dal dominio `shardpix/jpeg/v1`. L'output
 è un JPEG con le tabelle di quantizzazione e i metadati dell'immagine di
 copertura.
 
-**Formati 6 e 7 (06 §6.13, SR-07).** I formati 4 e 5 senza il byte di
+**Formati 6 e 7 (06 §6.4, SR-07).** I formati 4 e 5 senza il byte di
 costo: il blocco pubblico è il solo sale a 128 bit, letto dai primi
-128 × w₀ campioni del percorso pubblico (w₀ = min(64, idonei / 1280)). Il
+128 × w₀ campioni del percorso pubblico. w₀ = max(1, min(64, idonei // 1344)),
+come nei formati 4 e 5: `header_width` conta sempre i 136 bit pubblici dei
+formati precedenti, quindi tutti i formati adattivi concordano su w₀ e le
+128 posizioni del formato 6 sono un prefisso delle 136 del formato 4. Il
 byte di costo era un'impronta leggibile senza chiave, perché chiunque può
 decodificare il blocco pubblico e vi trovava lo stesso valore in ogni
-immagine. Domini `shardpix/stego/v6` e `shardpix/jpeg/v2`. L'estrattore
-prova 6, 4, 3 sui pixel e 7, 5 sul JPEG. Un output JPEG mantiene la
-disposizione dei marker dell'immagine di copertura (06 §6.13, SR-09).
+immagine; il costo è ora fissato dalla versione (N = 2^17). Domini
+`shardpix/stego/v6` e `shardpix/jpeg/v2`. L'estrattore prova 6, 4, 3 sui
+pixel e 7, 5 sul JPEG. Un output JPEG mantiene i metadati e la disposizione
+dei marker dell'immagine di copertura (06 §6.13, SR-09).
 
 **Formato 3 (matching, replacement).** Un bit per campione, sale e costo sul
 percorso pubblico, il resto sul percorso con chiave; dominio
 `shardpix/stego/v3`. Mantenuto nella libreria come riferimento di base per i
 benchmark; la CLI non lo scrive più.
 
-In entrambi i formati i bit sono scritti a partire dal più significativo,
+In ogni formato i bit sono scritti a partire dal più significativo,
 vengono usati solo i campioni con valori 2–253 (ADR-06), e il percorso
 pubblico e quello con chiave non condividono mai un campione.
 
@@ -401,8 +423,9 @@ ogni quota è lunga quanto il segreto.
 a 256 bit, e viene divisa solo la chiave. Il testo cifrato va in un file vault
 separato.
 
-**Conseguenze.** Ogni immagine trasporta circa 160 byte qualunque sia la
-dimensione del file, il che mantiene il tasso di inserimento intorno allo
+**Conseguenze.** Ogni immagine trasporta una quota di 109 byte — 157 byte
+una volta incapsulata nei formati 6 e 7 (158 nei formati da 3 a 5) —
+qualunque sia la dimensione del file, il che mantiene il tasso di inserimento intorno allo
 0,05–0,5% (vedi 05 §5.5) invece di farlo crescere con il file. Il prezzo è un
 secondo artefatto da conservare: il file vault. Poiché è testo cifrato, non
 richiede altra protezione oltre alla disponibilità.
@@ -424,15 +447,16 @@ specifico del progetto è pura aritmetica su parametri pubblici, dove i rischi
 sono i bug piuttosto che la crittanalisi, e i bug sono ciò a cui serve la
 suite di test.
 
-### ADR-03 — LSB matching come predefinito
+### ADR-03 — LSB matching invece del replacement (formato 3)
 
 **Contesto.** LSB replacement scambia sempre e solo un valore con il suo
 partner di coppia (2k ↔ 2k+1). Questa asimmetria è esattamente ciò che
 misurano gli attacchi chi-quadro e RS.
 
 **Decisione.** L'inserimento modifica un campione non corrispondente di +1 o
-−1 a caso (LSB matching). Il replacement resta disponibile
-(`--method replacement`) affinché il benchmark possa mostrare la differenza.
+−1 a caso (LSB matching). Il replacement resta nella libreria
+(`Method.REPLACEMENT`), senza alcuna opzione della CLI, affinché il benchmark
+possa mostrare la differenza.
 
 **Conseguenze.** Entrambi gli attacchi classici perdono il loro segnale
 (05 §5.5). La distorsione per campione modificato è la stessa (±1). I
@@ -471,12 +495,13 @@ primo, in posizioni date da un percorso pubblico; il percorso con chiave
 esclude quelle posizioni.
 
 **Conseguenze.** Due immagini sigillate con la stessa passphrase non hanno
-alcuna relazione. Le posizioni del sale sono note a tutti, ma il sale è
-casuale e indistinguibile dai bit meno significativi propri dell'immagine di
-copertura, quindi sapere dove si trova non rivela nulla. Costo: 136 campioni
-aggiuntivi, modificati o meno, per immagine (il sale e il costo di scrypt, che
-viene memorizzato così da poterlo aumentare in futuro senza rendere illeggibili
-le immagini precedenti).
+alcuna relazione. Le posizioni del sale sono note a tutti, ma nei formati 6
+e 7 contengono solo il sale, che è casuale e indistinguibile dai bit meno
+significativi propri dell'immagine di copertura. Costo: 128 bit pubblici per
+immagine nei formati 6 e 7. I formati da 3 a 5 vi scrivevano anche il costo
+di scrypt (136 bit); quel byte si decodificava senza chiave nello stesso
+valore in ogni immagine, un'impronta (06 §6.4, SR-07), quindi il costo è ora
+fissato dalla versione del formato e aumentarlo richiede una nuova versione.
 
 ### ADR-06 — Saltare i campioni quasi saturi
 
@@ -551,9 +576,15 @@ provengono da un JPEG decodificato portano anche la struttura a blocchi 8×8
 dell'originale; le modifiche di ±1 la rompono in un modo che la steganalisi
 di compatibilità JPEG può rilevare.
 
-**Decisione.** `save_png` rifiuta qualsiasi altra estensione. Le immagini di
-copertura decodificate da JPEG sono accettate ma provocano un avviso che
-raccomanda immagini di copertura mai compresse in JPEG.
+**Decisione.** Un'immagine di copertura in pixel viene sempre scritta come
+PNG (`media.encode_png`). L'estensione dell'output deve corrispondere al tipo
+di immagine di copertura: la CLI accetta solo `OUTPUT_SUFFIXES` (`.png` per
+un'immagine di copertura in pixel, `.jpg`/`.jpeg` per una JPEG) e il vault
+nomina ogni immagine con `media.kind_suffix`. `images.save_png`, che rifiuta
+qualsiasi estensione diversa da `.png`, resta nella libreria ma non è più
+usata dalla CLI né dal vault. Le immagini di copertura decodificate da JPEG
+sono accettate ma provocano un avviso che raccomanda immagini di copertura
+mai compresse in JPEG.
 
 **Conseguenze.** Gli utenti non possono distruggere un carico scegliendo
 l'estensione sbagliata. Superata dall'ADR-13 per le immagini di copertura
@@ -571,7 +602,8 @@ riempita fino alla capacità è comunque facile preda della steganalisi.
 
 **Conseguenze.** L'inserimento resta veloce a qualsiasi dimensione accettata
 dalla CLI. Una foto RGB 512 × 512 contiene comunque circa 40 KiB, molto più
-dei 160 byte necessari a una quota del vault.
+di quanto serva a una quota del vault: 109 byte di carico, 157 byte
+incapsulati nei formati 6 e 7 (158 nei formati da 3 a 5).
 
 ### ADR-12 — Inserimento adattivo con codici a traliccio di sindrome (formato 4)
 
@@ -611,14 +643,20 @@ gli stessi codici a traliccio di sindrome del formato 4 e costi UERD (Guo et
 al.); gli zeri e i coefficienti DC non vengono mai modificati, e ±1 si
 allontana sempre da zero. Il JPEG viene riscritto con le sue tabelle di
 quantizzazione e i suoi marcatori (EXIF, ICC). `media.py` effettua la scelta
-in base ai primi byte del file, quindi né il vault né la CLI hanno più un
-`--method`.
+in base ai primi byte del file, quindi né il vault né la CLI hanno
+un'opzione per il metodo. Il formato 7 (dalla 3.0.0) è il formato 5 senza il
+byte di costo pubblico.
 
 **Conseguenze.** Le foto del telefono vengono usate così come sono state
 scattate e il file stego è un JPEG della stessa qualità. Una nuova dipendenza
-(`jpeglib`, che include libjpeg). Il file viene riscritto da libjpeg, quindi
-le tabelle di Huffman e la disposizione dei marcatori possono differire da
-quelle dell'encoder della fotocamera (07 §7.6). La rilevabilità misurata è
+(`jpeglib`, che include libjpeg). Il file viene ricodificato da libjpeg, ma
+dall'SR-09 (06 §6.13) segue l'immagine di copertura: i segmenti APPn e COM
+byte per byte, l'ordine dei segmenti e il raggruppamento delle tabelle
+dell'immagine di copertura, e tabelle di Huffman ottimizzate quando quelle
+dell'immagine di copertura non sono quelle standard. Le immagini di copertura
+progressive e quelle con marcatori di restart sono le eccezioni: vengono
+scritte come baseline senza marcatori di restart, `EmbedReport.structure_kept`
+è False e la CLI emette un avviso (07 §7.6). La rilevabilità misurata è
 riportata in 05 §5.5.8.
 
 ## 1.7 Vista di deployment
@@ -656,5 +694,5 @@ l'extra `ml` PyTorch per la CNN.
 | Ogni errore previsto termina con un messaggio di una riga, mai con un traceback | Gerarchia `ShardpixError`, `OSError` intercettato in `main` | `TestCleanErrors` |
 | Nessun file di input viene mai sovrascritto | Controlli di identità dei percorsi nella CLI e nel vault, senza distinzione tra maiuscole e minuscole | `TestOutputCollisions`, `test_refuses_to_overwrite_the_cover` |
 | Memoria e tempo crescono con il carico, non con l'immagine | Percorso con campionamento per rifiuto (ADR-04) | 04 §4.9 |
-| La suite di test gira offline in pochi secondi | Immagini di copertura sintetiche, costo di scrypt ridotto nei test | 310 test, ~9 s |
+| La suite di test gira offline in pochi secondi | Immagini di copertura sintetiche, costo di scrypt ridotto nei test | 476 test, ~1,5 min (04 §4.9) |
 | Portabilità | Python 3.10–3.13, cinque dipendenze (cryptography, jpeglib, numpy, Pillow, rich) | Matrice CI |

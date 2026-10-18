@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-04 — Vista dinamica |
-| Sistema | shardpix 2.0.0 |
+| Sistema | shardpix 3.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-07 |
+| Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/04-runtime-behaviour.md](../docs/04-runtime-behaviour.md); in caso di differenze fa fede l'inglese) |
 
 ## 4.1 Scopo
@@ -23,9 +23,9 @@ sequenceDiagram
     actor O as Proprietario
     participant CLI as cli.cmd_seal
     participant V as vault.seal
-    participant IMG as images
+    participant M as media
     participant SH as shamir.split
-    participant ST as stego.embed
+    participant IMG as images.write_new
 
     O->>CLI: shardpix seal notes.pdf photos/*.png -k 3 -p
     activate CLI
@@ -36,8 +36,8 @@ sequenceDiagram
     V->>V: verifica k, n, immagini di copertura distinte,<br/>dimensione del file, lunghezza del nome
     V->>V: calcola gli output, rifiuta collisioni<br/>e sovrascritture
     loop ogni immagine di copertura
-        V->>IMG: load_image(cover)
-        IMG-->>V: Carrier
+        V->>M: open_cover(cover)
+        M-->>V: Cover (coefficienti JPEG o pixel)
         V->>V: verifica capacità >= 109 byte
     end
     Note over V: non è ancora stato scritto nulla
@@ -46,11 +46,11 @@ sequenceDiagram
     V->>SH: split(key, 3, n, group_id)
     SH-->>V: n quote
     loop quota i nell'immagine di copertura i
-        V->>ST: embed(carrier, share, passphrase)
-        ST-->>V: Carrier stego, EmbedReport
-        V->>IMG: save_png(stego, sealed/cover_i.png)
+        V->>M: hide(cover, share, passphrase)
+        M-->>V: byte del file stego, EmbedReport
+        V->>IMG: write_new(sealed/cover_i.png o .jpg)
     end
-    V->>V: scrive sealed/notes.pdf.spx
+    V->>IMG: write_new(sealed/notes.pdf.spx)
     V-->>CLI: SealResult
     deactivate V
     CLI-->>O: tabella: immagine, quota, tasso, modifiche
@@ -72,7 +72,7 @@ sequenceDiagram
     actor R as Parte che recupera
     participant CLI as cli.cmd_unseal
     participant V as vault.unseal
-    participant ST as stego.extract
+    participant ST as media.reveal
     participant SH as shamir.recover_all
 
     R->>CLI: shardpix unseal notes.pdf.spx a.png b.png c.png d.png -p
@@ -81,7 +81,7 @@ sequenceDiagram
     activate V
     V->>V: legge l'intestazione, scarta i percorsi ripetuti
     loop ogni immagine
-        V->>ST: extract(carrier, passphrase)
+        V->>ST: reveal(path, passphrase)
         alt carico trovato
             ST-->>V: byte
             V->>V: analizza la Share, confronta l'id di gruppo
@@ -98,10 +98,11 @@ sequenceDiagram
             V->>V: mantiene questo cluster, si ferma
         end
     end
-    V-->>CLI: UnsealResult (nome del file, dati, esiti)
+    V->>V: safe_filename(nome memorizzato)
+    V-->>CLI: UnsealResult (nome ripulito, dati, esiti)
     deactivate V
     CLI-->>R: tabella: immagine, quota, stato, dettaglio
-    CLI->>CLI: nome ripulito, rifiuta la sovrascrittura
+    CLI->>CLI: rifiuta la sovrascrittura
     CLI-->>R: file scritto, uscita 0
     deactivate CLI
 ```
@@ -124,17 +125,17 @@ sequenceDiagram
 
     C->>E: embed(carrier, payload, passphrase)
     E->>E: campioni, idonei = 2..253, verifica della capacità
-    E->>E: sale = 16 byte casuali, costo = 17 | 0x80
-    E->>K: derive_key(passphrase, salt, versione 4)
+    E->>E: sale = 16 byte casuali (formato 6: nessun byte di costo)
+    E->>K: derive_key(passphrase, salt, versione 6)
     K->>K: scrypt(N=2^17, r=8, p=1) poi HKDF x4
     K-->>E: order, aead, length_mask, code
     E->>E: frame = lunghezza mascherata + nonce + AES-GCM(carico)
-    E->>T: costi HiLL di ogni campione
     E->>W: percorso pubblico sui campioni idonei
-    W-->>E: 136 x w0 candidati per sale e costo
+    W-->>E: 128 x w0 candidati per il sale
     E->>W: percorso con chiave sugli idonei esclusi quelli
     W-->>E: 32 x w0 candidati per la lunghezza,<br/>poi w x 8 x (len(frame) - 4) per il corpo
-    loop sale + costo, lunghezza, corpo
+    E->>T: costi HiLL di ogni campione
+    loop sale, lunghezza, corpo
         E->>T: Viterbi: LSB a costo minimo con la sindrome corretta
         T-->>E: campioni da invertire
         E->>E: modifica ciascuno di +-1 (in su a 2, in giù a 253)
@@ -143,11 +144,16 @@ sequenceDiagram
 ```
 
 Un'immagine di copertura JPEG segue invece lo stesso percorso tramite
-`jpeg.embed` (formato 5): `media.open_cover` ne legge i coefficienti
+`jpeg.embed` (formato 7): `media.open_cover` ne legge i coefficienti
 quantizzati senza decodificarli, i candidati sono i coefficienti AC di
-luminanza non nulli, i costi sono UERD, e il risultato viene riscritto come
-JPEG con le tabelle e i metadati originali. I metodi di base del formato 3,
-usati solo dai benchmark, scrivono un bit per campione senza costi né codici.
+luminanza non nulli, i costi sono UERD, e il risultato viene ricodificato
+senza perdita come JPEG con le tabelle e i metadati originali, disposto come
+l'immagine di copertura: stessi byte APPn/COM, ordine dei segmenti e
+raggruppamento delle tabelle (06 SR-09; eccetto le immagini di copertura
+progressive e i marcatori di restart, con un avviso). Con `version=4`
+(benchmark) il diagramma acquisisce il byte di costo `17 | 0x80` dopo il
+sale e 136 × w0 candidati pubblici. I metodi di base del formato 3, usati
+solo dai benchmark, scrivono un bit per campione senza costi né codici.
 
 ## 4.5 Estrazione di un carico
 
@@ -155,9 +161,12 @@ L'estrazione rispecchia l'inserimento. Prova il formato 6, poi il 4, poi il 3
 (il 7, poi il 5, su un JPEG). Il formato 6 non ha byte di costo, quindi costa
 sempre uno scrypt; nei formati precedenti un byte di costo appartenente a un
 altro formato, o un costo fuori intervallo, termina un tentativo prima di
-qualsiasi derivazione della chiave. Nei formati 4 e 6 ogni lettura descritta sotto è una sindrome
-su `w0` o `w` candidati per bit anziché un singolo LSB; il diagramma mostra il
-formato 3. In entrambi i casi il percorso viene letto due volte. L'estrattore
+qualsiasi derivazione della chiave. Provare per primo il formato 6 costa
+quindi uno scrypt su ogni immagine, e leggere un'immagine in formato 4 ne
+costa circa due. Nei formati adattivi (da 4 a 7) ogni lettura descritta sotto
+è una sindrome su `w0` o `w` candidati per bit anziché un singolo LSB; il
+diagramma mostra il formato 3. In tutti i formati il percorso viene letto due
+volte. L'estrattore
 ha prima bisogno di 32 posizioni per leggere la lunghezza, e solo allora sa
 quante altre leggerne. `SampleOrder.first` memorizza in cache ciò che ha già
 calcolato, così la seconda chiamata estende la prima invece di ricominciare da
@@ -240,7 +249,7 @@ un'esplosione di combinazioni.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Loaded: load_image
+    [*] --> Loaded: media.open_cover
     Loaded --> Unreadable: non è un'immagine
     Loaded --> Extracted: carico autenticato
     Loaded --> NoPayload: passphrase errata, pulita o modificata
@@ -274,7 +283,7 @@ detentore mancante ha bisogno di sapere quale immagine ha causato il problema.
 | Lavoro per immagine in `unseal` | Intercettato e registrato come `ImageOutcome`; il ciclo prosegue | Un'immagine illeggibile non impedisce la lettura delle altre |
 | Lavoro per riga in `combine` | Righe malformate raccolte come problemi, segnalate, saltate | Una quota troncata in un file di cinque |
 | Errori del vault e delle quote | Sollevati con i dettagli allegati (`outcomes`, `rejected`) | `VaultError` contiene l'intera tabella per immagine |
-| `cli.main` | `ShardpixError` e `OSError` → messaggio di una riga, uscita 1; argparse → uscita 2; Ctrl-C → uscita 130 | `error: s.jpg: output must be a .png file …` |
+| `cli.main` | `ShardpixError` e `OSError` → messaggio di una riga, uscita 1; argparse → uscita 2; Ctrl-C → uscita 130 | `error: s.png: a JPEG cover gives a .jpg file; name the output something.jpg` |
 
 | Codice di uscita | Significato |
 | --- | --- |
@@ -290,26 +299,28 @@ usata per qualsiasi cosa, e prima che venga scritto un solo file.
 ## 4.9 Profilo dei tempi indicativo
 
 Misurato su una VM cloud (Python 3.13, un core), come ordine di grandezza.
-Le righe del formato 4 sono state misurate mentre un altro job condivideva la
-CPU, quindi sono limiti superiori.
+Le righe adattive sono state misurate sul formato 4 mentre un altro job
+condivideva la CPU, quindi sono limiti superiori. Il formato 6, ora scritto,
+inserisce allo stesso modo con 8 bit pubblici in meno, quindi i tempi di
+inserimento valgono anche per esso.
 
 | Operazione | Durata |
 | --- | --- |
 | Derivazione della chiave (scrypt, N = 2^17) | ~0,42 s per immagine |
 | `embed` / `extract`, 512 × 512 RGB, carico di una quota di vault, formato 3 | ~0,45 s ciascuno, principalmente scrypt |
 | `embed`, 1920 × 1080 RGB, carico di una quota di vault, formato 3 | ~0,5 s |
-| `embed`, carico di una quota di vault, formato 4: 512 × 512 / 1920 × 1080 / 12 MP RGB | ~1,7 s / ~2,3 s / ~8,4 s: scrypt, HiLL sull'intera immagine, Viterbi |
-| `extract`, carico di una quota di vault, formato 4, una qualsiasi delle dimensioni sopra | ~0,5 s, principalmente scrypt |
+| `embed`, carico di una quota di vault, formato 4 (e 6): 512 × 512 / 1920 × 1080 / 12 MP RGB | ~1,7 s / ~2,3 s / ~8,4 s: scrypt, HiLL sull'intera immagine, Viterbi |
+| `extract`, carico di una quota di vault, formato 4, una qualsiasi delle dimensioni sopra | ~0,5 s, principalmente scrypt, misurato prima che esistesse il formato 6; un'immagine in formato 6 costa uno scrypt, un'immagine in formato 4 ora circa due (il formato 6 viene provato per primo) |
 | `seal`, file da 1 MB, 5 immagini di copertura da 512 × 512 | ~2,4 s |
 | `seal`, file da 1 MB, 5 immagini di copertura da 1920 × 1080 | ~5,3 s: compressione PNG e scrypt |
 | `unseal`, 3 immagini da 512 × 512 o 1920 × 1080 | ~1,3 s, principalmente scrypt |
 | `analyze`, 1920 × 1080 RGB | ~1,2 s (RS 0,3 s, chi quadrato sequenziale 0,9 s) |
 | Benchmark completo (10 immagini di copertura, 4 strategie, 11 tassi) | ~40 s |
-| Suite di test (369 test) | ~60 s con i test del rilevatore addestrato e quelli adattivi |
+| Suite di test (476 test) | ~90 s con i test del rilevatore addestrato, quelli adattivi e quelli JPEG |
 
 Nel formato 3 il costo del posizionamento di un carico non dipende dalla
 dimensione dell'immagine (ADR-04); ciò che cresce con l'immagine sono la
-decodifica, la maschera di idoneità e la codifica PNG. Il formato 4 aggiunge la
+decodifica, la maschera di idoneità e la codifica PNG. I formati adattivi aggiungono la
 mappa dei costi HiLL, che viene calcolata sull'intera immagine e domina per le
 foto di grandi dimensioni, e un passaggio di Viterbi la cui lunghezza dipende
 solo dal carico.
@@ -319,7 +330,7 @@ La dimensione del file conta poco: AES-GCM gira alla velocità della memoria.
 
 ```mermaid
 graph LR
-    subgraph offline["Suite automatica: 310 test, ~9 s, nessuna rete"]
+    subgraph offline["Suite automatica: 476 test, ~90 s, nessuna rete"]
         U1["Aritmetica<br/>GF(256) vs riferimento,<br/>chi2 vs SciPy"]
         U2["Formati<br/>test a risposta nota"]
         U3["Comportamento di sicurezza<br/>manomissione, contraffazione,<br/>passphrase errata"]
@@ -329,7 +340,7 @@ graph LR
 
     subgraph manual["Misurato su fotografie reali"]
         M1["Benchmark<br/>10 foto di pubblico dominio"]
-        M2["Revisione indipendente del codice"]
+        M2["Revisioni di sicurezza (06)"]
     end
 
     offline --> CI["CI: Python 3.10–3.13<br/>ruff + pytest"]
@@ -342,13 +353,18 @@ graph LR
 | --- | --- | --- |
 | `test_gf256.py` | 18 | Tutti i 65.536 prodotti confrontati con shift-and-add; esempi FIPS-197; assiomi di campo |
 | `test_shamir.py` | 62 | Ogni k-sottoinsieme; segretezza teorica dell'informazione per enumerazione; manomissione; cluster contraffatti; robustezza della ricerca |
-| `test_stego.py` | 54 | Andata e ritorno in ogni modalità; autenticazione; limiti di distorsione; invarianza alla saturazione; proprietà del percorso; derivazione della chiave |
-| `test_images.py` | 19 | Conversione di modalità, preservazione del canale alfa, output senza perdita, creazione esclusiva dei file |
-| `test_chi_square.py` | 17 | Funzione di sopravvivenza vs SciPy; rilevamento su istogrammi "a pettine" |
+| `test_stego.py` | 58 | Andata e ritorno in ogni modalità; autenticazione; limiti di distorsione; invarianza alla saturazione; proprietà del percorso; derivazione della chiave |
+| `test_adaptive.py` | 37 | Codici a traliccio di sindrome, costi HiLL, larghezze del codice; formati 4 e 6 (andata e ritorno, nessuna impronta senza chiave nel formato 6, formati precedenti ancora letti, chiavi separate) |
+| `test_jpeg.py` | 35 | Formati 5 e 7 nei coefficienti JPEG; struttura dell'output rispetto all'immagine di copertura (`TestStructure`); UERD; `media`; stima della qualità |
+| `test_jpeg_features.py` | 11 | Decompressione JPEG, feature DCTR e GFR, rilevatori del benchmark |
+| `test_images.py` | 24 | Conversione di modalità, preservazione del canale alfa, output senza perdita, creazione esclusiva dei file con permessi riservati al proprietario, limite di dimensione dall'intestazione |
+| `test_chi_square.py` | 21 | Funzione di sopravvivenza vs SciPy; rilevamento su istogrammi "a pettine"; coefficienti JPEG |
 | `test_rs.py` | 13 | Operazioni di flip; le stime seguono la sostituzione; matching ingenuo vs consapevole della saturazione |
-| `test_vault.py` | 59 | Ogni sottoinsieme apre il vault; errori; insiemi contraffatti; collisioni; nomi ripristinati |
-| `test_cli.py` | 47 | Ogni comando dall'inizio alla fine; errori puliti |
-| `test_known_answers.py` | 5 | Posizioni del percorso, byte delle quote, pixel stego (con e senza passphrase) e byte del vault fissati |
+| `test_vault.py` | 61 | Ogni sottoinsieme apre il vault; errori; insiemi contraffatti; collisioni; nomi ripristinati |
+| `test_cli.py` | 80 | Ogni comando dall'inizio alla fine; errori puliti; regole sulla passphrase; output binario su un terminale; avanzamento; caratteri jolly; avvisi e analisi JPEG |
+| `test_known_answers.py` | 10 | Posizioni del percorso, byte delle quote, matrice del codice, pixel stego nei formati 3, 4 e 6 (con e senza passphrase) e byte del vault fissati |
+| `test_ml.py` | 20 | Feature SPAM e SRM-lite, classificatore ensemble, metriche, infrastruttura del benchmark, CNN |
+| `test_pooled.py` | 10 | Steganalisi aggregata: gruppi, modello di verosimiglianza, rilevamento aggregato |
 | `test_properties.py` | 16 | Test basati su proprietà e fuzzing del parser (Hypothesis); `HYPOTHESIS_PROFILE=fuzz` per 3.000 casi ciascuno |
 
 Due scelte mantengono la suite veloce e deterministica. Le immagini di

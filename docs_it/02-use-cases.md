@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-02 — Specifica dei casi d'uso |
-| Sistema | shardpix 2.0.0 |
+| Sistema | shardpix 3.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-07 |
+| Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/02-use-cases.md](../docs/02-use-cases.md); in caso di differenze fa fede l'inglese) |
 
 ## 2.1 Attori
@@ -119,7 +119,7 @@ modo indipendente.
 | A3 | Un output sovrascriverebbe un'immagine di copertura o il file | Errore, anche con `--force`. |
 | A4 | Un output esiste già | Errore, salvo con `--force`. |
 | A5 | Un'immagine di copertura è troppo piccola o troppo satura per una quota | Errore che indica l'immagine di copertura; non viene scritto nulla. |
-| A6 | Un'immagine di copertura è un JPEG (una foto del telefono) | La sua quota va nei suoi coefficienti (formato 5) e l'output è un `.jpg` con le stesse tabelle e gli stessi metadati. |
+| A6 | Un'immagine di copertura è un JPEG (una foto del telefono) | La sua quota va nei suoi coefficienti (formato 7) e l'output è un `.jpg` con le stesse tabelle e gli stessi metadati. |
 | A7 | Nessuna opzione di passphrase fornita | Errore: è richiesta una passphrase. Con `--insecure-no-passphrase` la sigillatura procede e un avviso segnala che chiunque abbia shardpix può leggere ogni quota, anche se ne servono comunque k. |
 | A8 | Il file è più grande di 2 GiB | Errore: AES-GCM, così come esposto da `cryptography`, è limitato a 2 GiB per chiamata. |
 
@@ -130,7 +130,7 @@ modo indipendente.
 | | |
 | --- | --- |
 | **Attore primario** | Parte che recupera |
-| **Precondizioni** | Sono disponibili il file vault e almeno k delle sue immagini; la passphrase è nota. |
+| **Precondizioni** | Sono disponibili il file vault e almeno k delle sue immagini; la passphrase è nota (nessuna se il vault è stato sigillato con `--insecure-no-passphrase`). |
 | **Postcondizioni** | Il file originale è ripristinato con il suo nome originale (sanificato) o con il nome indicato tramite `-o`. |
 | **Evento scatenante** | `shardpix unseal notes.pdf.spx a.png b.png c.png -p` |
 
@@ -151,7 +151,7 @@ modo indipendente.
 | Id | Condizione | Comportamento |
 | --- | --- | --- |
 | A1 | Meno di k quote valide | Errore con la tabella per immagine; le quote valide sono mostrate come *non verificate*. |
-| A2 | Passphrase errata | Ogni immagine riporta *nessun carico*; errore. |
+| A2 | Passphrase errata o mancante | Ogni immagine riporta *nessun carico*; errore. Un vault sigillato con `--insecure-no-passphrase` si apre senza `-p`. |
 | A3 | Alcune immagini sono corrotte, ne restano almeno k integre | Il recupero riesce; le immagini corrotte sono riportate come *rifiutate* con il motivo. |
 | A4 | È presente un insieme fabbricato di quote coerenti tra loro | La sua chiave non supera il tag del vault; il recupero riesce con l'insieme autentico; le immagini contraffatte sono *rifiutate*. |
 | A5 | Il file vault è stato modificato | Ogni gruppo fallisce la verifica del tag; errore. |
@@ -165,19 +165,20 @@ modo indipendente.
 | | |
 | --- | --- |
 | **Attore primario** | Proprietario |
-| **Precondizioni** | Un'immagine di copertura e un carico non più grande della sua capacità. |
+| **Precondizioni** | Un'immagine di copertura, un carico non più grande della sua capacità e una passphrase. |
 | **Postcondizioni** | Un'immagine che appare come l'immagine di copertura e trasporta il carico sigillato: un PNG, o un JPEG se l'immagine di copertura è un JPEG (A3). |
 | **Evento scatenante** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
 
 #### Flusso principale
 
 1. Il sistema carica l'immagine di copertura e calcola i campioni idonei (2–253).
-2. Il sistema verifica la capacità.
-3. Il sistema genera un sale, deriva le chiavi da passphrase e sale, e sigilla
-   il carico in un frame.
+2. Il sistema verifica l'estensione dell'output e chiede la passphrase due
+   volte.
+3. Il sistema verifica la capacità, genera un sale, deriva le chiavi da
+   passphrase e sale, e sigilla il carico in un frame.
 4. Il sistema legge l'immagine di copertura nel dominio del suo file: un JPEG
-   come coefficienti quantizzati (formato 5, 01 ADR-13), qualsiasi altro file
-   come pixel (formato 4, ADR-12). Calcola il costo di ogni candidato (UERD o
+   come coefficienti quantizzati (formato 7, 01 ADR-13), qualsiasi altro file
+   come pixel (formato 6, ADR-12). Calcola il costo di ogni candidato (UERD o
    HiLL) e scrive il sale, la lunghezza e il corpo sigillato come codici a
    traliccio di sindrome (STC), modificando di ±1 i candidati meno costosi.
 5. Il sistema scrive un JPEG o un PNG, in base all'immagine di copertura, e
@@ -189,7 +190,8 @@ modo indipendente.
 | --- | --- | --- |
 | A1 | L'estensione dell'output non corrisponde all'immagine di copertura (`.jpg` per un JPEG, `.png` altrimenti) | Errore che indica l'estensione attesa. |
 | A2 | Carico più grande della capacità | Errore con la capacità in byte. |
-| A3 | L'immagine di copertura è un JPEG | Formato 5, output `.jpg` (come UC-01 A6). |
+| A3 | L'immagine di copertura è un JPEG | Formato 7, output `.jpg` (come UC-01 A6). |
+| A4 | Nessuna opzione di passphrase fornita | Errore: è richiesta una passphrase. Con `--insecure-no-passphrase` il carico viene inserito e un avviso segnala che chiunque abbia shardpix può localizzarlo e leggerlo. |
 
 ---
 
@@ -298,8 +300,8 @@ modo indipendente.
 | | |
 | --- | --- |
 | **Attore primario** | Analista |
-| **Precondizioni** | Una qualsiasi immagine a 8 bit. |
-| **Postcondizioni** | Risultati chi-quadro e RS e un verdetto. |
+| **Precondizioni** | Una qualsiasi immagine a 8 bit, o un JPEG. |
+| **Postcondizioni** | Risultati chi-quadro e RS (solo chi-quadro per un JPEG) e un verdetto. |
 | **Evento scatenante** | `shardpix analyze suspicious.png` |
 
 #### Flusso principale
@@ -316,6 +318,7 @@ modo indipendente.
 | --- | --- | --- |
 | A1 | Immagine larga meno di 4 pixel | RS viene riportata come non applicabile. |
 | A2 | Nessuna segnalazione | L'output precisa che un risultato negativo non prova che l'immagine sia pulita. |
+| A3 | Il file è un JPEG | Il test chi-quadro viene eseguito sui coefficienti DCT quantizzati della luminanza (sull'intero insieme e in sequenza), con la qualità JPEG stimata; non c'è il passo RS. Una firma su almeno il 10% dei coefficienti viene segnalata come inserimento di tipo JSteg. |
 
 ---
 
