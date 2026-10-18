@@ -3,9 +3,9 @@
 | | |
 | --- | --- |
 | Documento | SDD-05 — Analisi di sicurezza |
-| Sistema | shardpix 2.0.0 |
+| Sistema | shardpix 3.0.0 |
 | Stato | Approvato |
-| Ultima revisione | 2026-10-07 |
+| Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/05-security-analysis.md](../docs/05-security-analysis.md); in caso di differenze fa fede l'inglese) |
 
 ## 5.1 Scopo e ambito
@@ -16,10 +16,10 @@ steganalisi su cui si fondano le affermazioni sulla rilevabilità.
 
 shardpix è un progetto da portfolio e di apprendimento. La sua crittografia
 proviene da librerie sottoposte ad audit (ADR-02), il suo codice è testato
-rispetto a riferimenti indipendenti ed è stato sottoposto alla revisione
-interna documentata in [06-security-review.md](06-security-review.md), ma
-**il sistema nel suo complesso non è stato sottoposto ad audit da una terza
-parte indipendente**. Per segreti la cui perdita farebbe davvero male, è
+rispetto a riferimenti indipendenti ed è stato sottoposto alle due revisioni
+documentate in [06-security-review.md](06-security-review.md), nessuna delle
+quali indipendente: **il sistema nel suo complesso non è stato sottoposto ad
+audit da una terza parte indipendente**. Per segreti la cui perdita farebbe davvero male, è
 preferibile usare strumenti consolidati — ad esempio
 [age](https://age-encryption.org) per la cifratura dei file e le
 implementazioni di
@@ -69,20 +69,25 @@ documentato per capire come sono costruiti strumenti di questo tipo.
 | SP-02 | Il file e i suoi metadati sono autentici | ADV-4 | Tag GCM sul testo cifrato; l'intestazione (id del gruppo, k, n, nonce) costituisce i dati associati; il nome del file è all'interno del testo cifrato. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
 | SP-03 | k − 1 quote non rivelano nulla sulla chiave | ADV-1 | Ogni byte di chiave ‖ chiave MAC ha il proprio polinomio casuale di grado k − 1, quindi qualsiasi insieme di k − 1 valori è uniforme qualunque sia la chiave. I MAC dipendono solo dalla chiave MAC, che è condivisa allo stesso modo, quindi non aggiungono nulla — nemmeno per un segreto a bassa entropia (ADR-08). Trapela solo la lunghezza del segreto. | `TestSecrecy` (esaustivo su tutti i coefficienti), `test_mac_is_not_keyed_with_the_secret` |
 | SP-04 | Le quote danneggiate o alterate vengono rilevate e identificate | ADV-4 | Il checksum intercetta i danni accidentali senza bisogno di una chiave; una volta che k quote valide ricostruiscono la chiave MAC, ogni altra quota viene verificata e segnalata. | `TestAuthentication`, `TestRobustSearch` |
-| SP-05 | Un'immagine non rivela né il suo carico né quali campioni lo contengono | ADV-2, ADV-3 | Carico sigillato con AES-256-GCM; posizioni ottenute da un percorso ChaCha20 con chiave derivata da scrypt(passphrase, sale per immagine); lunghezza mascherata. Senza la passphrase i bit scritti sono indistinguibili da bit casuali. | `TestAuthentication`, `TestKeyDerivation` |
+| SP-05 | Un'immagine non rivela né il suo carico né quali campioni lo contengono | ADV-2, ADV-3 | Carico sigillato con AES-256-GCM; posizioni ottenute da un percorso ChaCha20 con chiave derivata da scrypt(passphrase, sale per immagine); lunghezza mascherata. Senza la passphrase i bit scritti sono indistinguibili da bit casuali (formati 6 e 7; nei formati 3-5 il byte di costo pubblico è una costante, 06 SR-07). | `TestAuthentication`, `TestKeyDerivation` |
 | SP-06 | Un insieme di quote fabbricato non viene mai accettato come chiave del vault | ADV-4 | I cluster sono disgiunti; ogni chiave candidata viene verificata con il tag GCM del vault, che un falsificatore non può soddisfare senza la chiave vera. | `TestForgedSets` |
 | SP-07 | Indovinare la passphrase è costoso e va fatto immagine per immagine | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0,4 s per tentativo, la prima raccomandazione di OWASP), con sale per immagine, quindi non si può precalcolare alcuna tabella per una dimensione d'immagine e nessun tentativo si riutilizza su un'altra immagine. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
 | SP-08 | Un unico messaggio di errore per ogni fallimento dell'estrazione | ADV-3, ADV-4 | Passphrase errata, immagine pulita e immagine modificata sollevano tutte lo stesso `PayloadNotFoundError`, quindi lo strumento non fa da oracolo per "c'è qualcosa qui?". | `TestAuthentication` |
-| SP-09 | Né la steganalisi classica né quella addestrata (SPAM, SRM-lite) rilevano una quota del vault nel formato 4 | ADV-3, ADV-5 | Inserimento adattivo ±1 con codici a traliccio di sindrome (STC) e costi HiLL (ADR-12), nessuno spostamento forzato a 0/255 (ADR-06) e un carico fisso di 1.264 bit. Al livello del caso su BOSSbase 512x512 (§5.5.6), anche combinando fino a cinquanta immagini della stessa cassaforte (§5.5.7); il formato 3 era debolmente rilevabile, e fortemente una volta aggregato (§5.5.5, §5.5.7). | Benchmark (§5.5.1–5.5.7) |
+| SP-09 | Né la steganalisi classica né quella addestrata (SPAM, SRM-lite) rilevano una quota del vault nel formato 6 | ADV-3, ADV-5 | Inserimento adattivo ±1 con codici a traliccio di sindrome (STC) [31] e costi HiLL [30] (ADR-12), nessuno spostamento forzato a 0/255 (ADR-06) e un carico fisso di 1.256 bit (1.264 nei formati 3-5). Misurato sul formato 4, che differisce solo per il byte di costo pubblico (le immagini in formato 4 sono di per sé riconoscibili senza chiave, 06 SR-07): al livello del caso su BOSSbase 512x512 (§5.5.6), anche combinando fino a cinquanta immagini della stessa cassaforte (§5.5.7); il formato 3 era debolmente rilevabile, e fortemente una volta aggregato (§5.5.5, §5.5.7). | Benchmark (§5.5.1–5.5.7) |
 | SP-10 | Il ripristino di un file non può uscire dalla directory di output né abusare del terminale | ADV-4 | `safe_filename` conserva il nome base, rimuove i caratteri di controllo e di formato e sostituisce i nomi riservati. | `TestRestoredNames`, `TestSafeFilename` |
 | SP-11 | Nessun input viene mai sovrascritto | Errore dell'utente | Controlli di identità dei percorsi, senza distinzione tra maiuscole e minuscole, nella CLI e in `seal`. | `TestOutputCollisions`, `test_combine_never_overwrites_its_input` |
+| SP-12 | La steganalisi addestrata (DCTR, GFR, SRNet) non rileva una quota del vault in un'immagine di copertura JPEG di qualità 90-95 nel formato 7 | ADV-3, ADV-5 | Lo stesso inserimento nei coefficienti DCT con costi UERD [32] (ADR-13). Misurato sul formato 5, che differisce solo per il byte di costo pubblico (le immagini in formato 5 sono di per sé riconoscibili senza chiave, 06 SR-07): al livello del caso su un'immagine a qualità 90-95 (§5.5.8, §5.5.9), e aggregando fino a cinquanta immagini, salvo una debole tendenza di DCTR a qualità 95 su decine di immagini; a qualità 75 un debole segnale per immagine diventa rilevabile con l'aggregazione, e la CLI avvisa sotto la qualità 90. | Benchmark (§5.5.8–5.5.9) |
 
 Che cosa shardpix deliberatamente **non** afferma: che una quota sia
 invisibile a *qualsiasi* rilevatore addestrato — il formato 4 è al livello del
 caso contro SPAM e SRM-lite (§5.5.6), ma rilevatori più potenti non sono stati
 eseguiti —, che le quote nel formato 3 siano invisibili in immagini di
-copertura piccole (non lo sono, §5.5.5), o che il file del vault in sé passi
-inosservato — è un testo cifrato riconoscibile.
+copertura piccole (non lo sono, §5.5.5), che il formato 7 sia invisibile nei
+JPEG molto compressi (a qualità 75 è rilevabile con l'aggregazione, con un
+errore di rilevazione di circa il 7-16% con cinquanta immagini,
+§5.5.8–5.5.9), che sia invisibile a un avversario che aggrega decine di
+immagini a qualità 95 (DCTR vi mostra una tendenza debole, §5.5.9), o che il
+file del vault in sé passi inosservato — è un testo cifrato riconoscibile.
 
 ## 5.4 Parametri crittografici
 
@@ -90,7 +95,7 @@ inosservato — è un testo cifrato riconoscibile.
 | --- | --- | --- | --- |
 | Cifratura del file | AES-256-GCM | Chiave casuale a 256 bit, nonce casuale a 96 bit, AAD di 35 byte | `cryptography` |
 | Cifratura del carico stego | AES-256-GCM | Chiave derivata a 256 bit, nonce casuale a 96 bit, AAD = dominio ‖ versione ‖ lunghezza | `cryptography` |
-| Rafforzamento della passphrase | scrypt | N = 2^17, r = 8, p = 1, sale a 128 bit per immagine; costo memorizzato nell'immagine, accettato al massimo 2^18 | `hashlib` |
+| Rafforzamento della passphrase | scrypt [9] | N = 2^17, r = 8, p = 1, sale a 128 bit per immagine; N fissato dalla versione del formato (6, 7); i formati 3-5 lo memorizzano nell'immagine, in lettura si accetta da 2^10 a 2^18 | `hashlib` |
 | Separazione delle chiavi | HKDF-SHA256 | Etichette `order`, `aead`, `length` | `cryptography` |
 | Posizioni dei campioni | Keystream ChaCha20 | Chiave a 256 bit, riduzione modulare con campionamento per rifiuto | `cryptography` |
 | Autenticazione delle quote | HMAC-SHA256 | Chiave MAC condivisa a 256 bit, tag troncato a 128 bit | `hmac` |
@@ -115,9 +120,11 @@ rilevatori addestrati su un dataset standard di 10.000 fotografie.
 
 **Formati misurati.** Ogni misura di questa sezione è stata fatta sui formati
 3, 4 e 5. I formati 6 e 7 (01 §1.5.1) inseriscono esattamente come il 4 e il 5
-ma scrivono 128 bit pubblici anziché 136, quindi modificano gli stessi
-campioni meno al massimo una manciata; gli errori di rilevazione riportati
-sotto valgono anche per loro. Ciò che questi rilevatori non misurano è un
+ma scrivono 128 bit pubblici anziché 136. I loro domini delle chiavi sono
+diversi, quindi le posizioni con chiave sono diverse, ma effettuano lo stesso
+numero e lo stesso tipo di modifiche, scelte dagli stessi costi, meno al
+massimo una manciata; gli errori di rilevazione riportati sotto valgono anche
+per loro. Ciò che questi rilevatori non misurano è un
 lettore che decodifica il blocco pubblico senza chiave: nei formati da 3 a 5
 quel lettore trovava il byte di costo, uguale in ogni immagine, e riconosceva
 un'immagine shardpix qualunque cosa dicessero i rilevatori (06 §6.13, SR-07).
@@ -130,7 +137,7 @@ I formati 6 e 7 lo eliminano.
   <img alt="Stima RS in funzione del tasso di inserimento reale: LSB replacement segue la diagonale, shardpix resta vicino a zero a ogni tasso" src="../assets/rs-estimate-light.png">
 </picture>
 
-Stima RS media sulle dieci fotografie:
+Stima RS media (Fridrich, Goljan e Du [3]) sulle dieci fotografie:
 
 | Strategia | 0% | 5% | 10% | 20% | 50% | 75% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -144,7 +151,7 @@ quello che ha motivato l'ADR-06:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/rs-clipped-dark.png">
-  <img alt="Sulla foto dell'astronauta, l'LSB matching ingenuo raggiunge una stima RS del 30% con il 75% di inserimento, mentre shardpix resta al 3%" src="../assets/rs-clipped-light.png">
+  <img alt="Sulla foto dell'astronauta, l'LSB matching ingenuo raggiunge una stima RS del 29% con il 75% di inserimento, mentre shardpix resta al 3%" src="../assets/rs-clipped-light.png">
 </picture>
 
 Stima RS per fotografia con il 50% dei campioni che trasportano dati:
@@ -173,7 +180,9 @@ fare la media.
 ### 5.5.2 Il punto operativo: una quota del vault
 
 I grafici precedenti arrivano fino al 75% per mostrare la forma di ciascuna
-curva. Un vault inserisce 158 byte in ogni immagine:
+curva. Un vault inserisce 158 byte in ogni immagine nei formati da 3 a 5
+(157 nei formati 6 e 7). La tabella è stata misurata sul formato 4
+(`benchmark.py` fissa `version=4`):
 
 | Immagine di copertura | Dimensioni | Tasso di inserimento della quota | RS, pulita | RS, con quota | Variazione |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -201,7 +210,7 @@ foto da cui proviene.
   <img alt="Probabilità chi-quadro in funzione della porzione di immagine analizzata: la sostituzione sequenziale resta a 1 fino alla fine del carico, la sostituzione sparsa e shardpix scendono a 0 entro pochi punti percentuali come l'immagine di copertura pulita" src="../assets/chi-square-light.png">
 </picture>
 
-L'attacco chi-quadro è decisivo contro ciò che fanno gli strumenti ingenui —
+L'attacco chi-quadro (Westfeld e Pfitzmann [2]) è decisivo contro ciò che fanno gli strumenti ingenui —
 scrivere il carico a partire dal primo pixel con LSB replacement — e legge la
 lunghezza del carico direttamente dalla curva (che termina poco dopo il 50%
 reale, perché la statistica del test è cumulativa). La sostituzione sparsa
@@ -234,11 +243,11 @@ rilevatori di questo tipo:
 
 | Rilevatore | Caratteristiche | Classificatore |
 | --- | --- | --- |
-| SPAM | 686 probabilità di transizione markoviana delle differenze tra pixel, progettate contro l'LSB matching (Pevný, Bas e Fridrich) | Ensemble di discriminanti lineari di Fisher su sottospazi casuali (Kodovský, Fridrich e Holub) |
-| SRM-lite | 3.125 co-occorrenze di cinque residui del rich model (Fridrich e Kodovský); l'SRM completo ne ha 34.671 | Lo stesso ensemble |
-| CNN | Apprese, dopo un banco fisso di 14 filtri passa-alto SRM e un'unità di troncamento | Cinque blocchi convoluzionali della famiglia Xu-Net / Yedroudj-Net, addestrati con curriculum dai tassi alti a quelli bassi |
+| SPAM | 686 probabilità di transizione markoviana delle differenze tra pixel, progettate contro l'LSB matching (Pevný, Bas e Fridrich [12]) | Ensemble di discriminanti lineari di Fisher su sottospazi casuali (Kodovský, Fridrich e Holub [13]) |
+| SRM-lite | 3.125 co-occorrenze di cinque residui del rich model (Fridrich e Kodovský [7]); l'SRM completo ne ha 34.671 | Lo stesso ensemble |
+| CNN | Apprese, dopo un banco fisso di 14 filtri passa-alto SRM e un'unità di troncamento | Cinque blocchi convoluzionali della famiglia Xu-Net [15] / Yedroudj-Net [16], addestrati con curriculum dai tassi alti a quelli bassi |
 
-**Dati.** BOSSbase 1.01, il dataset di riferimento per la steganalisi nel
+**Dati.** BOSSbase 1.01 [14], il dataset di riferimento per la steganalisi nel
 dominio spaziale: 10.000 fotografie 512x512 in scala di grigi convertite da
 RAW, mai compresse in JPEG. In ogni immagine di copertura viene inserito un
 carico con la strategia di shardpix (LSB matching sui campioni 2–253,
@@ -321,17 +330,18 @@ Che cosa mostra tutto questo:
    avrebbero visto affatto una quota, era sbagliata per immagini di copertura
    così piccole.
 3. **Le immagini di copertura più piccole vanno peggio.** A 256x256 gli
-   stessi 158 byte sono l'1,93% dei campioni e SRM-lite scende al 29,6%. La
+   stessi 158 byte (formato 3) sono l'1,93% dei campioni e SRM-lite scende al 29,6%. La
    CNN arriva al 31,6%: una rete di queste dimensioni, addestrata su una CPU,
    eguaglia il rich model invece di superarlo, quindi a questa scala il deep
    learning non cambia il quadro.
 4. **Ciò che conta è il carico rispetto alla radice quadrata dell'immagine
    di copertura.** La *legge della radice quadrata* della capacità
-   steganografica (Ker et al.) afferma che un carico fisso di M bit in
+   steganografica (Ker et al. [17]) afferma che un carico fisso di M bit in
    un'immagine di copertura di N campioni diventa più difficile da rilevare al
-   diminuire di M/√N, non semplicemente di M/N. La quota è fissa a 1.264 bit,
-   quindi decide solo la dimensione dell'immagine di copertura. Con
-   M/√N ≈ 0,5 SPAM è al livello del caso entro il suo intervallo e SRM-lite
+   diminuire di M/√N, non semplicemente di M/N. La quota è fissa a 1.264 bit
+   (1.256 nei formati 6 e 7), quindi decide solo la dimensione dell'immagine di copertura. Con
+   M/√N ≈ 0,5 SPAM è al limite del livello del caso (49,0%, intervallo fino a
+   50,0%) e SRM-lite
    ne dista 1,5 punti (48,5%, AUC 0,52). Le due dimensioni d'immagine
    concordano con la legge solo approssimativamente (con M/√N = 1,3,
    SRM-lite legge 45,6% a 512 e 42,9% a 256), perché il ridimensionamento
@@ -343,7 +353,7 @@ un'immagine 512x512 in scala di grigi ha M/√N ≈ 2,5; in una foto a colori da
 megapixel ≈ 0,5, il punto più basso misurato; in una foto da smartphone da 12
 megapixel ≈ 0,2, meno della metà di quel valore. **Usare foto a colori di
 almeno 2 megapixel** — il consiglio è stato ricavato per il formato 3; il
-formato 4 è già al livello del caso a 512x512 (§5.5.6), e più campioni
+formato 6 (misurato come formato 4) è già al livello del caso a 512x512 (§5.5.6), e più campioni
 restano comunque la scelta più sicura. Questa soglia è un'estrapolazione
 lungo la legge della radice quadrata a partire da immagini 512x512 in scala
 di grigi, non una misura su foto grandi, che BOSSbase non contiene.
@@ -363,13 +373,14 @@ python -m shardpix.analysis.ml_benchmark BOSSbase_1.01/ --size 256 --rates 0.4,0
 
 Il §5.5.5 ha rilevato che il formato 3 è debolmente visibile ai rilevatori
 addestrati nelle immagini di copertura piccole. Il formato 4 (01 ADR-12)
-scrive lo stesso carico come codice a traliccio di sindrome le cui modifiche
-seguono i costi HiLL: circa un terzo delle modifiche (208 contro 633 per
-quota in BOSSbase 512x512, 07 §7.3), tutte nelle texture. Lo stesso
+scrive lo stesso carico come codice a traliccio di sindrome [31] le cui
+modifiche seguono i costi HiLL [30]: circa un terzo delle modifiche (208
+contro 633 per quota in BOSSbase 512x512, 01 ADR-12), tutte nelle texture. Lo stesso
 esperimento, con le stesse 10.000 immagini BOSSbase, la stessa suddivisione e
 gli stessi rilevatori, è stato eseguito contro di esso; le immagini stego sono
-prodotte da `stego.embed` stesso (`ml_benchmark --strategy adaptive`), quindi
-ciò che viene misurato è esattamente ciò che lo strumento scrive.
+prodotte da `stego.embed` fissato al formato 4
+(`ml_benchmark --strategy adaptive`). Il formato 6, che lo strumento scrive
+ora, differisce solo per il byte di costo pubblico (§5.5, Formati misurati).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/ml-format-comparison-512-dark.png">
@@ -514,14 +525,14 @@ intervallo al 95%; 50% significa tirare a indovinare):
 
 | Copertine | Qualità | Rilevatore | Riferimento | Formato 5 |
 | --- | ---: | --- | ---: | ---: |
-| BOSSbase | 95 | DCTR | 16,1% [15,4, 16,8] | **49,5%** [48,5, 50,4] |
-| ALASKA2 | 95 | DCTR | 32,6% [29,7, 35,5] | **50,4%** [47,3, 53,5] |
-| ALASKA2 | 95 | GFR | 38,5% [35,5, 41,5] | **50,2%** [47,1, 53,3] |
-| ALASKA2 | 90 | DCTR | 17,0% [15,4, 18,6] | **49,4%** [47,2, 51,5] |
-| ALASKA2 | 90 | GFR | 28,9% [26,9, 30,9] | **49,7%** [47,5, 51,9] |
-| BOSSbase | 75 | DCTR | 2,2% [1,9, 2,4] | **42,5%** [41,5, 43,5] |
-| ALASKA2 | 75 | DCTR | 6,4% [5,3, 7,5] | **43,5%** [41,4, 45,7] |
-| ALASKA2 | 75 | GFR | 17,4% [15,7, 19,1] | **47,1%** [44,9, 49,2] |
+| BOSSbase | 95 | DCTR | 16,1% [15,4–16,8] | **49,5%** [48,5–50,4] |
+| ALASKA2 | 95 | DCTR | 32,6% [29,7–35,5] | **50,4%** [47,3–53,5] |
+| ALASKA2 | 95 | GFR | 38,5% [35,5–41,5] | **50,2%** [47,1–53,3] |
+| ALASKA2 | 90 | DCTR | 17,0% [15,4–18,6] | **49,4%** [47,2–51,5] |
+| ALASKA2 | 90 | GFR | 28,9% [26,9–30,9] | **49,7%** [47,5–51,9] |
+| BOSSbase | 75 | DCTR | 2,2% [1,9–2,4] | **42,5%** [41,5–43,5] |
+| ALASKA2 | 75 | DCTR | 6,4% [5,3–7,5] | **43,5%** [41,4–45,7] |
+| ALASKA2 | 75 | GFR | 17,4% [15,7–19,1] | **47,1%** [44,9–49,2] |
 
 Con 0,1 bit per coefficiente AC non nullo (il controllo) il formato 5 viene
 rilevato a ogni qualità: 35,0% (BOSSbase, 95), 39,5% (ALASKA2, 95), 37,0%
@@ -547,9 +558,9 @@ Formato 5, DCTR:
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 49,2% | 49,5% | 49,2% | 42,9% | 44,2% |
 | 5 | 48,1% | 50,0% | 49,5% | 31,6% | 32,7% |
-| 10 | **47,4%** [43,3, 50,4] | 50,0% | 48,6% | **24,7%** [22,5, 27,4] | 27,0% |
+| 10 | **47,4%** [43,3–50,4] | 50,0% | 48,6% | **24,7%** [22,5–27,4] | 27,0% |
 | 20 | 45,6% | 50,0% | 48,1% | 16,5% | 18,3% |
-| 50 | **43,6%** [35,5, 54,5] | **50,0%** [26,1, 66,7] | **49,9%** [24,3, 55,8] | **7,3%** [4,6, 11,7] | **7,2%** [1,8, 25,7] |
+| 50 | **43,6%** [35,5–54,5] | **50,0%** [26,1–66,7] | **49,9%** [24,3–55,8] | **7,3%** [4,6–11,7] | **7,2%** [1,8–25,7] |
 
 Il riferimento non adattivo viene scoperto su ogni insieme: con dieci
 immagini il suo errore è 0,1% (BOSSbase 95), 7,2% (ALASKA2 95), 0,1%
@@ -561,7 +572,7 @@ Cosa mostra:
 
 1. **A qualità 95 il formato 5 è al livello del caso su un'immagine**, su
    entrambe le sorgenti e per entrambi i rilevatori, mentre il riferimento
-   non adattivo ha un errore del 16-33%. È il caso delle foto del telefono
+   non adattivo ha un errore del 16-39%. È il caso delle foto del telefono
    usate così come sono state scattate. Con l'aggregazione, l'insieme più
    grande, BOSSbase, mostra una tendenza lenta e debole - 47,4% con dieci
    immagini, 43,6% con cinquanta, un intervallo che include ancora il 50% -
@@ -626,7 +637,8 @@ stata addestrata su una GPU (Google Colab, NVIDIA L4) con
   I carichi piccoli si imparano per curriculum, come nell'articolo di
   SRNet: 30 epoche a 0,4 bit per coefficiente AC non nullo, poi 15 epoche
   ciascuna a 0,2, 0,1 e una quota, ogni fase partendo dalla precedente; la
-  qualità 95 parte dalla rete della qualità 75.
+  qualità 95 parte dalla rete della qualità 75 ed esegue 15 epoche a ogni
+  fase, 0,4 compresa.
 - **Immagini stego.** Le stesse che vede DCTR: formato 5 con i semi di
   `jpeg_benchmark`, e DCTR misurato di nuovo su queste 10.000 immagini.
 
@@ -635,14 +647,14 @@ stata addestrata su una GPU (Google Colab, NVIDIA L4) con
 
 | Qualità | Carico | SRNet | DCTR, stesse immagini |
 | ---: | --- | ---: | ---: |
-| 75 | 0,4 | 3,2% [2,8, 3,5] | |
-| 75 | 0,2 | 28,9% [28,0, 29,7] | |
-| 75 | 0,1 | 37,4% [36,5, 38,4] | 25,0% [24,2, 25,9] |
-| 75 | **una quota** | **45,7%** [44,7, 46,7] | **43,6%** [42,6, 44,6] |
-| 95 | 0,4 | 21,4% [20,6, 22,2] | |
-| 95 | 0,2 | 38,4% [37,5, 39,4] | |
-| 95 | 0,1 | 45,4% [44,5, 46,4] | 29,7% [28,8, 30,6] |
-| 95 | **una quota** | **49,8%** [48,8, 50,7] | **48,9%** [48,0, 49,9] |
+| 75 | 0,4 | 3,2% [2,8–3,5] | |
+| 75 | 0,2 | 28,9% [28,0–29,7] | |
+| 75 | 0,1 | 37,4% [36,5–38,4] | 25,0% [24,2–25,9] |
+| 75 | **una quota** | **45,7%** [44,7–46,7] | **43,6%** [42,6–44,6] |
+| 95 | 0,4 | 21,4% [20,6–22,2] | |
+| 95 | 0,2 | 38,4% [37,5–39,4] | |
+| 95 | 0,1 | 45,4% [44,5–46,4] | 29,7% [28,8–30,6] |
+| 95 | **una quota** | **49,8%** [48,8–50,7] | **48,9%** [48,0–49,9] |
 
 Il riferimento non adattivo, con una quota, è al 3,3% (qualità 75) e al
 22,0% (qualità 95) per DCTR sulle stesse immagini.
@@ -654,9 +666,9 @@ verosimiglianza come nel §5.5.7):
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 45,4% | 43,9% | 49,9% | 49,1% |
 | 5 | 37,7% | 34,6% | 49,5% | 48,3% |
-| 10 | 33,0% [28,3, 36,1] | 28,3% [25,1, 31,7] | 49,6% [46,6, 52,8] | 47,0% [41,4, 50,8] |
+| 10 | 33,0% [28,3–36,1] | 28,3% [25,1–31,7] | 49,6% [46,6–52,8] | 47,0% [41,4–50,8] |
 | 20 | 25,8% | 21,3% | 49,1% | 45,7% |
-| 50 | **16,3%** [11,0, 24,6] | **10,5%** [5,7, 15,4] | **49,2%** [39,3, 55,0] | **44,3%** [35,1, 50,7] |
+| 50 | **16,3%** [11,0–24,6] | **10,5%** [5,7–15,4] | **49,2%** [39,3–55,0] | **44,3%** [35,1–50,7] |
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-alaska-dctr-q95-dark.png">
@@ -696,11 +708,13 @@ Cosa mostra:
 **Steganalisi addestrata: misurata contro alcuni rilevatori, non contro lo
 stato dell'arte.** Una quota nel formato 4 su BOSSbase 512x512 è al livello
 del caso per SPAM e SRM-lite (§5.5.6), e una quota nel formato 5 a qualità
-JPEG 90-95 è al livello del caso su un'immagine per DCTR e GFR, su BOSSbase e
-ALASKA2 (§5.5.8). I rilevatori usati sono SPAM, un sottoinsieme di 3.125
-caratteristiche dello spatial rich model, una piccola CNN addestrata su una
-CPU (solo per il formato 3), DCTR, GFR e SRNet (solo per il formato 5,
-addestrata su 4.500 coppie, §5.5.9). L'SRM completo (34.671
+JPEG 90-95 è al livello del caso su un'immagine per DCTR (BOSSbase,
+ALASKA2), GFR (il sottoinsieme di ALASKA2, §5.5.8) e SRNet (qualità 95,
+§5.5.9). I formati 6 e 7 sono stati misurati come formati 4 e 5 (§5.5). I
+rilevatori usati sono SPAM, un sottoinsieme di 3.125 caratteristiche dello
+spatial rich model, una piccola CNN addestrata su una CPU (solo per il
+formato 3), DCTR, GFR e SRNet (tutti sul formato 5; SRNet addestrata su
+4.500 coppie, §5.5.9). L'SRM completo (34.671
 caratteristiche), maxSRM e gli altri modelli che conoscono il canale di
 selezione, SRNet sui pixel e reti profonde addestrate su molte più immagini
 sono più potenti e non sono stati eseguiti: "al livello del caso" qui
@@ -708,7 +722,7 @@ significa al livello del caso per questi rilevatori. I controlli positivi
 (§5.5.6, §5.5.8) mostrano che gli stessi rilevatori vedono i formati 4 e 5
 con carichi maggiori, e i risultati negativi - il formato 3 e i JPEG a
 qualità 75 che cadono con l'aggregazione, e una tendenza debole a qualità 95
-su cinquanta immagini di BOSSbase - con rilevatori più potenti
+su cinquanta immagini di BOSSbase e di ALASKA2 (§5.5.9) - con rilevatori più potenti
 diventerebbero solo più netti. Le misure sui pixel usano un'unica sorgente
 di immagini (BOSSbase); quelle sui JPEG due (BOSSbase e ALASKA2), che
 concordano. Sul campo, il mismatch della sorgente delle immagini gioca
@@ -734,21 +748,31 @@ viaggiare come file.
 
 **Metadati.** I JPEG prodotti conservano i metadati EXIF e ICC; i PNG
 prodotti conservano il profilo ICC ma non i dati EXIF. Il file JPEG viene
-riscritto da libjpeg, quindi le sue tabelle di Huffman o l'ordine dei
-marcatori possono differire da quelli che scrive un certo telefono (07
-§7.6).
+riscritto da libjpeg; dall'SR-09 dello 06 la disposizione dei marcatori, i
+metadati e il tipo di tabelle di Huffman (standard o ottimizzate) seguono
+l'immagine di copertura. Solo i file progressivi e quelli con marcatori di
+restart escono diversi, ed `embed` e `seal` avvisano al riguardo (07 §7.6).
+
+**Ricodifica PNG.** I PNG prodotti sono scritti da Pillow: i chunk ausiliari
+(`tEXt`, `pHYs`, `gAMA`, `tIME`) vengono eliminati, un'immagine di copertura
+con tavolozza diventa RGB a 24 bit, e le immagini di copertura TIFF e BMP
+diventano PNG (06 SR-14). Come immagini di copertura PNG usare fotografie,
+non grafica a tavolozza.
 
 **Il file del vault non è nascosto.** Il suo magic number, l'id del gruppo, la
 soglia e il numero di quote sono in chiaro (autenticati, non cifrati).
 Chiunque lo trovi sa che è un vault shardpix e quante immagini servono per
 aprirlo — ma non il nome del file, il suo contenuto o quali immagini gli
-appartengano.
+appartengano. Il testo cifrato non ha padding, quindi la dimensione del file
+del vault rivela la lunghezza del testo in chiaro più quella del suo nome.
 
 **Una passphrase per vault.** Tutte le immagini di un vault usano la stessa
 passphrase, quindi ogni custode che deve poter partecipare a un recupero la
 conosce. La passphrase protegge le immagini dagli estranei (ADV-2); la
 riservatezza tra i custodi si basa sulla soglia (SP-03), non sulla
-passphrase.
+passphrase. La robustezza della passphrase non viene verificata: una
+passphrase indovinabile lascia solo il costo di scrypt (SP-07) tra ADV-2 e le
+quote.
 
 **Python non è a tempo costante.** Le consultazioni di tabelle in GF(256) e
 altre operazioni su dati segreti hanno tempi di esecuzione dipendenti dai
@@ -765,11 +789,13 @@ spostano ancora in una direzione fissa quando trasportano un bit che non
 corrisponde. Sono molto più rari dei campioni saturati e non hanno lasciato
 traccia nel benchmark.
 
-**Formato v3.** Il formato stego è cambiato due volte (ADR-04, ADR-05, e il
-costo di scrypt aumentato nella 1.1, si veda lo 06); le immagini prodotte
-dalla 0.x o dalla 1.0 non possono essere lette dalla 1.1. Poiché il costo è
-ora memorizzato in ogni immagine, futuri aumenti non romperanno la
-compatibilità.
+**Versioni del formato stego.** I formati da 3 a 7 vengono letti; il 6
+(PNG) e il 7 (JPEG) vengono scritti. Le immagini prodotte dalla 0.x o dalla
+1.0 non possono essere lette (ADR-04, ADR-05, 06 SR-01). Dal formato 6 il
+costo di scrypt è fissato dalla versione, quindi aumentarlo richiede una
+nuova versione del formato. Le immagini nei formati da 3 a 5 mantengono il
+byte di costo pubblico, un'impronta leggibile senza chiave (06 SR-07):
+sigillarle di nuovo per ottenere il formato 6 o 7.
 
 ## 5.7 Lavori correlati
 
@@ -805,8 +831,8 @@ lavori è chi nasconde a scegliere come distribuire il carico.
 
 **Cosa aggiunge shardpix.** Uno schema a soglia toglie questa scelta e mette
 chi nasconde nel caso peggiore della batch steganography: ogni immagine deve
-portare una quota intera - un carico fisso di 1.264 bit, senza immagini
-pulite - e il gruppo di immagini dell'avversario è l'insieme delle quote di
+portare una quota intera - un carico fisso di 1.256 bit (1.264 nei formati
+da 3 a 5), senza immagini pulite - e il gruppo di immagini dell'avversario è l'insieme delle quote di
 una cassaforte, che i rapporti tra i custodi rendono facile da raccogliere.
 shardpix misura quanto costa questo vincolo e implementa la difesa. Il
 costo: l'inserimento di tipo LSB degli schemi citati sopra, debolmente
@@ -814,11 +840,14 @@ visibile su un'immagine, cade quando le quote vengono aggregate (formato 3,
 §5.5.7), e lo stesso accade all'inserimento adattivo nei JPEG molto
 ricompressi (§5.5.8). La difesa: dividere solo la chiave (01 ADR-01), così
 il carico per immagine è il più piccolo possibile qualunque sia il file, e
-collocarlo con un inserimento adattivo (formati 4 e 5), così ogni immagine
-aggiunge indizi quasi nulli; aggregando fino a cinquanta immagini resta al
-livello del caso per i rilevatori usati (§5.5.7, §5.5.8), e la CLI avvisa
-per le copertine in cui non regge (JPEG ricompressi). Tutto è misurato su
-10.000 immagini con controlli positivi e intervalli di confidenza. La
+collocarlo con un inserimento adattivo (formati 6 e 7, misurati come 4 e 5),
+così ogni immagine aggiunge indizi quasi nulli; aggregando fino a cinquanta
+immagini resta al livello del caso per i rilevatori usati per le immagini di
+copertura PNG e i JPEG a qualità 90 (§5.5.7, §5.5.8), mentre a qualità 95
+DCTR mostra una tendenza debole su decine di immagini (§5.5.8–5.5.9), e la
+CLI avvisa sotto la qualità 90. Tutto è misurato su 10.000 immagini per
+insieme, più un sottoinsieme di ALASKA2 di 1.018-2.000 immagini, con
+controlli positivi e intervalli di confidenza. La
 domanda della steganalisi aggregata è di Ker; il contributo è applicarla
 alle quote di uno schema di condivisione del segreto, mostrare il costo del
 vincolo e costruire e misurare la contromisura. Per quanto mostrano i lavori
@@ -891,3 +920,11 @@ combinazione non era stata misurata.
 29. R. Cogranne, Q. Giboulot e P. Bas, "ALASKA#2: challenging academic
     research on steganalysis with realistic images", *IEEE WIFS*, 2020
     (ALASKA2).
+30. B. Li, M. Wang, J. Huang e X. Li, "A new cost function for spatial
+    image steganography" (HiLL), *IEEE ICIP*, 2014.
+31. T. Filler, J. Judas e J. Fridrich, "Minimizing additive distortion in
+    steganography using syndrome-trellis codes", *IEEE Transactions on
+    Information Forensics and Security*, 2011.
+32. L. Guo, J. Ni, W. Su, C. Tang e Y.-Q. Shi, "Using statistical image
+    model for JPEG steganography: uniform embedding revisited" (UERD), *IEEE
+    Transactions on Information Forensics and Security*, 2015.

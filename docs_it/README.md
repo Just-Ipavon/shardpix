@@ -4,11 +4,11 @@
 
 | | |
 | --- | --- |
-| Sistema | shardpix 2.0.0 |
+| Sistema | shardpix 3.0.0 |
 | Tipo di documento | Software Design Description (SDD) |
 | Struttura di riferimento | ISO/IEC/IEEE 1016 |
 | Notazione dei diagrammi | UML 2.5, resa in Mermaid |
-| Ultima revisione | 2026-10-07 |
+| Ultima revisione | 2026-10-18 |
 
 ## Indice
 
@@ -55,10 +55,10 @@ a partire da [data/ml_benchmark_512.json](../docs/data/ml_benchmark_512.json) e
 - Le decisioni architetturali sono numerate `ADR-nn` e citate dai documenti che
   ne dipendono.
 - I casi d'uso sono numerati `UC-nn`; la matrice di tracciabilità in
-  [02 §2.3](02-use-cases.md) collega ciascuno di essi al modulo che lo realizza
+  [02 §2.3](02-use-cases.md#23-matrice-di-tracciabilità) collega ciascuno di essi al modulo che lo realizza
   e ai test che lo verificano.
 - Le proprietà di sicurezza sono numerate `SP-nn` in
-  [05 §5.3](05-security-analysis.md).
+  [05 §5.3](05-security-analysis.md#53-proprietà-di-sicurezza).
 - I layout dei byte sono big-endian ovunque.
 
 ## Manutenzione
