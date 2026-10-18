@@ -4,11 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [3.0.0] — 2026-10-18
 
-An external security review (docs/06 §6.13) found that images of formats 3
-to 5 can be recognised without the passphrase. New images are written in
-formats 6 and 7; older images still open.
+Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
+first, not an independent audit) found that images of formats 3 to 5 can be
+recognised without the passphrase. New images are written in **formats 6
+(PNG) and 7 (JPEG)**, and `seal` and `embed` require a passphrase.
+
+**Compatibility.** 3.0.0 reads every image and vault made by 1.x and 2.x
+(formats 3 to 5). Images made by 3.0.0 cannot be read by 2.0.0. Scripts
+that call `seal` or `embed` without `-p` or `--passphrase-file` now fail
+unless they add `--insecure-no-passphrase`. Images in formats 3 to 5 keep
+their fingerprint: re-seal them to remove it.
 
 ### Security
 
@@ -34,71 +41,16 @@ formats 6 and 7; older images still open.
   symbolic link, also with `--force`.
 - **SR-16.** `seal` no longer crashes on a file that grows while it is read.
 
-### Changed
+### Added
 
-- **License: GPL-3.0-or-later.** `pyproject.toml` and the License sections
-  of both READMEs said MIT while `LICENSE` and the badge were GPLv3; they
-  now all say GPL-3.0-or-later.
-
-### Fixed
-
-- **DCTR and GFR as published.** Both JPEG feature sets filtered the
-  decompressed image after rounding it to integers, and GFR used other
-  quantisation steps than the published ones; both detectors were slightly
-  weaker than in the literature. `features.decompress(..., rounded=False)`
-  and `features.gfr_step` fix it; `jpeg_benchmark` stores a features version
-  (2) and never reuses features or results of version 1.
-
-### Documentation
-
-- docs/05 §5.5.9 (EN and IT): **SRNet**, trained on a GPU on 10,000 ALASKA2
-  photographs at quality 75 and 95 (curriculum 0.4, 0.2, 0.1, one share),
-  with DCTR measured again on the same images. One share at quality 95 is
-  at chance for SRNet on one image (49.8%) and on fifty pooled (49.2%); at
-  quality 75 it is weakly detectable (45.7%) and more so pooled (16.3% with
-  fifty). SRNet trained on 4,500 pairs is weaker than DCTR at 0.1 bits per
-  coefficient, so DCTR remains the reference. The script is
-  `scripts/srnet_colab.py`.
-- docs_it: the changes of the second security review (formats 6 and 7,
-  §6.13) are now in the Italian documentation too.
-- docs/06 §6.13: the second review, its findings and what was accepted
-  (secrets not wiped, PNG re-encoding, asymmetries of the embedding) and
-  why. docs/05 §5.5 and the README say the measurements were made on
-  formats 4 and 5 and apply to 6 and 7, which embed the same way.
-- docs/05 §5.5.8 (EN and IT): every JPEG measurement again with the
-  corrected detectors, and a second cover source, ALASKA2 (real camera
-  photographs at quality 75, 90 and 95), measured with DCTR and GFR. One
-  image at quality 90-95 stays at chance; over fifty BOSSbase images at
-  quality 95 DCTR shows a weak trend (43.6%, interval 35.5-54.5%), which the
-  README and docs/07 now say; at quality 75 format 5 falls to 7% with fifty
-  images on both sources. The GFR reference is corrected; ALASKA2 and the
-  source of GFR's steps are cited.
-- The README (EN and IT) starts from the product: what shardpix gives you
-  and what opening a file takes (the `.spx`, any *k* photos and the
-  passphrase), diagrams of sealing and opening, install and quick start;
-  the research (why it matters, detectability) follows. Thirteen
-  architectural decisions, not eleven (EN) or twelve (IT); the package
-  tree lists UERD, DCTR, GFR and `jpeg_benchmark`.
-- UC-01 and UC-03 say the output is a JPEG when the cover is a JPEG.
-
-- docs/05 §5.7 **Related work** (EN and IT): secret sharing hidden in
-  images (Thien–Lin, Lin–Tsai, Woźniak–Ogiela–Ogiela, sssteg) and pooled
-  steganalysis (Ker, steganographer identification, content-adaptive batch
-  steganography), and what shardpix adds. The README credits pooled
-  steganalysis to Ker instead of presenting the question as new, and frames
-  the threshold constraint (a whole share in every image) as the worst case
-  for the steganographer, with key splitting and adaptive embedding as the
-  defence shardpix implements and measures.
-- docs/05 says that the chi-square attack of `analyze` on JPEG is no
-  evidence of security (DCTR is), and §5.6 lists the detectors that were
-  not run (full SRM, maxSRM, SRNet); its paragraphs on JPEG covers and
-  metadata no longer describe the behaviour before format 5.
-- CHANGELOG 2.0.0 no longer says that `--method matching` writes format 3.
-
-## [2.0.0] — 2026-10-07
-
-Major version: the CLI no longer has `--method`, and new images are written
-in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
+- `--insecure-no-passphrase` for `seal` and `embed`.
+- `EmbedReport.structure_kept`, and a warning when a JPEG cover's structure
+  cannot be kept.
+- GFR features (`features.gfr`); `jpeg_benchmark --detectors`, `--tag` and
+  `--dataset-name`, and `pooled --jpeg` with `--detector`, `--tag` and
+  `--dataset-name`, to measure several detectors and other cover sets.
+- `scripts/srnet_colab.py`: SRNet against format 5 on a Colab GPU
+  (docs/05 §5.5.9).
 
 ### Changed
 
@@ -108,6 +60,72 @@ in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
   JSteg) and shows the estimated quality. Its closing note no longer says
   shardpix uses LSB matching: it says what the classical attacks catch and
   where shardpix's adaptive formats are measured.
+- **License: GPL-3.0-or-later.** `pyproject.toml` and the License sections
+  of both READMEs said MIT while `LICENSE` and the badge were GPLv3; they
+  now all say GPL-3.0-or-later.
+- The benchmarks keep writing formats 4 and 5 (`version=`), so the published
+  measurements stay reproducible.
+
+### Fixed
+
+- **DCTR and GFR as published.** Both JPEG feature sets filtered the
+  decompressed image after rounding it to integers, and GFR used other
+  quantisation steps than the published ones; both detectors were slightly
+  weaker than in the literature. `features.decompress(..., rounded=False)`
+  and `features.gfr_step` fix it; `jpeg_benchmark` stores a features version
+  (2) and never reuses features or results of version 1.
+- Ctrl-D, or no input, at the passphrase prompt ended in a traceback; it is
+  now a one-line error.
+
+### Documentation
+
+- docs/05 §5.5.9: **SRNet**, trained on a GPU on 10,000 ALASKA2 photographs
+  at quality 75 and 95 (curriculum 0.4, 0.2, 0.1, one share; 4,500 training
+  pairs), with DCTR measured again on the same images. One share at quality
+  95 is at chance for SRNet on one image (49.8%) and on fifty pooled
+  (49.2%); at quality 75 it is weakly detectable (45.7%) and more so pooled
+  (16.3% with fifty). SRNet trained on 4,500 pairs is weaker than DCTR at
+  0.1 bits per coefficient, so DCTR remains the reference.
+- docs/06 §6.13: the second review, its findings and what was accepted
+  (secrets not wiped, PNG re-encoding, asymmetries of the embedding) and
+  why. Every document says the measurements were made on formats 3 to 5
+  and apply to 6 and 7, which embed the same way, and describes the
+  formats, functions and options of 3.0.0.
+- docs/05 §5.5.8: every JPEG measurement again with the corrected
+  detectors, and a second cover source, ALASKA2 (real camera photographs at
+  quality 75, 90 and 95), measured with DCTR and GFR. One image at quality
+  90-95 stays at chance; over fifty images at quality 95 DCTR shows a weak
+  trend (43.6% on BOSSbase, 44.3% on ALASKA2), which the README and docs/07
+  say; at quality 75 format 5 falls to 7% with fifty images on both
+  sources. The GFR reference is corrected; ALASKA2, the source of GFR's
+  steps, HiLL, UERD and syndrome-trellis codes are cited.
+- docs/05 §5.7 **Related work**: secret sharing hidden in images
+  (Thien–Lin, Lin–Tsai, Woźniak–Ogiela–Ogiela, sssteg) and pooled
+  steganalysis (Ker, steganographer identification, content-adaptive batch
+  steganography), and what shardpix adds. The README credits pooled
+  steganalysis to Ker instead of presenting the question as new, and frames
+  the threshold constraint (a whole share in every image) as the worst case
+  for the steganographer, with key splitting and adaptive embedding as the
+  defence shardpix implements and measures.
+- docs/05 says that the chi-square attack of `analyze` on JPEG is no
+  evidence of security (DCTR is), and §5.6 lists the detectors that were
+  not run (full SRM, maxSRM, SRNet on pixels).
+- The README (EN and IT) starts from the product: what shardpix gives you
+  and what opening a file takes (the `.spx`, any *k* photos and the
+  passphrase), diagrams of sealing and opening, install and quick start;
+  the research (why it matters, detectability) follows.
+- The Italian documentation (`docs_it/`, `README.it.md`) has every change
+  above.
+- CHANGELOG 2.0.0 no longer says that `--method matching` writes format 3,
+  nor lists the `analyze` change, which came after the 2.0.0 tag.
+
+## [2.0.0] — 2026-10-07
+
+Major version: the CLI no longer has `--method`, and new images are written
+in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
+
+### Changed
+
 - **Phone photos are used as taken.** A JPEG cover is embedded in its own
   quantised coefficients (**stego format 5**, `shardpix/jpeg.py`): non-zero
   AC luminance coefficients, UERD costs, the same syndrome-trellis codes as
@@ -136,17 +154,11 @@ in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
 - **PowerShell.** Wildcards such as `photos\*.jpg`, which PowerShell and
   cmd.exe pass unexpanded, are expanded by shardpix; CI also runs the tests
   on Windows.
-- **Fixed:** embedding a large payload in a flat cover, such as a
-  screenshot, failed with "no solution avoids the forbidden elements". Every
-  change in a flat area costs the maximum, and thousands of them added up
-  past the threshold that marks a forbidden sample; the coder now checks
-  each chosen change instead of their sum.
 - **Detailed help.** `shardpix -h` shows how the pieces fit, a quick start,
   how to pick covers and how passphrases work; every `shardpix COMMAND -h`
   explains what the command does and ends with examples.
 - The README installs shardpix with pipx, so the command works in every
   terminal; the virtual environment remains for development.
-
 - **Stego format v4, adaptive embedding, is the default** for `seal`,
   `embed` and the library (`Method.ADAPTIVE`). The salt, the length and the
   sealed body are written as syndrome-trellis codes (Filler, Judas and
@@ -157,6 +169,14 @@ in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
   and the detectors only start to see it at 10% of the samples
   (docs/05 §5.5.6). Format 3 images are still read. shardpix 1.1 cannot read
   format 4.
+
+### Fixed
+
+- Embedding a large payload in a flat cover, such as a
+  screenshot, failed with "no solution avoids the forbidden elements". Every
+  change in a flat area costs the maximum, and thousands of them added up
+  past the threshold that marks a forbidden sample; the coder now checks
+  each chosen change instead of their sum.
 
 ### Added
 
@@ -171,7 +191,6 @@ in formats 4 (PNG) and 5 (JPEG). Images and vaults made by 1.x still open.
   §5.5.7): an adversary holding several images of one vault. Format 3
   falls from 42.6% detection error on one image to 25.7% on ten and 7.4%
   on fifty; format 4 stays at 50% up to fifty. New adversary ADV-5.
-
 - Trained steganalysis (`python -m shardpix.analysis.ml_benchmark`, extra
   `ml`): SPAM and SRM-lite features with the Kodovský–Fridrich–Holub
   ensemble classifier, and a small CNN of the Xu-Net / Yedroudj-Net family,

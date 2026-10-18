@@ -18,9 +18,10 @@ measured, not assumed: see [Why it matters](#why-it-matters).
 > **Learning project: internally reviewed, not independently audited.** The
 > cryptography comes from the `cryptography` library; secret sharing, the
 > embedding and the steganalysis are implemented here. The code has been
-> through static analysis, fuzzing, mutation testing and a manual review
-> against OWASP ASVS — see the [security review](docs/06-security-review.md) —
-> but no third party has audited it. For secrets you cannot afford to lose,
+> through static analysis, fuzzing, mutation testing, a manual review against
+> OWASP ASVS and a second review of 2.0.0 — see the
+> [security review](docs/06-security-review.md) — but no independent third
+> party has audited it. For secrets you cannot afford to lose,
 > use established tools such as [age](https://age-encryption.org).
 
 ![shardpix sealing a file behind 3 of 5 photos, opening it with three of them, and analysing one image](assets/demo.svg)
@@ -123,7 +124,7 @@ pip install -e ".[dev]"
 shardpix seal minutes.pdf photos/*.png -k 3 -p
 
 # Open it with any three of the images
-shardpix unseal sealed/minutes.pdf.spx sealed/beach.png sealed/cat.png sealed/street.png -p
+shardpix unseal sealed/minutes.pdf.spx sealed/beach.png sealed/cat.png sealed/street.png -p -o minutes-opened.pdf
 
 # Hide a short message in one image, and read it back
 shardpix embed photo.png -o holiday.png -t "meet me at noon" -p
@@ -147,6 +148,7 @@ shardpix analyze suspicious.png
 | `-p, --passphrase` | Prompt for a passphrase |
 | `--passphrase-file` | Read the passphrase from the first line of a file |
 | `--insecure-no-passphrase` | Hide without a passphrase (`seal`, `embed`): anyone can read it |
+| `-t, --text` / `-i, --input` | What to hide: a text in quotes, or a file (`embed`, `split`) |
 | `-o, --output` | Output file |
 | `--name` | Vault file name (`seal`) |
 | `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
@@ -192,7 +194,7 @@ bytes of each cover and hides the share the way that file is stored:
 
 | Cover | How the share is hidden | Output |
 | --- | --- | --- |
-| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 7): never decoded or recompressed, same quality tables, EXIF and marker layout | `.jpg` |
+| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 7): never decoded or recompressed, same quality tables, EXIF and marker layout (a progressive JPEG is written back as baseline, with a warning) | `.jpg` |
 | PNG, TIFF, BMP, RAW export | In the pixels (format 6) | `.png` |
 | iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
 
@@ -236,15 +238,15 @@ shardpix with this work.) The measurements:
   BOSSbase images the pooled detector stays at chance, about 50%, from 1 to
   50 images.
 - **Real covers, not lab covers.** Phone photos are JPEG, so shardpix hides
-  the share inside the JPEG coefficients themselves (format 5) and returns a
+  the share inside the JPEG coefficients themselves (format 7) and returns a
   JPEG with the same quality settings and metadata - no conversion that
   would betray the image. Measured with DCTR and GFR on BOSSbase and on
   ALASKA2, real camera photos: at quality 90-95, like a phone's, one image
   is at chance (49-50%), where the non-adaptive baseline is caught on one
-  image (16-33% error) and certainly with ten; over fifty images of one
+  image (16-39% error) and certainly with ten; over fifty images of one
   vault DCTR shows at most a weak trend at quality 95 (43.6%, an interval
-  that still includes 50%). The deep network SRNet, trained on 10,000
-  ALASKA2 photos, finds nothing more: at quality 95 it is at chance on one
+  that still includes 50%). The deep network SRNet, measured on 10,000
+  ALASKA2 photos (4,500 training pairs), finds nothing more: at quality 95 it is at chance on one
   image and on fifty (49.8% and 49.2%). At quality 75, typical of photos
   recompressed by chat apps, format 5 falls to 7-16% with fifty, the same
   trap as format 3
@@ -273,7 +275,8 @@ reproduce with `python -m shardpix.analysis.pooled`.
 ## Detectability
 
 The measurements below were made on formats 4 and 5. Formats 6 and 7,
-written since an external review (docs/06 §6.13), embed the same way
+written since a second security review
+([docs/06 §6.13](docs/06-security-review.md#613-second-review-200)), embed the same way
 without the public cost byte, which was a fingerprint anyone with the
 source code could read without the passphrase; the measured detection
 errors apply to them.
@@ -368,6 +371,7 @@ shardpix/
 ├── gf256.py            GF(2^8) arithmetic and Lagrange interpolation
 ├── images.py           any image in, lossless PNG out
 ├── errors.py           exception hierarchy
+├── progress.py         progress callbacks behind the progress bar
 └── analysis/
     ├── chi_square.py   Westfeld–Pfitzmann chi-square attack
     ├── rs.py           Fridrich–Goljan–Du RS analysis

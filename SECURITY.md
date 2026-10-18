@@ -4,7 +4,8 @@
 
 shardpix has had an **internal security review** — static analysis,
 property-based fuzzing, mutation testing and a manual review against OWASP
-ASVS — documented in [docs/06-security-review.md](docs/06-security-review.md).
+ASVS — and a second review of 2.0.0, whose fixes are in 3.0.0, both
+documented in [docs/06-security-review.md](docs/06-security-review.md).
 It has **not** been audited by an independent third party. Do not rely on it
 alone for secrets whose loss or disclosure would cause serious harm.
 
@@ -12,7 +13,9 @@ alone for secrets whose loss or disclosure would cause serious harm.
 
 | Version | Supported |
 | --- | --- |
-| 1.x | Yes |
+| 3.x | Yes |
+| 2.x | No: images in formats 4 and 5 can be recognised without the passphrase (SR-07); upgrade and re-seal |
+| 1.x | No |
 | 0.x | No (pre-releases, older image format) |
 
 ## Reporting a vulnerability

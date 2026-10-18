@@ -20,9 +20,10 @@ quanto bene nascondono le quote è misurato, non dato per scontato: vedi
 > indipendente.** La crittografia viene dalla libreria `cryptography`; la
 > condivisione del segreto, l'inserimento nelle immagini e la steganalisi sono
 > implementati qui. Il codice è passato per analisi statica, fuzzing,
-> mutation testing e una revisione manuale secondo OWASP ASVS — vedi la
+> mutation testing, una revisione manuale secondo OWASP ASVS e una seconda
+> revisione della 2.0.0 — vedi la
 > [revisione di sicurezza](docs_it/06-security-review.md) — ma nessuna terza
-> parte ne ha fatto un audit. Per segreti che non puoi permetterti di perdere
+> parte indipendente ne ha fatto un audit. Per segreti che non puoi permetterti di perdere
 > usa strumenti consolidati come [age](https://age-encryption.org).
 
 ![shardpix che sigilla un file dietro 3 foto su 5, lo riapre con tre di esse e analizza un'immagine](assets/demo.svg)
@@ -128,7 +129,7 @@ pip install -e ".[dev]"
 shardpix seal verbale.pdf foto/*.png -k 3 -p
 
 # Aprilo con tre immagini qualsiasi
-shardpix unseal sealed/verbale.pdf.spx sealed/spiaggia.png sealed/gatto.png sealed/strada.png -p
+shardpix unseal sealed/verbale.pdf.spx sealed/spiaggia.png sealed/gatto.png sealed/strada.png -p -o verbale-aperto.pdf
 
 # Nascondi un breve messaggio in un'immagine e rileggilo
 shardpix embed foto.png -o vacanze.png -t "ci vediamo a mezzogiorno" -p
@@ -152,6 +153,7 @@ shardpix analyze sospetta.png
 | `-p, --passphrase` | Chiede una passphrase |
 | `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
 | `--insecure-no-passphrase` | Nasconde senza passphrase (`seal`, `embed`): chiunque può leggere |
+| `-t, --text` / `-i, --input` | Cosa nascondere: un testo tra virgolette o un file (`embed`, `split`) |
 | `-o, --output` | File di output |
 | `--name` | Nome del file vault (`seal`) |
 | `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
@@ -167,12 +169,12 @@ recupero fallito ti dice quale custode chiamare:
 
 ```text
   Image                Share    Status        Detail
-  sealed/cat.png          #3    used
-  sealed/street.png       #5    used
-  sealed/beach.png        #2    used
-  sealed/rocket.png             no payload    no share: wrong passphrase or edited image
-  old/photo.png                 no payload    no share: wrong passphrase or edited image
-Recovered minutes.pdf (47.1 KiB) to minutes.pdf
+  sealed/gatto.png        #3    used
+  sealed/strada.png       #5    used
+  sealed/spiaggia.png     #2    used
+  sealed/razzo.png              no payload    no share: wrong passphrase or edited image
+  vecchie/foto.png              no payload    no share: wrong passphrase or edited image
+Recovered verbale.pdf (47.1 KiB) to verbale.pdf
 ```
 
 ## Funzionalità
@@ -199,7 +201,7 @@ memorizzato:
 
 | Immagine | Come viene nascosta la quota | Risultato |
 | --- | --- | --- |
-| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 7): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker | `.jpg` |
+| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 7): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker (un JPEG progressivo viene riscritto come baseline, con un avviso) | `.jpg` |
 | PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 6) | `.png` |
 | HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
 
@@ -246,16 +248,16 @@ confronta shardpix con questi lavori.) Le misure:
   livello del caso, circa 50%, da 1 a 50 immagini.
 - **Foto vere, non foto di laboratorio.** Le foto del telefono sono JPEG,
   quindi shardpix nasconde la quota direttamente nei coefficienti del JPEG
-  (formato 5) e restituisce un JPEG con le stesse impostazioni di qualità e
+  (formato 7) e restituisce un JPEG con le stesse impostazioni di qualità e
   gli stessi metadati, senza conversioni che tradirebbero l'immagine.
   Misurato con DCTR e GFR su BOSSbase e su ALASKA2, foto vere di
   fotocamere: a qualità 90-95, come quelle del telefono, un'immagine è al
   livello del caso (49-50%), mentre il riferimento non adattivo viene
-  scoperto già su un'immagine (errore del 16-33%) e con certezza con dieci;
+  scoperto già su un'immagine (errore del 16-39%) e con certezza con dieci;
   su cinquanta immagini della stessa cassaforte DCTR mostra al più una
   tendenza debole a qualità 95 (43,6%, un intervallo che include ancora il
-  50%). La rete neurale SRNet, addestrata su 10.000 foto di ALASKA2, non
-  trova di più: a qualità 95 è al livello del caso su un'immagine e su
+  50%). La rete neurale SRNet, misurata su 10.000 foto di ALASKA2 (4.500
+  coppie di addestramento), non trova di più: a qualità 95 è al livello del caso su un'immagine e su
   cinquanta (49,8% e 49,2%). A qualità 75, tipica delle foto ricompresse
   dalle app di messaggistica, il formato 5 scende al 7-16% con cinquanta,
   la stessa trappola del formato 3
@@ -285,7 +287,8 @@ per riprodurli: `python -m shardpix.analysis.pooled`.
 ## Rilevabilità
 
 Le misure che seguono sono state fatte sui formati 4 e 5. I formati 6 e 7,
-scritti dopo una revisione esterna (docs/06 §6.13), inseriscono allo stesso
+scritti dopo una seconda revisione di sicurezza
+([docs_it/06 §6.13](docs_it/06-security-review.md#613-seconda-revisione-200)), inseriscono allo stesso
 modo ma senza il byte pubblico del costo, che era un'impronta leggibile
 senza passphrase da chiunque avesse il codice sorgente; gli errori di
 rilevazione misurati valgono anche per loro.
@@ -389,6 +392,7 @@ shardpix/
 ├── gf256.py            aritmetica in GF(2^8) e interpolazione di Lagrange
 ├── images.py           qualsiasi immagine in ingresso, PNG senza perdita in uscita
 ├── errors.py           gerarchia delle eccezioni
+├── progress.py         callback di avanzamento dietro la barra di progresso
 └── analysis/
     ├── chi_square.py   attacco del chi-quadro di Westfeld–Pfitzmann
     ├── rs.py           analisi RS di Fridrich–Goljan–Du
