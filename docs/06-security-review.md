@@ -374,7 +374,8 @@ could only argue:
 2. **The cluster search** (`shamir.recover_all`) under adversarial share
    sets, including the budget and the reasons reported.
 3. **Detectability** against stronger trained steganalysis than 05 §5.5.5
-   could run on a CPU — the full SRM, SRNet — and on large colour photos,
+   could run on a CPU — the full SRM, SRNet on pixels, SRNet on JPEG trained
+   on far more than the 4,500 pairs of 05 §5.5.9 — and on large colour photos,
    where the 2-megapixel threshold is extrapolated, not measured. Testing
    under cover-source mismatch would show how much of the measured advantage
    survives outside the laboratory.

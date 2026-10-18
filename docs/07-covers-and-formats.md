@@ -131,7 +131,9 @@ the output must carry the matching extension (`.jpg` or `.png`).
   `embed` and `seal` estimate each JPEG's quality from its quantisation
   table and warn below 90; `capacity` shows the estimate.
 - **Detectors.** Format 5 is measured against DCTR and GFR, on BOSSbase and
-  ALASKA2; deep networks such as SRNet are being measured.
+  ALASKA2, and against the deep network SRNet on 10,000 ALASKA2 photos: one
+  share is at chance for SRNet at quality 95, even over fifty images
+  (05 §5.5.9).
 
 ## 7.7 Summary: which cover should I use?
 

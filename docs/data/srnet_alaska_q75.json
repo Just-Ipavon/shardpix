@@ -1,0 +1,126 @@
+{
+  "dataset": "ALASKA2 (alaska.utt.fr), 512x512 colour JPEG (luminance)",
+  "quality": 75,
+  "images": 10000,
+  "seed": 0,
+  "detector": "SRNet (Boroumand, Chen and Fridrich 2019)",
+  "input": "luminance decompressed from the DCT coefficients without rounding",
+  "curriculum": [
+    "0.4",
+    "0.2",
+    "0.1",
+    "share"
+  ],
+  "rows": [
+    {
+      "detector": "srnet",
+      "strategy": "jpeg",
+      "payload": "0.4",
+      "p_e": 0.0319,
+      "p_e_low": 0.028455616318933095,
+      "p_e_high": 0.035344383681066904,
+      "auc": 0.99371538,
+      "test_pairs": 5000,
+      "p_e_min": 0.02459999999999999,
+      "epochs": 30,
+      "train_pairs": 4500
+    },
+    {
+      "detector": "srnet",
+      "strategy": "jpeg",
+      "payload": "0.2",
+      "p_e": 0.2886,
+      "p_e_low": 0.27971901441469477,
+      "p_e_high": 0.2974809855853053,
+      "auc": 0.83374346,
+      "test_pairs": 5000,
+      "p_e_min": 0.2421,
+      "epochs": 15,
+      "train_pairs": 4500
+    },
+    {
+      "detector": "srnet",
+      "strategy": "jpeg",
+      "payload": "0.1",
+      "p_e": 0.37439999999999996,
+      "p_e_low": 0.36491423499645914,
+      "p_e_high": 0.38388576500354077,
+      "auc": 0.68620562,
+      "test_pairs": 5000,
+      "p_e_min": 0.36979999999999996,
+      "epochs": 15,
+      "train_pairs": 4500
+    },
+    {
+      "detector": "srnet",
+      "strategy": "jpeg",
+      "payload": "share",
+      "p_e": 0.4571,
+      "p_e_low": 0.44733613866882577,
+      "p_e_high": 0.46686386133117425,
+      "auc": 0.5751761,
+      "test_pairs": 5000,
+      "p_e_min": 0.4475,
+      "epochs": 15,
+      "train_pairs": 4500,
+      "pooled_llr": [
+        {
+          "group": 1,
+          "method": "llr",
+          "p_e": 0.4538,
+          "p_e_low": 0.43701999999999996,
+          "p_e_high": 0.47162999999999994,
+          "auc": 0.57418784
+        },
+        {
+          "group": 2,
+          "method": "llr",
+          "p_e": 0.427925,
+          "p_e_low": 0.4113225,
+          "p_e_high": 0.4482474999999999,
+          "auc": 0.611485635
+        },
+        {
+          "group": 3,
+          "method": "llr",
+          "p_e": 0.40715,
+          "p_e_low": 0.39172375000000004,
+          "p_e_high": 0.43742125,
+          "auc": 0.636203865
+        },
+        {
+          "group": 5,
+          "method": "llr",
+          "p_e": 0.37670000000000003,
+          "p_e_low": 0.35337500000000005,
+          "p_e_high": 0.40897,
+          "auc": 0.678798035
+        },
+        {
+          "group": 10,
+          "method": "llr",
+          "p_e": 0.330425,
+          "p_e_low": 0.28258625000000004,
+          "p_e_high": 0.36103875,
+          "auc": 0.7385901800000001
+        },
+        {
+          "group": 20,
+          "method": "llr",
+          "p_e": 0.258125,
+          "p_e_low": 0.213595,
+          "p_e_high": 0.32158625,
+          "auc": 0.8206934850000001
+        },
+        {
+          "group": 50,
+          "method": "llr",
+          "p_e": 0.1632,
+          "p_e_low": 0.10995499999999997,
+          "p_e_high": 0.24598874999999998,
+          "auc": 0.9239945549999999
+        }
+      ]
+    }
+  ]
+}

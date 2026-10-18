@@ -523,10 +523,11 @@ What this shows:
    detection error of 16-33%. This is the case of phone photographs used as
    taken. Pooled, the larger BOSSbase set shows a slow, weak trend - 47.4%
    with ten images, 43.6% with fifty, an interval that still includes 50% -
-   which the smaller ALASKA2 set cannot resolve. An adversary holding dozens
-   of images of one vault may therefore gain a small advantage even at
-   quality 95; with the handful of images a vault actually has, there is
-   none.
+   which the small ALASKA2 subset above cannot resolve; 10,000 ALASKA2
+   images (§5.5.9) show the same trend with DCTR (44.3% with fifty). An
+   adversary holding dozens of images of one vault may therefore gain a
+   small advantage even at quality 95; with the handful of images a vault
+   actually has, there is none.
 2. **At quality 90 format 5 is at chance on ALASKA2 up to fifty images**,
    for both detectors, within intervals of about ±8 points at ten images.
 3. **At quality 75 format 5 repeats what format 3 did in pixels** (§5.5.7),
@@ -545,15 +546,98 @@ What this shows:
    that shortage would cause, and DCTR, the stronger of the two here, is
    the one the conclusions rest on.
 
-Caveats: the detectors are trained at the exact payload; two detectors, both
-hand-crafted; deep JPEG detectors such as SRNet [8] are being measured on
-the same ALASKA2 images and are not reported yet.
+Caveats: the detectors are trained at the exact payload; both are
+hand-crafted. A deep detector, SRNet [8], is measured in §5.5.9 on a larger
+ALASKA2 set, together with DCTR on the same images.
 
 **What this evaluation is not.** The chi-square attack that `analyze` runs
 on a JPEG's coefficients (03 §3.10) catches only tools that overwrite the
 lowest bit of the coefficients, such as JSteg; format 5 passes it by
 construction, and it is no evidence of security. The evidence for format 5
 is the DCTR and GFR measurement above.
+
+### 5.5.9 A deep detector: SRNet
+
+SRNet (Boroumand, Chen and Fridrich [8]) is a residual network trained end
+to end on the pixels, without hand-made features, and one of the strongest
+published detectors for adaptive JPEG steganography. It was trained on a GPU
+(Google Colab, NVIDIA L4) with [scripts/srnet_colab.py](../scripts/srnet_colab.py):
+
+- **Covers.** 10,000 ALASKA2 images [29] at each quality, 512x512 colour,
+  compressed by the ALASKA2 authors at quality 75 and 95 (alaska.utt.fr);
+  luminance only. This is a larger and different set from the ALASKA2
+  subset of §5.5.8.
+- **Input.** The luminance decompressed from the DCT coefficients *without
+  rounding*, computed on the GPU in single precision with TF32 disabled
+  (TF32 rounds inputs by about 0.1 grey level, the size of the signal).
+- **Training.** Pairs of a cover and its stego image; the same test half of
+  5,000 pairs as DCTR, 4,500 pairs for training and 500 for validation;
+  random rotations and flips applied alike to both images of a pair;
+  Adamax, the network with the lowest validation error kept. Small payloads
+  are learnt by curriculum, as in the SRNet paper: 30 epochs at 0.4 bits
+  per non-zero AC coefficient, then 15 epochs each at 0.2, 0.1 and one
+  share, each stage starting from the previous one; quality 95 starts from
+  the quality-75 network.
+- **Stego images.** The same ones DCTR sees: format 5 with the seeds of
+  `jpeg_benchmark`, and DCTR measured again on these 10,000 images.
+
+**One image** (detection error P_E with its 95% interval; 5,000 test pairs;
+50% is guessing):
+
+| Quality | Payload | SRNet | DCTR, same images |
+| ---: | --- | ---: | ---: |
+| 75 | 0.4 | 3.2% [2.8, 3.5] | |
+| 75 | 0.2 | 28.9% [28.0, 29.7] | |
+| 75 | 0.1 | 37.4% [36.5, 38.4] | 25.0% [24.2, 25.9] |
+| 75 | **one share** | **45.7%** [44.7, 46.7] | **43.6%** [42.6, 44.6] |
+| 95 | 0.4 | 21.4% [20.6, 22.2] | |
+| 95 | 0.2 | 38.4% [37.5, 39.4] | |
+| 95 | 0.1 | 45.4% [44.5, 46.4] | 29.7% [28.8, 30.6] |
+| 95 | **one share** | **49.8%** [48.8, 50.7] | **48.9%** [48.0, 49.9] |
+
+The non-adaptive baseline, with one share, is at 3.3% (quality 75) and
+22.0% (quality 95) for DCTR on the same images.
+
+**Several images of one vault** (one share each, likelihood ratio as in
+§5.5.7):
+
+| Images | SRNet 75 | DCTR 75 | SRNet 95 | DCTR 95 |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 45.4% | 43.9% | 49.9% | 49.1% |
+| 5 | 37.7% | 34.6% | 49.5% | 48.3% |
+| 10 | 33.0% [28.3, 36.1] | 28.3% [25.1, 31.7] | 49.6% [46.6, 52.8] | 47.0% [41.4, 50.8] |
+| 20 | 25.8% | 21.3% | 49.1% | 45.7% |
+| 50 | **16.3%** [11.0, 24.6] | **10.5%** [5.7, 15.4] | **49.2%** [39.3, 55.0] | **44.3%** [35.1, 50.7] |
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/pooled-jpeg-alaska-dctr-q95-dark.png">
+  <img alt="Detection error of DCTR against the number of JPEG images of one vault at quality 95 on 10,000 ALASKA2 images: format 5 goes from 49% with one image to 44% with fifty; the non-adaptive baseline falls below 1% by ten" src="../assets/pooled-jpeg-alaska-dctr-q95-light.png">
+</picture>
+
+Raw numbers: `data/srnet_alaska_q{75,95}.json` (with the test scores in
+`.scores.npz`), `data/jpeg_benchmark_alaska_q{75,95}.json` and
+`data/pooled_jpeg_alaska_dctr_q{75,95}.json`.
+
+What this shows:
+
+1. **SRNet learns format 5 when there is enough to learn.** At 0.4 bits per
+   coefficient it is near certain at quality 75 (3.2%) and well above
+   chance at 95 (21.4%), so the network, its input and its training work.
+2. **With one share, SRNet finds nothing that DCTR misses.** At quality 95
+   it is at chance on one image (49.8%) and with fifty pooled (49.2%); at
+   quality 75 it reproduces the weak per-image signal (45.7%) and its
+   growth with pooling (16.3% with fifty).
+3. **Here SRNet is weaker than DCTR**, not stronger as in the literature: at
+   0.1 bits per coefficient 37.4% against 25.0% (quality 75) and 45.4%
+   against 29.7% (95). The published networks are trained on tens of
+   thousands of images, many more than 4,500 pairs; a network trained on
+   more data could do better. The conclusions therefore rest on the
+   stronger detector in each case, DCTR, and SRNet adds that a deep network
+   trained this way does not overturn them.
+4. **The weak trend at quality 95 is real but small.** On these 10,000
+   images DCTR shows it as on BOSSbase (§5.5.8): 47.0% with ten images,
+   44.3% with fifty, an interval that still reaches 50%. SRNet does not see
+   it.
 
 ## 5.6 Known limitations
 
@@ -564,10 +648,11 @@ the art.** A format-4 share on BOSSbase 512x512 is at chance for SPAM and
 SRM-lite (§5.5.6), and a format-5 share at JPEG quality 90-95 is at chance on
 one image for DCTR and GFR, on BOSSbase and ALASKA2 (§5.5.8). The detectors
 used are SPAM, a 3,125-feature subset of the spatial rich model, a small CNN
-trained on a CPU (format 3 only), DCTR and GFR. The full SRM (34,671
-features), maxSRM and other selection-channel-aware models and deep networks
-such as SRNet are stronger and were not run (SRNet on format 5 is in
-progress): "at chance" here means at chance for these detectors. The
+trained on a CPU (format 3 only), DCTR, GFR and SRNet (format 5 only, trained
+on 4,500 pairs, §5.5.9). The full SRM (34,671 features), maxSRM and other
+selection-channel-aware models, SRNet on pixels and deep networks trained on
+far more images are stronger and were not run: "at chance" here means at
+chance for these detectors. The
 positive controls (§5.5.6, §5.5.8) show that the same detectors do see
 formats 4 and 5 at larger payloads, and the negative results - format 3 and
 quality-75 JPEG falling once pooled, and a weak trend at quality 95 over
