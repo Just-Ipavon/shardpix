@@ -4,7 +4,7 @@
 
     file   --AES-256-GCM, random 256-bit key K-->  vault file (.spx)
     K      --Shamir, k of n------------------->  n authenticated shares
-    share  --keyed LSB embedding-------------->  one PNG per share
+    share  --adaptive embedding--------------->  one image per share (JPEG or PNG)
 
 Only the key is split, never the file: shares stay about a hundred bytes
 whatever the file size, which keeps the embedding rate - and so the

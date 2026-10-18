@@ -102,7 +102,7 @@ COLUMN_BUDGET = 1 << 20
 CHUNK_BITS = 1 << 13
 """Payload bits coded per trellis, which bounds its memory."""
 HEADER_WIDTH = 64
-"""Width of the codes carrying the public bytes and the length in format 4."""
+"""Widest code carrying the public block and the length in the adaptive formats (4-7)."""
 LENGTH_BITS = LENGTH_BYTES * 8
 
 JPEG_VERSION = 7
@@ -137,7 +137,7 @@ class Method(str, Enum):
     """Overwrite the least significant bit (classic LSB replacement)."""
 
     ADAPTIVE = "adaptive"
-    """+-1 changes placed by a syndrome-trellis code where HiLL costs are lowest (format 4)."""
+    """+-1 changes placed by a syndrome-trellis code where HiLL costs are lowest (format 6)."""
 
 
 @dataclass(frozen=True)
@@ -149,7 +149,7 @@ class StegoKey:
     length_mask: bytes
     keyed: bool
     code: bytes = b""
-    """Seed of the syndrome-trellis submatrix (format 4 only)."""
+    """Seed of the syndrome-trellis submatrix (adaptive formats only)."""
 
 
 @dataclass(frozen=True)

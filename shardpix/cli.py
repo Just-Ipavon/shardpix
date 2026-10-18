@@ -160,11 +160,14 @@ def read_passphrase(args: argparse.Namespace, *, confirm: bool) -> str | None:
             raise ShardpixError(f"passphrase file {path} is empty")
         return lines[0]
     if getattr(args, "passphrase", False):
-        first = getpass.getpass("Passphrase: ")
-        if not first:
-            raise ShardpixError("empty passphrase")
-        if confirm and getpass.getpass("Repeat passphrase: ") != first:
-            raise ShardpixError("passphrases do not match")
+        try:
+            first = getpass.getpass("Passphrase: ")
+            if not first:
+                raise ShardpixError("empty passphrase")
+            if confirm and getpass.getpass("Repeat passphrase: ") != first:
+                raise ShardpixError("passphrases do not match")
+        except EOFError as exc:  # Ctrl-D, or no input to read from
+            raise ShardpixError("no passphrase entered") from exc
         return first
     return None
 
@@ -798,7 +801,7 @@ def build_parser() -> argparse.ArgumentParser:
         "capacity",
         "show how many bytes an image can hide",
         "Reports the format the image would be embedded with and the largest\n"
-        "payload it holds. A vault share needs about 110 bytes, so any photo of a\n"
+        "payload it holds. A vault share is 109 bytes of payload, so any photo of a\n"
         "useful size has room to spare; capacity matters for 'embed'.",
         "  shardpix capacity photo.jpg",
     )

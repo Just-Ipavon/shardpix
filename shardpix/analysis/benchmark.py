@@ -138,7 +138,10 @@ class OperatingPoint:
 
 def operating_point(name: str, carrier: Carrier) -> OperatingPoint:
     share = bytes(vault.SHARE_BYTES)  # content is irrelevant: the frame is ciphertext
-    stego_carrier, report = stego.embed(carrier, share, "benchmark passphrase")
+    # Format 4, as measured in docs/05; format 6 differs only by the public cost byte.
+    stego_carrier, report = stego.embed(
+        carrier, share, "benchmark passphrase", version=stego.ADAPTIVE_V4
+    )
     channels = carrier.colour_channels
     height, width, _ = carrier.geometry
     return OperatingPoint(
@@ -430,7 +433,9 @@ def plot_lsb_planes(covers: list[tuple[str, Carrier]], out: Path, seed: int = 0)
     rng = np.random.default_rng(seed)
     name, carrier = next(((n, c) for n, c in covers if n == "camera"), covers[0])
     sequential = embed_random(carrier, 0.5, SCENARIO_BY_KEY["sequential"], rng)
-    shardpix, _ = stego.embed(carrier, bytes(vault.SHARE_BYTES), "benchmark passphrase")
+    shardpix, _ = stego.embed(
+        carrier, bytes(vault.SHARE_BYTES), "benchmark passphrase", version=stego.ADAPTIVE_V4
+    )
     panels = [
         ("Clean cover", carrier.pixels),
         ("Naive tool: 50% sequential", sequential),
