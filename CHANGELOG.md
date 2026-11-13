@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- JPEG outputs keep everything after the cover's first image: a second MPO
+  frame, a gain map, depth data, a motion-photo video or a vendor trailer was
+  dropped while `structure_kept` stayed true, leaving an MPF index that
+  pointed past the end of the file. The bytes are now copied back unchanged
+  and the MPF offsets shifted by the change in the primary image's size; if
+  the index cannot be read, the bytes are still kept and the structure is
+  reported as changed (#24).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

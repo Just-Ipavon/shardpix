@@ -89,7 +89,10 @@ scrypt, che chiunque poteva decodificare senza chiave (06 §6.4, SR-07); 4 e
   conservati byte per byte. La disposizione dei marcatori segue l'immagine
   di copertura (ordine dei segmenti, raggruppamento delle tabelle, tabelle di
   Huffman ottimizzate quando l'immagine di copertura le ha), con le eccezioni
-  del §7.6.
+  del §7.6. Ciò che segue la prima immagine (un secondo fotogramma MPO, una
+  gain map, dati di profondità, il video di una motion photo, un trailer del
+  produttore) viene copiato dopo di essa senza modifiche, e l'indice
+  Multi-Picture viene aggiornato perché punti ancora alle altre immagini.
 
 I formati usati in precedenza (3: un bit per campione con LSB matching o
 replacement) non sono più offerti dalla CLI. Restano nella libreria solo come
