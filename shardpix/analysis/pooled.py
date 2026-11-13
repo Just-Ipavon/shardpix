@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import ensemble
+from . import default_data_dir, ensemble
 from .benchmark import THEMES, _finish, _style_axes
 
 GROUP_SIZES = (1, 2, 3, 5, 10, 20, 50)
@@ -343,7 +343,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--size", type=int, default=512)
     parser.add_argument("--rate", type=float, default=None, help="default: one vault share")
-    parser.add_argument("--data", type=Path, default=Path("docs/data"))
+    parser.add_argument(
+        "--data",
+        type=Path,
+        default=None,
+        help="results directory; default: docs/data in a checkout",
+    )
     parser.add_argument("--out", type=Path, default=Path("assets"))
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--jpeg", type=int, default=None, help="pool JPEG scores at this quality")
@@ -353,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:
         "--dataset-name", default="BOSSbase 512x512", help="cover set named in the chart"
     )
     args = parser.parse_args(argv)
+    if args.data is None:
+        args.data = default_data_dir(parser)
     if args.jpeg is not None:
         return _main_jpeg(args)
 

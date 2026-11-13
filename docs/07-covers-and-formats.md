@@ -80,7 +80,10 @@ still read. What format 7 adds for JPEG:
   quantisation tables, chroma, dimensions and the EXIF and ICC metadata are
   kept byte for byte. The marker layout follows the cover (segment order,
   table grouping, optimised Huffman tables when the cover has them), with
-  the exceptions in §7.6.
+  the exceptions in §7.6. Whatever follows the first image (a second MPO
+  frame, a gain map, depth data, a motion-photo video, a vendor trailer) is
+  copied after it unchanged, and the Multi-Picture index is updated so that
+  it still points to the other images.
 
 The formats used before (3: one bit per sample by LSB matching or
 replacement) are no longer offered by the CLI. They remain in the library
@@ -100,7 +103,8 @@ JPEG, palette image) unless `--allow-unsuitable`.
 | PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 6) | PNG | **Good cover** |
 | RAW / DNG (iPhone ProRAW, Android RAW) | Not read directly: export it to an 8-bit PNG or TIFF | PNG | **Good cover**, after export |
 | HEIC (iPhone "High Efficiency") | Not readable (no HEIF support in Pillow) | — | Switch the camera to JPEG; converting HEIC to JPEG compresses the photo twice |
-| 16-bit PNG or TIFF | Refused | — | Export as 8-bit |
+| 16-bit PNG or TIFF (greyscale or colour) | Refused | — | Export as 8-bit |
+| Animated GIF or PNG, multi-page TIFF | Refused: only the first frame would be kept | — | Export one frame as a still image |
 | Screenshot | Embeds in the pixels | PNG | Works, but flat areas leave little texture; prefer photos |
 
 The kind is read from the first bytes of the file, not from its name, and

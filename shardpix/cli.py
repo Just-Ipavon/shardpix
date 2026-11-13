@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import glob
+import os
 import re
 import sys
 from collections.abc import Callable, Iterator
@@ -25,7 +26,13 @@ from rich.table import Table
 
 from . import __version__, covers, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
-from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
+from .errors import (
+    InconsistentSharesError,
+    ShardpixError,
+    ShareError,
+    ShareFormatError,
+    VaultError,
+)
 from .images import load_image, write_new
 from .progress import Progress
 
@@ -52,8 +59,8 @@ quick start:
       encrypt notes.pdf, hide one share in each photo; any 3 open it
   shardpix unseal sealed/notes.pdf.spx sealed/a.jpg sealed/c.jpg sealed/e.jpg -p
       open the vault with three of its images
-  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p
-      hide a short message in one image
+  shardpix embed photo.jpg -o out.jpg -t - -p
+      hide a short message in one image (typed hidden, like the passphrase)
   shardpix analyze suspicious.png
       look for the fingerprints of naive LSB embedding
 
@@ -91,12 +98,6 @@ passphrase:
 
 CHI_SQUARE_ALERT = 0.10
 """Detected prefix (fraction of the image) above which the chi-square attack is reported."""
-
-JPEG_WARNING = (
-    "[yellow]warning:[/] {names} decoded from JPEG. Changing a decoded JPEG by +-1 breaks its "
-    "8x8 block structure, which JPEG-compatibility steganalysis can detect at any rate; "
-    "prefer photos that were never JPEG-compressed, such as RAW exports (docs/07)."
-)
 
 LOW_QUALITY_WARNING = (
     "[yellow]warning:[/] {names} JPEG quality about {quality}, below {safe}: "
@@ -190,14 +191,40 @@ def require_passphrase(args: argparse.Namespace) -> str | None:
 
 
 def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> None:
-    """Refuse to overwrite an input, or an existing file without ``--force``."""
+    """Refuse to overwrite an input, or an existing file without ``--force``.
+
+    Paths are compared resolved and case-folded, as ``seal`` does, so ``A.JPG``
+    is refused for ``a.jpg`` on any system (they are one file on macOS and
+    Windows), and by file identity where both exist, which catches hard links.
+    """
     if path.is_dir():
         raise ShardpixError(f"{path} is a directory; give a file name")
-    resolved = path.resolve()
-    if any(resolved == p.resolve() for p in inputs):
-        raise ShardpixError(f"{path} is also an input; choose a different output path")
+    target = vault._identity(path)
+    for source in inputs:
+        if target == vault._identity(source) or _same_file(path, source):
+            raise ShardpixError(f"{path} is also an input; choose a different output path")
     if path.exists() and not force:
         raise ShardpixError(f"{path} already exists; use --force to overwrite it")
+
+
+def _vault_name(value: str) -> str:
+    """argparse type for ``seal --name``: a file name, never a path."""
+    if not vault.is_bare_name(value):
+        raise argparse.ArgumentTypeError(f"{value!r} must be a file name, not a path")
+    return value
+
+
+def _same_file(first: Path, second: Path) -> bool:
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def input_files(args: argparse.Namespace, *paths: Path) -> tuple[Path, ...]:
+    """``paths`` plus the payload (``-i``) and passphrase files the command reads."""
+    extra = (getattr(args, "input", None), getattr(args, "passphrase_file", None))
+    return (*paths, *(Path(p) for p in extra if p is not None))
 
 
 @contextmanager
@@ -316,22 +343,47 @@ def positive_int(value: str) -> int:
     return number
 
 
+TEXT_ON_COMMAND_LINE_WARNING = (
+    "warning: text given on the command line is visible to other users (ps) and "
+    "stays in the shell history; use -t - to type it hidden, or -i - to pipe it"
+)
+
+
 def read_secret(args: argparse.Namespace) -> bytes:
-    """Return the bytes given with ``--text`` or ``--input``."""
+    """Return the bytes given with ``--text`` or ``--input``.
+
+    ``-i -`` reads standard input to its end. ``-t -`` asks for the text without
+    echo at a terminal, or reads one line from standard input otherwise. A
+    literal ``-t`` value works, with a warning: it is visible in ``ps`` and in
+    the shell history.
+    """
     if args.input is not None:
+        if str(args.input) == "-":
+            return sys.stdin.buffer.read()
         try:
             return args.input.read_bytes()
         except OSError as exc:
             raise ShardpixError(f"cannot read {args.input}: {exc.strerror}") from exc
+    if args.text == "-":
+        if sys.stdin.isatty():
+            try:
+                return getpass.getpass("Text (hidden): ").encode("utf-8")
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise ShardpixError("no text entered") from exc
+        return sys.stdin.readline().rstrip("\r\n").encode("utf-8")
+    print(TEXT_ON_COMMAND_LINE_WARNING, file=sys.stderr)
     return args.text.encode("utf-8")
 
 
-def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
+def read_shares(
+    sources: list[str], origins: dict[bytes, str] | None = None
+) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
     """Parse shares from files (or ``-`` for stdin), one share per line.
 
     Blank lines and lines starting with ``#`` are ignored. Malformed shares are
     returned as ``(origin, reason)`` pairs instead of aborting the whole run:
-    one damaged share should not hide the others.
+    one damaged share should not hide the others. ``origins``, when given,
+    maps each share's bytes to the ``file:line`` it was first read from.
     """
     shares: list[shamir.Share] = []
     problems: list[tuple[str, str]] = []
@@ -346,9 +398,13 @@ def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str,
                 continue
             origin = "stdin" if source == "-" else source
             try:
-                shares.append(shamir.Share.from_text(line))
+                share = shamir.Share.from_text(line)
             except ShareFormatError as exc:
                 problems.append((f"{origin}:{number}", str(exc)))
+                continue
+            shares.append(share)
+            if origins is not None:
+                origins.setdefault(share.to_bytes(), f"{origin}:{number}")
     return shares, problems
 
 
@@ -467,7 +523,7 @@ def cmd_lint(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_embed(args: argparse.Namespace, console: Console) -> int:
-    check_output(args.output, force=args.force, inputs=(args.cover,))
+    check_output(args.output, force=args.force, inputs=input_files(args, args.cover))
     payload = read_secret(args)
     check_covers([args.cover], 0, args.allow_unsuitable, console)
     cover = media.open_cover(args.cover)
@@ -503,8 +559,6 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
             "[yellow]warning:[/] no passphrase - anyone running shardpix can locate and "
             "read this payload"
         )
-    if cover.pixels is not None and cover.pixels.from_jpeg:
-        console.print(JPEG_WARNING.format(names=f"{escape(str(args.cover))} was"))
     if cover.coefficients is not None and cover.coefficients.quality < jpeg.SAFE_QUALITY:
         console.print(
             LOW_QUALITY_WARNING.format(
@@ -520,7 +574,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_extract(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        check_output(args.output, force=args.force, inputs=(args.image,))
+        check_output(args.output, force=args.force, inputs=input_files(args, args.image))
     passphrase = read_passphrase(args, confirm=False)
     with progress_bar("Extracting") as progress:
         if progress is not None:
@@ -649,6 +703,7 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
             vault_name=args.name,
             force=args.force,
             progress=progress,
+            check=not args.no_check,
         )
     header = result.header
     console.print(
@@ -677,10 +732,6 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
             "image; the vault still needs "
             f"{header.threshold} of them"
         )
-    jpegs = [image.cover.name for image in result.images if image.from_jpeg]
-    if jpegs:
-        verb = "was" if len(jpegs) == 1 else "were"
-        console.print(JPEG_WARNING.format(names=f"{escape(', '.join(jpegs))} {verb}"))
     low = [
         image
         for image in result.images
@@ -705,21 +756,47 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
-    inputs = (args.vault, *args.images)
+    inputs = input_files(args, args.vault, *args.images)
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=inputs)
     passphrase = read_passphrase(args, confirm=False)
     with progress_bar("Unsealing") as progress:
         result = vault.unseal(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
-    output = args.output if args.output is not None else Path(result.filename)
-    check_output(output, force=args.force, inputs=inputs)
-    write_new(output, result.data, overwrite=args.force)
+    if args.output is not None:
+        output, force = args.output, args.force
+    else:
+        # The name comes from whoever made the vault: --force never lets it
+        # replace a file, so it cannot overwrite a startup file or an input.
+        output, force = Path(result.filename), False
+        if output.exists() or output.is_symlink():
+            raise ShardpixError(
+                f"the vault restores {result.filename}, which already exists here; "
+                "choose where to write it with -o (--force applies only to -o)"
+            )
+    check_output(output, force=force, inputs=inputs)
+    write_new(output, result.data, overwrite=force)
     console.print(
         f"Recovered [bold]{escape(result.filename)}[/] ({format_bytes(len(result.data))}) "
         f"to [bold]{escape(str(output))}[/]"
     )
     return 0
+
+
+def cmd_verify(args: argparse.Namespace, console: Console) -> int:
+    passphrase = read_passphrase(args, confirm=False)
+    with progress_bar("Verifying") as progress:
+        result = vault.verify(args.vault, args.images, passphrase, progress)
+    console.print(_outcome_table(result.outcomes))
+    header = result.header
+    if result.opens:
+        console.print(
+            f"[green]OK[/]: these images open vault {header.group} "
+            f"(threshold {header.threshold} of {header.shares})"
+        )
+        return 0
+    console.print(f"[bold red]not enough[/]: {escape(result.detail)}")
+    return 1
 
 
 def cmd_inspect(args: argparse.Namespace, console: Console) -> int:
@@ -766,7 +843,7 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
     args.directory.mkdir(parents=True, exist_ok=True)
     paths = [args.directory / f"share-{s.group}-{s.index}.txt" for s in shares]
     for path in paths:
-        check_output(path, force=args.force)
+        check_output(path, force=args.force, inputs=input_files(args))
     for share, path in zip(shares, paths, strict=True):
         write_new(path, (share.to_text() + "\n").encode("utf-8"), overwrite=args.force)
 
@@ -781,14 +858,24 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_combine(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        inputs = tuple(Path(s) for s in args.shares if s != "-")
+        inputs = input_files(args, *(Path(s) for s in args.shares if s != "-"))
         check_output(args.output, force=args.force, inputs=inputs)
-    shares, problems = read_shares(args.shares)
+    origins: dict[bytes, str] = {}
+    shares, problems = read_shares(args.shares, origins)
     report = console if args.output is not None else make_console(stderr=True)
     for origin, reason in problems:
         report.print(f"[yellow]skipped[/] {escape(origin)}: {escape(reason)}")
 
-    recovery = shamir.combine(shares)
+    try:
+        recovery = shamir.combine(shares)
+    except InconsistentSharesError as exc:
+        for number, candidate in enumerate(exc.candidates, start=1):
+            backers = ", ".join(
+                f"{_share_label(s)} {origins.get(s.to_bytes(), '?')}"
+                for s in (*candidate.used, *candidate.confirmed)
+            )
+            report.print(f"[red]secret {number}[/] authenticated by {escape(backers)}")
+        raise
 
     used = ", ".join(_share_label(s) for s in recovery.used)
     report.print(
@@ -858,7 +945,7 @@ def build_parser() -> argparse.ArgumentParser:
         "anything else gives a PNG (format 6). The changes are placed where the\n"
         "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
         "much fits. The cover itself is never modified.\n\n" + KEYING_NOTE,
-        '  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p\n'
+        "  shardpix embed photo.jpg -o out.jpg -t - -p\n"
         "  shardpix embed scan.png -o out.png -i contract.pdf --passphrase-file pw.txt",
     )
     p.add_argument("cover", type=Path, help="cover image (JPEG from a phone, PNG, TIFF, ...)")
@@ -871,13 +958,19 @@ def build_parser() -> argparse.ArgumentParser:
         "or .jpeg for a JPEG cover and in .png for any other cover. Never the cover itself",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="the message to hide, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-t",
+        "--text",
+        help="the message to hide; '-t -' asks for it without echo (a literal value is "
+        "visible in ps and the shell history). Use either -t or -i",
+    )
     source.add_argument(
         "-i",
         "--input",
         type=Path,
         metavar="FILE",
-        help="a file to hide, of any type, up to the capacity of the cover (use either -t or -i)",
+        help="a file to hide, of any type, up to the capacity of the cover; '-i -' reads "
+        "standard input (use either -t or -i)",
     )
     _add_passphrase_options(p, hiding=True)
     p.add_argument(
@@ -966,6 +1059,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--name",
+        type=_vault_name,
         help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
         "followed by .spx, e.g. notes.pdf.spx)",
     )
@@ -982,6 +1076,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use covers 'shardpix lint' reports as unsuitable (recompressed, "
         "progressive or palette images) instead of refusing them",
+    )
+    p.add_argument(
+        "--no-check",
+        action="store_true",
+        help="skip reading every written image and the vault back from disk before "
+        "reporting success (twice as fast; a write fault would then go unnoticed)",
     )
     p.set_defaults(handler=cmd_seal)
 
@@ -1018,9 +1118,26 @@ def build_parser() -> argparse.ArgumentParser:
         "-f",
         "--force",
         action="store_true",
-        help="replace the output file if it already exists (without -f shardpix refuses)",
+        help="replace the -o file if it already exists (without -f shardpix refuses). "
+        "A name restored from the vault never replaces a file",
     )
     p.set_defaults(handler=cmd_unseal)
+
+    p = _command(
+        sub,
+        "verify",
+        "check that images still open a vault, without writing anything",
+        "Does everything 'unseal' does except write the file: reads the share in\n"
+        "each image, rebuilds the key and trial-decrypts the vault in memory, then\n"
+        "reports what happened to every image and whether the threshold is met.\n"
+        "The plaintext is never written or printed. Exit status 0 when the images\n"
+        "open the vault, 1 when they do not.\n\n" + KEYING_NOTE,
+        "  shardpix verify notes.pdf.spx a.jpg b.jpg c.jpg d.jpg e.jpg -p",
+    )
+    p.add_argument("vault", type=Path, help="the vault file (.spx) written by 'seal'")
+    p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images to check")
+    _add_passphrase_options(p)
+    p.set_defaults(handler=cmd_verify)
 
     p = _command(
         sub,
@@ -1082,18 +1199,24 @@ def build_parser() -> argparse.ArgumentParser:
         "Plain Shamir secret sharing, without images: prints n printable,\n"
         "authenticated shares, one per line, or writes one file per share with\n"
         "-d. Any k recover the secret with 'combine'; k-1 reveal nothing.",
-        '  shardpix split -t "correct horse battery staple" -k 2 -n 3\n'
+        "  shardpix split -t - -k 2 -n 3\n"
+        "  pass show bank/pin | shardpix split -i - -k 2 -n 3 -d shares/\n"
         "  shardpix split -i seed.txt -k 3 -n 5 -d shares/",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="the secret to split, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-t",
+        "--text",
+        help="the secret to split; '-t -' asks for it without echo (a literal value is "
+        "visible in ps and the shell history). Use either -t or -i",
+    )
     source.add_argument(
         "-i",
         "--input",
         type=Path,
         metavar="FILE",
-        help="a small file to split, such as a key or a seed phrase (use either -t or -i; "
-        "for large files use 'seal')",
+        help="a small file to split, such as a key or a seed phrase; '-i -' reads standard "
+        "input (use either -t or -i; for large files use 'seal')",
     )
     p.add_argument(
         "-k",

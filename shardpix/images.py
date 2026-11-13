@@ -7,8 +7,10 @@ easy to inspect visually to be a safe place for data.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import os
+import secrets
 import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -119,6 +121,7 @@ def load_image(path: str | Path) -> Carrier:
             warnings.simplefilter("ignore", Image.DecompressionBombWarning)
             with Image.open(path) as image:
                 check_size(path, *image.size)
+                check_lossless_source(path, image)
                 image.load()
                 return from_pil(image)
     except FileNotFoundError as exc:
@@ -127,6 +130,40 @@ def load_image(path: str | Path) -> Carrier:
         raise UnsupportedImageError(f"{path}: image is too large ({exc})") from exc
     except (OSError, SyntaxError, ValueError) as exc:
         raise UnsupportedImageError(f"{path}: not a readable image ({exc})") from exc
+
+
+def _raw_modes(image: Image.Image) -> list[str]:
+    modes = []
+    for tile in image.tile:
+        args = tile.args if hasattr(tile, "args") else tile[3]
+        mode = args if isinstance(args, str) else (args[0] if args else "")
+        if isinstance(mode, str):
+            modes.append(mode)
+    return modes
+
+
+def check_lossless_source(path: str | Path, image: Image.Image) -> None:
+    """Refuse a cover that would lose data on the way to an 8-bit carrier.
+
+    Pillow opens a 16-bit RGB PNG or TIFF as an 8-bit ``RGB`` image, and keeps
+    only the first frame of an animated GIF or PNG or of a multi-page TIFF;
+    the stego image would then visibly differ from its cover. Call it on an
+    opened image before ``load()``, while its tiles still describe the file.
+    """
+    depth = image.tag_v2.get(258) if hasattr(image, "tag_v2") else None
+    deep = any(";16" in m or ";32" in m for m in _raw_modes(image)) or bool(
+        depth and max(depth if isinstance(depth, tuple) else (depth,)) > 8
+    )
+    if deep and image.mode not in _REJECTED_MODES:
+        raise UnsupportedImageError(
+            f"{path}: 16-bit images are not supported; export the cover as 8-bit"
+        )
+    frames = getattr(image, "n_frames", 1)
+    if frames > 1 and image.format not in {"JPEG", "MPO"}:
+        raise UnsupportedImageError(
+            f"{path}: image with {frames} frames or pages; only the first would be kept. "
+            "Use a single still image"
+        )
 
 
 def check_size(path: str | Path, width: int, height: int) -> None:
@@ -154,10 +191,15 @@ def write_new(path: str | Path, data: bytes, *, overwrite: bool = False) -> None
 
     Exclusive creation (``O_CREAT | O_EXCL``) closes the gap between checking
     that a file does not exist and writing it, and refuses to follow a symbolic
-    link planted at the destination, even a dangling one; ``O_NOFOLLOW`` refuses
-    it when overwriting too. New files are readable by their owner only
-    (``0o600``): a stego image, a vault or a share is nobody else's business on
-    a shared machine, whatever the umask.
+    link planted at the destination, even a dangling one. Every output is
+    readable by its owner only (``0o600``): a stego image, a vault or a share is
+    nobody else's business on a shared machine, whatever the umask.
+
+    Overwriting never reuses the existing file, whose mode, owner and other
+    hard links would survive truncation (a world-readable file, or one another
+    user created in a shared directory, would then hold the plaintext). The
+    data goes to a new private file next to it, which then replaces it in one
+    step, so a crash never leaves a half-written vault either.
     """
     path = Path(path)
     # Windows follows a dangling link even with exclusive creation, which
@@ -168,19 +210,38 @@ def write_new(path: str | Path, data: bytes, *, overwrite: bool = False) -> None
             if overwrite
             else f"{path} already exists; use --force to overwrite it"
         )
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if overwrite else os.O_EXCL)
-    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    if not overwrite:
+        try:
+            _create_private(path, data)
+        except FileExistsError as exc:
+            raise ShardpixError(f"{path} already exists; use --force to overwrite it") from exc
+        except OSError as exc:
+            raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+        return
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
     try:
-        descriptor = os.open(path, flags, 0o600)
-    except FileExistsError as exc:
-        raise ShardpixError(f"{path} already exists; use --force to overwrite it") from exc
+        _create_private(temporary, data)
+        os.replace(temporary, path)
     except OSError as exc:
+        with contextlib.suppress(OSError):
+            temporary.unlink()
         raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+
+
+def _create_private(path: Path, data: bytes) -> None:
+    """Create ``path`` exclusively with mode ``0o600`` and write ``data`` to disk."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags, 0o600)
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(data)
-    except OSError as exc:
-        raise ShardpixError(f"cannot write {path}: {exc.strerror or exc}") from exc
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        with contextlib.suppress(OSError):
+            path.unlink()
+        raise
 
 
 def save_png(carrier: Carrier, path: str | Path, *, overwrite: bool = False) -> None:

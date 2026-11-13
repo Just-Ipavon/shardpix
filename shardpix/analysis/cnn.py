@@ -26,8 +26,16 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
-import torch
-from torch import nn
+
+try:
+    import torch
+    from torch import nn
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on the environment
+    raise ModuleNotFoundError(
+        "shardpix.analysis.cnn needs PyTorch: pip install 'shardpix[ml]' "
+        '(or pip install -e ".[ml]" in a checkout)',
+        name=exc.name,
+    ) from exc
 
 from .features import _FIRST, _SECOND, _SQUARE3, _SQUARE5, _THIRD
 

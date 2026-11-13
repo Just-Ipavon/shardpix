@@ -79,7 +79,6 @@ class TestRoundTrip:
         result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
         assert [image.output.suffix for image in result.images] == [".jpg"] * 3
         assert {image.format for image in result.images} == {"JPEG (format 7)"}
-        assert not any(image.from_jpeg for image in result.images)
         opened = vault.unseal(result.vault_path, images_of(result)[1:], PASSPHRASE)
         assert opened.data == secret_file.read_bytes()
 
@@ -245,6 +244,18 @@ class TestSealValidation:
         result = vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name="blob.bin")
         assert result.vault_path.name == "blob.bin"
 
+    @pytest.mark.parametrize("name", ["../escaped.spx", "sub/v.spx", "..\\v.spx", "..", ""])
+    def test_vault_name_is_never_a_path(self, tmp_path, covers, secret_file, name):
+        with pytest.raises(VaultError, match="file name, not a path"):
+            vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name=name)
+        assert not (tmp_path / "escaped.spx").exists()
+
+    def test_no_share_at_all_names_the_likely_causes(self, sealed):
+        with pytest.raises(VaultError, match="none of the 5 images holds a share") as exc:
+            vault.unseal(sealed.vault_path, images_of(sealed), "wrong passphrase")
+        assert "no shares given" not in str(exc.value)
+        assert len(exc.value.outcomes) == 5
+
 
 class TestSafeFilename:
     @pytest.mark.parametrize(
@@ -331,6 +342,20 @@ class TestRestoredNames:
             ("lpt1.txt", vault.FALLBACK_NAME),
             ("trailing. ", "trailing"),
             ("BOX", "BOX"),
+            (".bashrc", "bashrc"),
+            (".envrc", "envrc"),
+            ("-rf", "rf"),
+            ("..-.profile", "profile"),
+            ("CON .", vault.FALLBACK_NAME),
+            ("NUL .", vault.FALLBACK_NAME),
+            ("COM1 . .", vault.FALLBACK_NAME),
+            ("CON .txt", vault.FALLBACK_NAME),
+            ("COM¹", vault.FALLBACK_NAME),
+            ("lpt³.log", vault.FALLBACK_NAME),
+            ("CONIN$", vault.FALLBACK_NAME),
+            ("conout$.txt", vault.FALLBACK_NAME),
+            ("foo.txt::$DATA", "foo.txt__$DATA"),
+            ('a<b>|c?*"d.txt', "a_b__c___d.txt"),
         ],
     )
     def test_control_characters_and_reserved_names(self, name, expected):
@@ -489,3 +514,60 @@ class TestVaultBoundaries:
         assert {o.detail for o in exc.value.outcomes} == {
             "failed authentication: corrupted or forged"
         }
+
+
+class TestVerifyAndSelfCheck:
+    """#32: check images without writing plaintext; seal reads its outputs back."""
+
+    def test_verify_reports_without_plaintext(self, sealed, tmp_path):
+        before = set(tmp_path.rglob("*"))
+        result = vault.verify(sealed.vault_path, images_of(sealed)[:3], PASSPHRASE)
+        assert result.opens and not hasattr(result, "data")
+        assert [o.status for o in result.outcomes] == [vault.Status.USED] * 3
+        assert set(tmp_path.rglob("*")) == before  # nothing written
+
+    def test_verify_below_the_threshold(self, sealed):
+        result = vault.verify(sealed.vault_path, images_of(sealed)[:2], PASSPHRASE)
+        assert not result.opens and "need 3" in result.detail
+        assert len(result.outcomes) == 2
+
+    def test_verify_with_the_wrong_passphrase(self, sealed):
+        result = vault.verify(sealed.vault_path, images_of(sealed), "wrong")
+        assert not result.opens
+        assert {o.status for o in result.outcomes} == {vault.Status.NO_PAYLOAD}
+
+    def test_seal_detects_an_image_corrupted_on_write(
+        self, tmp_path, covers, secret_file, monkeypatch
+    ):
+        real = vault.write_new
+        written = []
+
+        def corrupting(path, data, *, overwrite=False):
+            if Path(path).suffix != ".spx" and not written:
+                data = data[:-200] + bytes(200)  # damage the first image
+            written.append(path)
+            real(path, data, overwrite=overwrite)
+
+        monkeypatch.setattr(vault, "write_new", corrupting)
+        with pytest.raises(VaultError, match="self-check failed"):
+            vault.seal(secret_file, covers[:3], 2, tmp_path / "out", PASSPHRASE)
+
+    def test_seal_detects_a_vault_corrupted_on_write(
+        self, tmp_path, covers, secret_file, monkeypatch
+    ):
+        real = vault.write_new
+
+        def corrupting(path, data, *, overwrite=False):
+            if Path(path).suffix == ".spx":
+                data = data[:-1] + bytes([data[-1] ^ 1])
+            real(path, data, overwrite=overwrite)
+
+        monkeypatch.setattr(vault, "write_new", corrupting)
+        with pytest.raises(VaultError, match="does not decrypt"):
+            vault.seal(secret_file, covers[:3], 2, tmp_path / "out", PASSPHRASE)
+
+    def test_check_can_be_skipped(self, tmp_path, covers, secret_file, monkeypatch):
+        calls = []
+        monkeypatch.setattr(vault, "_check_share_written", lambda *a: calls.append(a))
+        vault.seal(secret_file, covers[:3], 2, tmp_path / "out", PASSPHRASE, check=False)
+        assert calls == []
