@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import glob
+import os
 import re
 import sys
 from collections.abc import Callable, Iterator
@@ -196,14 +197,33 @@ def require_passphrase(args: argparse.Namespace) -> str | None:
 
 
 def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> None:
-    """Refuse to overwrite an input, or an existing file without ``--force``."""
+    """Refuse to overwrite an input, or an existing file without ``--force``.
+
+    Paths are compared resolved and case-folded, as ``seal`` does, so ``A.JPG``
+    is refused for ``a.jpg`` on any system (they are one file on macOS and
+    Windows), and by file identity where both exist, which catches hard links.
+    """
     if path.is_dir():
         raise ShardpixError(f"{path} is a directory; give a file name")
-    resolved = path.resolve()
-    if any(resolved == p.resolve() for p in inputs):
-        raise ShardpixError(f"{path} is also an input; choose a different output path")
+    target = vault._identity(path)
+    for source in inputs:
+        if target == vault._identity(source) or _same_file(path, source):
+            raise ShardpixError(f"{path} is also an input; choose a different output path")
     if path.exists() and not force:
         raise ShardpixError(f"{path} already exists; use --force to overwrite it")
+
+
+def _same_file(first: Path, second: Path) -> bool:
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def input_files(args: argparse.Namespace, *paths: Path) -> tuple[Path, ...]:
+    """``paths`` plus the payload (``-i``) and passphrase files the command reads."""
+    extra = (getattr(args, "input", None), getattr(args, "passphrase_file", None))
+    return (*paths, *(Path(p) for p in extra if p is not None))
 
 
 @contextmanager
@@ -441,7 +461,7 @@ def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_embed(args: argparse.Namespace, console: Console) -> int:
-    check_output(args.output, force=args.force, inputs=(args.cover,))
+    check_output(args.output, force=args.force, inputs=input_files(args, args.cover))
     payload = read_secret(args)
     cover = media.open_cover(args.cover)
     if args.output.suffix.lower() not in OUTPUT_SUFFIXES[cover.suffix]:
@@ -493,7 +513,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_extract(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        check_output(args.output, force=args.force, inputs=(args.image,))
+        check_output(args.output, force=args.force, inputs=input_files(args, args.image))
     passphrase = read_passphrase(args, confirm=False)
     with progress_bar("Extracting") as progress:
         if progress is not None:
@@ -677,7 +697,7 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
-    inputs = (args.vault, *args.images)
+    inputs = input_files(args, args.vault, *args.images)
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=inputs)
     passphrase = read_passphrase(args, confirm=False)
@@ -748,7 +768,7 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
     args.directory.mkdir(parents=True, exist_ok=True)
     paths = [args.directory / f"share-{s.group}-{s.index}.txt" for s in shares]
     for path in paths:
-        check_output(path, force=args.force)
+        check_output(path, force=args.force, inputs=input_files(args))
     for share, path in zip(shares, paths, strict=True):
         write_new(path, (share.to_text() + "\n").encode("utf-8"), overwrite=args.force)
 
@@ -763,7 +783,7 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_combine(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        inputs = tuple(Path(s) for s in args.shares if s != "-")
+        inputs = input_files(args, *(Path(s) for s in args.shares if s != "-"))
         check_output(args.output, force=args.force, inputs=inputs)
     origins: dict[bytes, str] = {}
     shares, problems = read_shares(args.shares, origins)

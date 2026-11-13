@@ -31,6 +31,12 @@ All notable changes to this project are documented here. The format follows
   `LPT³`, `CONIN$` and `CONOUT$`. `--force` no longer applies to a restored
   name: replacing an existing file takes `-o`. The property test now checks
   names the way Win32 reads them.
+- **No input is overwritten, whatever the case.** The CLI compared output and
+  input paths exactly, although SP-11 promised case-folded checks: on macOS
+  or Windows `unseal -f` restoring `A.JPG` could overwrite the share image
+  `a.jpg`, and `-o` on `embed`, `extract` and `combine` had the same gap.
+  Paths are now compared case-folded and by file identity (hard links), and
+  the `-i` payload and `--passphrase-file` count as inputs too.
 
 ## [3.0.0] — 2026-10-18
 

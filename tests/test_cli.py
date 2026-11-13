@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -465,6 +466,30 @@ class TestCleanErrors:
         shares.write_text(capsys.readouterr().out)
         assert run("combine", shares, "-o", shares, "--force") == 1
         assert shares.read_text().startswith("spx1-")
+
+    def test_output_differing_only_in_case_is_an_input(self, tmp_path):
+        image = tmp_path / "c0.png"
+        image.write_bytes(b"share")
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(tmp_path / "C0.PNG", force=True, inputs=(image,))
+
+    def test_hard_link_to_an_input_is_an_input(self, tmp_path):
+        image, link = tmp_path / "c0.png", tmp_path / "other.png"
+        image.write_bytes(b"share")
+        os.link(image, link)
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(link, force=True, inputs=(image,))
+
+    def test_payload_and_passphrase_files_are_inputs(self, cover_png, tmp_path):
+        # embed writes .png only, so give the inputs that suffix to reach the check.
+        payload, phrase = tmp_path / "payload.png", tmp_path / "phrase.png"
+        payload.write_bytes(b"data")
+        phrase.write_text("correct horse battery staple")
+        for target in (payload, phrase):
+            before = target.read_bytes()
+            argv = ("embed", cover_png, "-o", target, "-i", payload, "-f")
+            assert run(*argv, "--passphrase-file", phrase) == 1
+            assert target.read_bytes() == before
 
     def test_split_into_a_file_path(self, tmp_path, capsys):
         file = tmp_path / "file"
