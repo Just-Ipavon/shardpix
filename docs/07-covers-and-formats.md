@@ -91,6 +91,12 @@ only as the baseline the benchmarks compare against.
 
 ## 7.4 What happens to each kind of input
 
+`shardpix lint IMAGES…` checks a set of photos against this section before you
+use them. `seal` and `embed` run the same check (`shardpix/covers.py` is the
+one place that defines it): they refuse covers that cannot carry a share, and
+covers marked unsuitable below (recompressed, progressive or restart-marker
+JPEG, palette image) unless `--allow-unsuitable`.
+
 | Input | What shardpix does | Output | Verdict |
 | --- | --- | --- | --- |
 | JPEG from a phone or camera | Embeds in the coefficients (format 7) | JPEG | **Good cover**, as taken |

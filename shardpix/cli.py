@@ -24,7 +24,7 @@ from rich.progress import (
 from rich.progress import Progress as ProgressBar
 from rich.table import Table
 
-from . import __version__, jpeg, media, shamir, stego, vault
+from . import __version__, covers, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
 from .errors import (
     InconsistentSharesError,
@@ -483,9 +483,49 @@ def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def _findings_table(assessments) -> Table:
+    table = Table(box=None, padding=(0, 2))
+    table.add_column("Image")
+    table.add_column("Finding")
+    table.add_column("Detail", overflow="fold")
+    style = {covers.REFUSED: "red", covers.UNSUITABLE: "yellow", covers.NOTE: "dim"}
+    for a in assessments:
+        if not a.findings:
+            table.add_row(escape(a.path.name), "[green]suitable[/]", "")
+        for f in a.findings:
+            table.add_row(escape(a.path.name), f"[{style[f.level]}]{f.level}[/]", escape(f.message))
+    return table
+
+
+def check_covers(paths, need_bytes: int, allow_unsuitable: bool, console: Console) -> None:
+    """Refuse covers docs/07 advises against, before anything is written (#33)."""
+    assessments = [covers.assess(p, need_bytes) for p in paths]
+    if all(not a.findings for a in assessments):
+        return
+    console.print(_findings_table(assessments))
+    refused = [a.path.name for a in assessments if a.refused]
+    if refused:
+        raise ShardpixError(f"cannot use {', '.join(refused)} as a cover (see above)")
+    unsuitable = [a.path.name for a in assessments if a.unsuitable]
+    if unsuitable and not allow_unsuitable:
+        raise ShardpixError(
+            f"{', '.join(unsuitable)}: unsuitable cover (see above and docs/07); "
+            "choose other photos, or pass --allow-unsuitable to use them anyway"
+        )
+
+
+def cmd_lint(args: argparse.Namespace, console: Console) -> int:
+    assessments = [covers.assess(p, vault.SHARE_BYTES) for p in args.images]
+    console.print(_findings_table(assessments))
+    suitable = sum(a.suitable for a in assessments)
+    console.print(f"{suitable} of {len(assessments)} images are suitable covers for a share.")
+    return 0 if suitable == len(assessments) else 1
+
+
 def cmd_embed(args: argparse.Namespace, console: Console) -> int:
     check_output(args.output, force=args.force, inputs=input_files(args, args.cover))
     payload = read_secret(args)
+    check_covers([args.cover], 0, args.allow_unsuitable, console)
     cover = media.open_cover(args.cover)
     if args.output.suffix.lower() not in OUTPUT_SUFFIXES[cover.suffix]:
         raise ShardpixError(
@@ -651,6 +691,7 @@ def _outcome_table(outcomes: tuple[vault.ImageOutcome, ...]) -> Table:
 
 
 def cmd_seal(args: argparse.Namespace, console: Console) -> int:
+    check_covers(args.covers, vault.SHARE_BYTES, args.allow_unsuitable, console)
     passphrase = require_passphrase(args)
     with progress_bar("Sealing") as progress:
         result = vault.seal(
@@ -938,6 +979,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="replace the output file if it already exists (without -f shardpix refuses)",
     )
+    p.add_argument(
+        "--allow-unsuitable",
+        action="store_true",
+        help="use covers 'shardpix lint' reports as unsuitable (recompressed, "
+        "progressive or palette images) instead of refusing them",
+    )
     p.set_defaults(handler=cmd_embed)
 
     p = _command(
@@ -1025,6 +1072,12 @@ def build_parser() -> argparse.ArgumentParser:
         "shardpix refuses and writes nothing)",
     )
     p.add_argument(
+        "--allow-unsuitable",
+        action="store_true",
+        help="use covers 'shardpix lint' reports as unsuitable (recompressed, "
+        "progressive or palette images) instead of refusing them",
+    )
+    p.add_argument(
         "--no-check",
         action="store_true",
         help="skip reading every written image and the vault back from disk before "
@@ -1098,6 +1151,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("image", type=Path, help="image to inspect")
     _add_passphrase_options(p)
     p.set_defaults(handler=cmd_inspect)
+
+    p = _command(
+        sub,
+        "lint",
+        "check images against the cover advice before using them",
+        "Reports, for each image, what 'seal' and 'embed' would refuse (unreadable,\n"
+        "truncated, 16-bit, several frames, too small for a share) or call\n"
+        "unsuitable (recompressed JPEG, progressive or restart-marker JPEG, palette\n"
+        "image), and what is only worth knowing. Exit status 0 when every image is\n"
+        "a suitable cover, 1 otherwise. See docs/07.",
+        "  shardpix lint photos/*.jpg",
+    )
+    p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images to check")
+    p.set_defaults(handler=cmd_lint)
 
     p = _command(
         sub,
