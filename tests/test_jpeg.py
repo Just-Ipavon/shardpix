@@ -301,6 +301,34 @@ class TestMedia:
             assert media.reveal(out, "pw") == b"either way"
 
 
+class TestMalformedCovers:
+    def test_truncated_jpeg_is_refused(self, tmp_path, photo):
+        cut = tmp_path / "cut.jpg"
+        cut.write_bytes(photo.read_bytes()[: photo.stat().st_size // 2])
+        with pytest.raises(UnsupportedImageError, match=r"cut\.jpg: truncated JPEG"):
+            jpeg.load(cut)
+        with pytest.raises(UnsupportedImageError, match="truncated"):
+            media.open_cover(cut)
+
+    def test_data_after_the_end_of_image_is_still_a_cover(self, tmp_path, photo):
+        padded = tmp_path / "padded.jpg"
+        padded.write_bytes(photo.read_bytes() + b"trailing data")
+        assert jpeg.load(padded).geometry()
+
+    @pytest.mark.parametrize(
+        "data,reason",
+        [
+            (b"\xff\xd8\xff", "malformed JPEG header"),
+            (b"\xff\xd8\xff\xe0garbage", "malformed JPEG segment"),
+        ],
+    )
+    def test_header_errors_name_the_file(self, tmp_path, data, reason):
+        bad = tmp_path / "bad.jpg"
+        bad.write_bytes(data)
+        with pytest.raises(UnsupportedImageError, match=rf"bad\.jpg: {reason}"):
+            jpeg.load(bad)
+
+
 class TestQuality:
     @pytest.mark.parametrize("quality", [30, 50, 75, 85, 90, 95, 100])
     def test_estimates_the_quality_of_standard_tables(self, quality, tmp_path):

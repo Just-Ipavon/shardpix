@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A truncated JPEG is refused as a cover ("truncated JPEG (no end-of-image
+  marker)") instead of being accepted while libjpeg printed "Premature end of
+  JPEG file" and filled in the missing blocks. Malformed JPEG headers now name
+  the file in the error, like every other image error (#26).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
