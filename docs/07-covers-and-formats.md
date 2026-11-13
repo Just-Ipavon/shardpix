@@ -80,7 +80,10 @@ still read. What format 7 adds for JPEG:
   quantisation tables, chroma, dimensions and the EXIF and ICC metadata are
   kept byte for byte. The marker layout follows the cover (segment order,
   table grouping, optimised Huffman tables when the cover has them), with
-  the exceptions in §7.6.
+  the exceptions in §7.6. Whatever follows the first image (a second MPO
+  frame, a gain map, depth data, a motion-photo video, a vendor trailer) is
+  copied after it unchanged, and the Multi-Picture index is updated so that
+  it still points to the other images.
 
 The formats used before (3: one bit per sample by LSB matching or
 replacement) are no longer offered by the CLI. They remain in the library
