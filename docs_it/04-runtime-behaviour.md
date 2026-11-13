@@ -242,8 +242,8 @@ con una quota per indice garantiscono poi che un'ondata di impostori che
 riutilizzano uno stesso indice costi un tentativo per impostore, non
 un'esplosione di combinazioni.
 
-`combine` prende il primo recupero (il più grande) e rifiuta i pareggi;
-`unseal` li prova tutti contro il tag del vault.
+`combine` accetta un solo recupero e ne rifiuta due o più, qualunque sia la
+loro dimensione; `unseal` li prova tutti contro il tag del vault.
 
 ## 4.7 Ciclo di vita di un'immagine durante l'apertura
 

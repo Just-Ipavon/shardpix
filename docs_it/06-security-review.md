@@ -484,7 +484,12 @@ sensori più grandi dei telefoni) prima che venga decodificato alcunché.
 I file venivano creati secondo la umask, tipicamente con modalità 0644,
 compresi il testo in chiaro recuperato e le quote in formato testo.
 `images.write_new` ora crea ogni output con modalità 0600 e `O_NOFOLLOW`, che
-rifiuta anche un link simbolico quando si sovrascrive con `--force`.
+rifiuta anche un link simbolico quando si sovrascrive con `--force`. Fino al
+rilascio successivo alla 3.0.0, `--force` troncava il file esistente sul
+posto, che conservava permessi e proprietario: un file leggibile da tutti, o
+creato da un altro utente in una cartella condivisa, riceveva così il testo in
+chiaro recuperato. Ora la sovrascrittura scrive un nuovo file privato e lo
+rinomina sopra il vecchio.
 
 ### SR-13 — Segreti non cancellati (Media, accettato)
 
