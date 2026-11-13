@@ -148,13 +148,16 @@ dell'array.
 
 ### `write_new(path, data, *, overwrite=False) -> None`
 
-Scrive byte in un nuovo file con creazione esclusiva (`O_CREAT | O_EXCL`),
-salvo `overwrite` (allora `O_TRUNC`): verifica e creazione sono un unico
-passo atomico, e un nome esistente — compreso un collegamento simbolico
-pendente — viene rifiutato anziché seguito (06 SR-03). `O_NOFOLLOW` è sempre
-impostato, e un collegamento simbolico nella destinazione viene rifiutato
-anche con `overwrite`. I nuovi file ricevono i permessi `0o600` qualunque sia
-la umask (06 SR-12). Solleva `ShardpixError`. Ogni output della CLI e di
+Scrive byte in un nuovo file con creazione esclusiva (`O_CREAT | O_EXCL`):
+verifica e creazione sono un unico passo atomico, e un nome esistente —
+compreso un collegamento simbolico pendente — viene rifiutato anziché seguito
+(06 SR-03). Con `overwrite` i byte vanno in un nuovo file privato nella stessa
+cartella, che poi sostituisce la destinazione con `os.replace`: permessi,
+proprietario e hard link del vecchio file non passano mai al nuovo, e un
+crash lascia o il vecchio file o il nuovo. `O_NOFOLLOW` è sempre impostato, e
+un collegamento simbolico nella destinazione viene rifiutato anche con
+`overwrite`. Ogni file scritto ha i permessi `0o600` qualunque sia la umask
+(06 SR-12). Solleva `ShardpixError`. Ogni output della CLI e di
 `seal` passa da qui. Test: `TestWriteNew`.
 
 ### `save_png(carrier, path, *, overwrite=False) -> None`
@@ -484,8 +487,9 @@ segreto diverso* o *autenticazione fallita*. Solleva
 ### `combine(shares) -> Recovery`
 
 `recover_all`, poi rifiuta l'ambiguità: `InconsistentSharesError` se i
-cluster provengono da due suddivisioni, o se i due cluster più grandi hanno
-la stessa dimensione. Test: `TestAuthentication`, `TestRobustSearch`.
+cluster provengono da due suddivisioni, o se una suddivisione produce più di
+un cluster, qualunque sia la dimensione (`candidates` dell'errore elenca ogni
+recupero). Test: `TestAuthentication`, `TestRobustSearch`.
 
 ---
 
@@ -532,9 +536,12 @@ dimensione del file, lunghezza del nome del file, collisioni fra output
 (incluso `vault_name` rispetto ai nomi delle immagini), sovrascritture, e che
 ogni immagine di copertura possa contenere `SHARE_BYTES`. Poi vengono estratti
 chiave, id di gruppo e nonce, il file viene cifrato, la chiave suddivisa e
-ogni quota inserita. Solleva `VaultError`, `UnsupportedImageError` o
-`CapacityError`. Test: `TestRoundTrip`, `TestSealValidation`,
-`TestOutputCollisions`.
+ogni quota inserita. Con `check` ogni immagine viene riletta dal disco e deve
+restituire la sua quota, e il file del vault deve decifrarsi nel file
+originale, prima di segnalare il successo (altrimenti `VaultError`
+"self-check failed"; `seal --no-check` lo salta). Solleva `VaultError`,
+`UnsupportedImageError` o `CapacityError`. Test: `TestRoundTrip`,
+`TestSealValidation`, `TestOutputCollisions`, `TestVerifyAndSelfCheck`.
 
 ### `read_vault(path)`
 
@@ -545,9 +552,14 @@ può essere letto.
 
 Mantiene solo il nome base (gestendo `/` e `\`), rimuove i caratteri di
 controllo e di formato (categorie Unicode Cc e Cf: NUL, sequenze di escape del
-terminale, override bidirezionali), elimina punti e spazi finali e sostituisce
-nomi vuoti, `.`, `..` e nomi di dispositivo Windows (`CON`, `NUL`, `COM1`, …)
-con `FALLBACK_NAME`. Test: `TestSafeFilename`, `TestRestoredNames`.
+terminale, override bidirezionali), sostituisce `:<>|?*"` con `_` (niente
+flussi di dati alternativi NTFS), poi finché non cambia più nulla elimina gli
+spazi, i punti finali e i punti e trattini iniziali (niente file nascosti come
+`.bashrc`, niente nomi simili a opzioni come `-rf`). I nomi vuoti e i nomi di
+dispositivo Windows, confrontati come fa Win32 dopo aver tolto gli spazi
+(`CON`, `NUL`, `COM1`, `COM¹`, `CONIN$`, …), diventano `FALLBACK_NAME`. La CLI
+non permette mai a `--force` di sostituire un file con un nome ripristinato:
+serve `-o`. Test: `TestSafeFilename`, `TestRestoredNames`.
 
 ### `_read_share(path, passphrase)` *(privata)*
 
@@ -561,6 +573,13 @@ di altri vault e i duplicati, esegue `shamir.recover_all` e prova la chiave di
 ciascun cluster contro il tag del vault. Solleva `VaultError`, con gli esiti
 per immagine, quando non esiste alcun cluster o nessuno apre il vault. Test:
 `TestFailures`, `TestForgedSets`, `test_known_answers.py`.
+
+### `verify(vault_path, images, passphrase=None, progress=None) -> VerifyResult`
+
+Gli stessi controlli di `unseal`, compresa la decifratura di prova in memoria,
+ma il testo in chiaro viene scartato: restituisce `opens`, gli esiti per
+immagine e, quando le immagini non aprono il vault, il motivo. È alla base di
+`shardpix verify`, che esce con 0 o 1. Test: `TestVerifyAndSelfCheck`.
 
 ---
 
@@ -641,7 +660,6 @@ Test: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0,10: prefisso rilevato a partire dal quale `analyze` segnala la firma del chi quadrato. |
 | `RS_ALERT` | 0,10: stima RS a partire dalla quale `analyze` segnala un LSB replacement. Le fotografie pulite hanno misurato da −2,5% a +8,3% nel benchmark. |
-| `JPEG_WARNING` | Testo mostrato quando un file non JPEG è stato comunque decodificato come JPEG da Pillow; i file JPEG ricevono l'inserimento in modo nativo (formato 7). |
 | `LOW_QUALITY_WARNING` | Testo mostrato quando la qualità stimata di un'immagine di copertura JPEG è inferiore a `jpeg.SAFE_QUALITY` (90). |
 | `STRUCTURE_WARNING` | Testo mostrato quando `EmbedReport.structure_kept` è False: un'immagine di copertura progressiva o con marcatori di restart, riscritta come baseline senza di essi (06 SR-09). |
 | `OUTPUT_SUFFIXES` | Estensioni accettate per il file stego: `.jpg`/`.jpeg` per un'immagine di copertura JPEG, `.png` altrimenti. |

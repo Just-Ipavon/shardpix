@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from . import media, shamir, stego
 from .errors import (
     PayloadNotFoundError,
+    ShardpixError,
     ShareError,
     ShareFormatError,
     UnsupportedImageError,
@@ -61,9 +62,13 @@ _WINDOWS_RESERVED = {
     "PRN",
     "AUX",
     "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
+    "CONIN$",
+    "CONOUT$",
+    "CLOCK$",
+    *(f"COM{i}" for i in (*"123456789", "¹", "²", "³")),
+    *(f"LPT{i}" for i in (*"123456789", "¹", "²", "³")),
 }
+_UNSAFE_CHARACTERS = str.maketrans(dict.fromkeys(':<>|?*"', "_"))
 
 SHARE_BYTES = shamir.share_size(KEY_BYTES)
 """Size of the share hidden in each image."""
@@ -119,9 +124,6 @@ class SealedImage:
     output: Path
     share_index: int
     report: stego.EmbedReport
-    from_jpeg: bool = False
-    """The cover was a JPEG decoded to pixels (only for formats Pillow reads as JPEG
-    but that are not baseline JPEG files); JPEG files are embedded natively."""
     format: str = "PNG (format 6)"
     jpeg_quality: int | None = None
     """Estimated quality of a JPEG cover; ``None`` for pixel covers."""
@@ -200,12 +202,15 @@ def seal(
     force: bool = False,
     random_bytes: RandomBytes = os.urandom,
     progress: Progress | None = None,
+    check: bool = True,
 ) -> SealResult:
     """Encrypt ``source`` and hide one share of its key in each cover image.
 
     Every check - readable covers, enough capacity, no overwrites - runs
     before anything is written, so a failure leaves the output directory as
-    it was.
+    it was. With ``check`` (the default) every image is read back from disk
+    and must give its share, and the vault file must decrypt to the source,
+    before success is reported; this doubles the key derivations.
     """
     source, out_dir = Path(source), Path(out_dir)
     covers = [Path(c) for c in covers]
@@ -235,6 +240,8 @@ def seal(
 
     # Each image keeps its kind: a phone JPEG gives a JPEG, anything else a PNG.
     outputs = [out_dir / f"{cover.stem}{media.kind_suffix(cover)}" for cover in covers]
+    if vault_name is not None and not is_bare_name(vault_name):
+        raise VaultError(f"the vault name {vault_name!r} must be a file name, not a path")
     vault_path = out_dir / (vault_name or f"{source.name}{VAULT_SUFFIX}")
     if len({_identity(p) for p in [*outputs, vault_path]}) != count + 1:
         raise VaultError(
@@ -282,22 +289,48 @@ def seal(
             opened_cover, share.to_bytes(), passphrase, random_bytes, method, image_progress
         )
         write_new(output, stego_file, overwrite=force)
-        decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
+        if check:
+            _check_share_written(output, share, passphrase)
         sealed.append(
             SealedImage(
                 cover,
                 output,
                 share.index,
                 embed_report,
-                decoded_jpeg,
                 opened_cover.format_name,
                 None if opened_cover.coefficients is None else opened_cover.coefficients.quality,
             )
         )
     report(1.0, f"writing {vault_path.name}")
     write_new(vault_path, header.to_bytes() + ciphertext, overwrite=force)
+    if check:
+        written_header, written = read_vault(vault_path)
+        try:
+            ok = AESGCM(key).decrypt(header.nonce, written, written_header.to_bytes()) == plaintext
+        except (InvalidTag, ValueError):
+            ok = False
+        if not ok:
+            raise VaultError(
+                f"self-check failed: {vault_path} does not decrypt to the source "
+                "as written; do not rely on this vault"
+            )
 
     return SealResult(vault_path, header, len(data), tuple(sealed))
+
+
+def _check_share_written(path: Path, share: shamir.Share, passphrase: str | None) -> None:
+    """Read ``path`` back from disk; it must give exactly ``share``."""
+    try:
+        payload = media.reveal(path, passphrase)
+    except ShardpixError as exc:
+        raise VaultError(
+            f"self-check failed: {path} does not give back its share ({exc}); "
+            "do not rely on this image"
+        ) from exc
+    if payload != share.to_bytes():
+        raise VaultError(
+            f"self-check failed: {path} gives back a different share; do not rely on this image"
+        )
 
 
 def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
@@ -310,19 +343,31 @@ def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
     return header, data[HEADER_BYTES:]
 
 
+def is_bare_name(name: str) -> bool:
+    """Whether ``name`` names a file in the current directory, on any system."""
+    return name not in {"", ".", ".."} and PurePath(name.replace("\\", "/")).name == name
+
+
 def safe_filename(name: str) -> str:
     """Reduce a stored file name to a bare, harmless file name.
 
     The name comes from inside an authenticated vault, but whoever made the
     vault may not be trustworthy: the restored name must never point outside
     the chosen directory, carry control characters (terminal escape
-    sequences, NUL), or be a reserved device name on Windows.
+    sequences, NUL), be a hidden file (``.bashrc``, ``.envrc``) or look like
+    an option (``-rf``), name an NTFS alternate data stream, or be a reserved
+    device name on Windows, which ignores trailing dots and spaces.
     """
     base = PurePath(name.replace("\\", "/")).name
     base = "".join(c for c in base if unicodedata.category(c) not in {"Cc", "Cf"})
-    base = base.strip().rstrip(".")
-    stem = base.split(".")[0].upper()
-    if base in {"", ".", ".."} or stem in _WINDOWS_RESERVED:
+    base = base.translate(_UNSAFE_CHARACTERS)
+    while True:
+        trimmed = base.strip().rstrip(". ").lstrip(".-")
+        if trimmed == base:
+            break
+        base = trimmed
+    stem = base.split(".")[0].strip().upper()
+    if not base or stem in _WINDOWS_RESERVED:
         return FALLBACK_NAME
     return base
 
@@ -347,6 +392,53 @@ def unseal(
     progress: Progress | None = None,
 ) -> UnsealResult:
     """Recover the file sealed in ``vault_path`` from (some of) its images."""
+    header, plaintext, outcomes = _open(vault_path, images, passphrase, progress)
+    name_length = int.from_bytes(plaintext[:2], "big")
+    name = plaintext[2 : 2 + name_length].decode("utf-8", errors="replace")
+    return UnsealResult(
+        filename=safe_filename(name),
+        data=plaintext[2 + name_length :],
+        header=header,
+        outcomes=outcomes,
+    )
+
+
+@dataclass(frozen=True)
+class VerifyResult:
+    """Whether a set of images opens a vault, image by image; no plaintext."""
+
+    header: VaultHeader
+    opens: bool
+    outcomes: tuple[ImageOutcome, ...]
+    detail: str = ""
+
+
+def verify(
+    vault_path: Path,
+    images: Sequence[Path],
+    passphrase: str | None = None,
+    progress: Progress | None = None,
+) -> VerifyResult:
+    """Check which images hold a valid share of ``vault_path`` and whether they open it.
+
+    The key is rebuilt and the vault trial-decrypted in memory, so a share that
+    authenticates but belongs to a forged set is still caught; the plaintext is
+    discarded, never returned or written.
+    """
+    header, _ciphertext = read_vault(vault_path)
+    try:
+        _, _plaintext, outcomes = _open(vault_path, images, passphrase, progress)
+    except VaultError as exc:
+        return VerifyResult(header, False, exc.outcomes, str(exc))
+    return VerifyResult(header, True, outcomes)
+
+
+def _open(
+    vault_path: Path,
+    images: Sequence[Path],
+    passphrase: str | None,
+    progress: Progress | None,
+) -> tuple[VaultHeader, bytes, tuple[ImageOutcome, ...]]:
     header, ciphertext = read_vault(vault_path)
     images = list(dict.fromkeys(Path(p) for p in images))
     report = span(progress, 0.0, 1.0)
@@ -378,6 +470,12 @@ def unseal(
         return tuple(outcomes[p] for p in images if p in outcomes)
 
     report(1.0, "rebuilding the key")
+    if not shares:
+        raise VaultError(
+            f"cannot open the vault: none of the {len(images)} images holds a share of it "
+            "(wrong or missing passphrase, edited images, or images of another vault)",
+            ordered(),
+        )
     try:
         recoveries = shamir.recover_all(shares)
     except ShareError as exc:
@@ -435,11 +533,4 @@ def unseal(
             path, Status.REJECTED, rejection.reason, rejection.share.index
         )
 
-    name_length = int.from_bytes(plaintext[:2], "big")
-    name = plaintext[2 : 2 + name_length].decode("utf-8", errors="replace")
-    return UnsealResult(
-        filename=safe_filename(name),
-        data=plaintext[2 + name_length :],
-        header=header,
-        outcomes=ordered(),
-    )
+    return header, plaintext, ordered()
