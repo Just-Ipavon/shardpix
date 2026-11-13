@@ -148,12 +148,25 @@ def load(path: str | Path) -> JpegCover:
 _SOF_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
 
 
+_EOI = b"\xff\xd9"
+
+
 def _dimensions(path: Path) -> tuple[int, int]:
-    """Width and height from the frame header, read before libjpeg allocates anything."""
+    """Width and height from the frame header, read before libjpeg allocates anything.
+
+    A file without an end-of-image marker after its scan is refused: libjpeg
+    would warn about a premature end on stderr and fill in the missing blocks,
+    so the stego image would be a "repaired" picture, not the cover. Entropy-
+    coded data stuffs every ``FF`` byte, so ``FF D9`` there is always the EOI.
+    """
     try:
-        segments, _ = _segments(path.read_bytes())
+        segments, scan = _segments(path.read_bytes())
     except OSError as exc:
         raise UnsupportedImageError(f"{path}: cannot read ({exc.strerror or exc})") from exc
+    except UnsupportedImageError as exc:
+        raise UnsupportedImageError(f"{path}: {exc}") from exc
+    if _EOI not in scan:
+        raise UnsupportedImageError(f"{path}: truncated JPEG (no end-of-image marker)")
     for marker, segment in segments:
         if marker in _SOF_MARKERS and len(segment) >= 9:
             height = int.from_bytes(segment[5:7], "big")
@@ -387,7 +400,84 @@ def _encode(cover: JpegCover, coefficients: np.ndarray) -> tuple[bytes, bool]:
         if _huffman(_segments(encoded)[0]) != _huffman(_segments(source)[0]):
             image.write_dct(str(target), flags=["+OPTIMIZE_CODING"])
             encoded = target.read_bytes()
-    return _match_structure(source, encoded)
+    data, kept = _match_structure(source, encoded)
+    return _keep_trailer(source, data, kept)
+
+
+def _primary_end(data: bytes) -> int:
+    """Offset just past the EOI of the first image (its scan never contains ``FF D9``)."""
+    _, scan = _segments(data)
+    start = len(data) - len(scan)
+    eoi = scan.find(_EOI)
+    return len(data) if eoi < 0 else start + eoi + 2
+
+
+def _keep_trailer(source: bytes, data: bytes, kept: bool) -> tuple[bytes, bool]:
+    """Append whatever followed the cover's first image, and point its MPF index at it.
+
+    Phone photos carry a second MPO frame, a gain map, depth data or a motion
+    photo after the primary image's EOI. libjpeg writes one image, so these
+    bytes are copied back unchanged; the Multi-Picture index in APP2, copied
+    from the cover, gives the other images' offsets from its own header, so
+    they move by however much the primary image changed in size. If the index
+    cannot be read, the bytes are still kept and the structure is reported as
+    changed.
+    """
+    trailer = source[_primary_end(source) :]
+    if not trailer:
+        return data, kept
+    data = bytearray(data[: _primary_end(bytes(data))])
+    old, new = _mpf_header(source), _mpf_header(bytes(data))
+    if old is None and new is None:
+        return bytes(data) + trailer, kept
+    if old is None or new is None:
+        return bytes(data) + trailer, False
+    delta = (len(data) - new) - (_primary_end(source) - old)
+    if not _shift_mp_entries(data, new, delta):
+        return bytes(data) + trailer, False
+    return bytes(data) + trailer, kept
+
+
+def _mpf_header(data: bytes) -> int | None:
+    """Offset of the MP endian header inside the APP2 ``MPF`` segment, if any."""
+    try:
+        segments, _ = _segments(data)
+    except UnsupportedImageError:
+        return None
+    offset = 2
+    for marker, segment in segments:
+        if marker == 0xE2 and segment[4:8] == b"MPF\x00":
+            return offset + 8
+        offset += len(segment)
+    return None
+
+
+def _shift_mp_entries(data: bytearray, header: int, delta: int) -> bool:
+    """Add ``delta`` to every non-zero image offset of the MP Entry table, in place."""
+    order = {b"II*\x00": "little", b"MM\x00*": "big"}.get(bytes(data[header : header + 4]))
+    if order is None:
+        return False
+
+    def read(at: int, size: int) -> int:
+        return int.from_bytes(data[header + at : header + at + size], order)
+
+    ifd = read(4, 4)
+    for i in range(read(ifd, 2)):
+        entry = ifd + 2 + 12 * i
+        if read(entry, 2) != 0xB002:
+            continue
+        table, count = read(entry + 8, 4), read(entry + 4, 4)
+        if count % 16 or header + table + count > len(data):
+            return False
+        for j in range(count // 16):
+            at = table + 16 * j + 8
+            value = read(at, 4)
+            if value:
+                if not 0 <= value + delta < 2**32:
+                    return False
+                data[header + at : header + at + 4] = (value + delta).to_bytes(4, order)
+        return True
+    return False
 
 
 def _not_found() -> PayloadNotFoundError:

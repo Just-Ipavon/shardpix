@@ -61,9 +61,13 @@ _WINDOWS_RESERVED = {
     "PRN",
     "AUX",
     "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
+    "CONIN$",
+    "CONOUT$",
+    "CLOCK$",
+    *(f"COM{i}" for i in (*"123456789", "¹", "²", "³")),
+    *(f"LPT{i}" for i in (*"123456789", "¹", "²", "³")),
 }
+_UNSAFE_CHARACTERS = str.maketrans(dict.fromkeys(':<>|?*"', "_"))
 
 SHARE_BYTES = shamir.share_size(KEY_BYTES)
 """Size of the share hidden in each image."""
@@ -232,6 +236,8 @@ def seal(
 
     # Each image keeps its kind: a phone JPEG gives a JPEG, anything else a PNG.
     outputs = [out_dir / f"{cover.stem}{media.kind_suffix(cover)}" for cover in covers]
+    if vault_name is not None and not is_bare_name(vault_name):
+        raise VaultError(f"the vault name {vault_name!r} must be a file name, not a path")
     vault_path = out_dir / (vault_name or f"{source.name}{VAULT_SUFFIX}")
     if len({_identity(p) for p in [*outputs, vault_path]}) != count + 1:
         raise VaultError(
@@ -305,19 +311,31 @@ def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
     return header, data[HEADER_BYTES:]
 
 
+def is_bare_name(name: str) -> bool:
+    """Whether ``name`` names a file in the current directory, on any system."""
+    return name not in {"", ".", ".."} and PurePath(name.replace("\\", "/")).name == name
+
+
 def safe_filename(name: str) -> str:
     """Reduce a stored file name to a bare, harmless file name.
 
     The name comes from inside an authenticated vault, but whoever made the
     vault may not be trustworthy: the restored name must never point outside
     the chosen directory, carry control characters (terminal escape
-    sequences, NUL), or be a reserved device name on Windows.
+    sequences, NUL), be a hidden file (``.bashrc``, ``.envrc``) or look like
+    an option (``-rf``), name an NTFS alternate data stream, or be a reserved
+    device name on Windows, which ignores trailing dots and spaces.
     """
     base = PurePath(name.replace("\\", "/")).name
     base = "".join(c for c in base if unicodedata.category(c) not in {"Cc", "Cf"})
-    base = base.strip().rstrip(".")
-    stem = base.split(".")[0].upper()
-    if base in {"", ".", ".."} or stem in _WINDOWS_RESERVED:
+    base = base.translate(_UNSAFE_CHARACTERS)
+    while True:
+        trimmed = base.strip().rstrip(". ").lstrip(".-")
+        if trimmed == base:
+            break
+        base = trimmed
+    stem = base.split(".")[0].strip().upper()
+    if not base or stem in _WINDOWS_RESERVED:
         return FALLBACK_NAME
     return base
 
@@ -373,6 +391,12 @@ def unseal(
         return tuple(outcomes[p] for p in images if p in outcomes)
 
     report(1.0, "rebuilding the key")
+    if not shares:
+        raise VaultError(
+            f"cannot open the vault: none of the {len(images)} images holds a share of it "
+            "(wrong or missing passphrase, edited images, or images of another vault)",
+            ordered(),
+        )
     try:
         recoveries = shamir.recover_all(shares)
     except ShareError as exc:

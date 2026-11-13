@@ -560,12 +560,14 @@ combinazioni può inoltre bloccarsi su una quota errata elencata per prima.
 **Decisione.** Il recupero cerca cluster di quote che si autenticano a
 vicenda — prima blocchi disgiunti, poi combinazioni di indici con una quota
 per indice, entro un budget di 10.000 tentativi. I cluster non si
-sovrappongono mai. `combine` restituisce il più grande e rifiuta i pareggi;
+sovrappongono mai. `combine` restituisce un segreto solo quando le quote ne
+autenticano esattamente uno, e rifiuta due cluster qualunque sia la loro
+dimensione: un solo detentore può fabbricare più quote di quelle oneste.
 `unseal` prova ogni cluster contro il tag AES-GCM del vault.
 
 **Conseguenze.** Una quota danneggiata su venti costa due tentativi, non
-migliaia. Un insieme contraffatto non viene mai accettato da `unseal`, e viene
-segnalato come tale. Il budget limita il caso peggiore al prezzo di un errore
+migliaia. Un insieme contraffatto non viene mai accettato da `unseal`, e fa
+fallire `combine` invece di fargli restituire uno dei due segreti. Il budget limita il caso peggiore al prezzo di un errore
 chiaro con input avversariali ben oltre l'uso realistico.
 
 ### ADR-10 — Output senza perdita per le immagini di copertura in pixel (immagini di copertura JPEG: vedi ADR-13)

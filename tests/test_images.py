@@ -98,6 +98,50 @@ class TestSave:
             assert np.array_equal(reloaded.pixels, carrier.pixels)
 
 
+def _png16_rgb(path):
+    """A 16-bit RGB PNG, which Pillow opens as plain 8-bit RGB."""
+    import struct
+    import zlib
+
+    width = height = 16
+    row = np.arange(width * 3, dtype=">u2").tobytes()
+    raw = b"".join(b"\x00" + row for _ in range(height))
+
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 16, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+    return path
+
+
+class TestLossyCovers:
+    def test_16_bit_rgb_png_is_refused(self, tmp_path):
+        with pytest.raises(UnsupportedImageError, match="16-bit"):
+            load_image(_png16_rgb(tmp_path / "deep.png"))
+
+    @pytest.mark.parametrize("name", ["anim.gif", "anim.png", "pages.tiff"])
+    def test_multi_frame_images_are_refused(self, tmp_path, name):
+        frames = [Image.new("RGB", (16, 16), (i * 80, 0, 0)) for i in range(3)]
+        path = tmp_path / name
+        frames[0].save(path, save_all=True, append_images=frames[1:])
+        with pytest.raises(UnsupportedImageError, match="3 frames or pages"):
+            load_image(path)
+
+    def test_single_frame_8_bit_covers_still_load(self, tmp_path):
+        for name in ("still.gif", "still.tiff", "still.png"):
+            path = tmp_path / name
+            Image.new("RGB", (16, 16), (1, 2, 3)).save(path)
+            assert load_image(path).pixels.shape[:2] == (16, 16)
+
+
 class TestWriteNew:
     def test_refuses_existing_files(self, tmp_path):
         from shardpix.errors import ShardpixError
@@ -131,6 +175,44 @@ class TestWriteNew:
         with pytest.raises(ShardpixError, match="symbolic link"):
             write_new(link, b"x", overwrite=True)
         assert target.read_bytes() == b"keep"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+    def test_overwritten_files_are_private_too(self, tmp_path):
+        from shardpix.images import write_new
+
+        path = tmp_path / "plain.txt"
+        path.write_bytes(b"old")
+        path.chmod(0o666)
+        write_new(path, b"secret", overwrite=True)
+        assert path.read_bytes() == b"secret"
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        assert path.stat().st_uid == os.getuid()
+        assert [p.name for p in tmp_path.iterdir()] == ["plain.txt"]
+
+    def test_overwrite_does_not_write_through_hard_links(self, tmp_path):
+        from shardpix.images import write_new
+
+        path, other = tmp_path / "out", tmp_path / "planted"
+        path.write_bytes(b"old")
+        os.link(path, other)
+        write_new(path, b"secret", overwrite=True)
+        assert path.read_bytes() == b"secret" and other.read_bytes() == b"old"
+
+    def test_failed_overwrite_keeps_the_old_file(self, tmp_path, monkeypatch):
+        from shardpix import images
+        from shardpix.errors import ShardpixError
+
+        path = tmp_path / "vault"
+        path.write_bytes(b"old")
+
+        def broken(src, dst):
+            raise OSError(5, "Input/output error")
+
+        monkeypatch.setattr(images.os, "replace", broken)
+        with pytest.raises(ShardpixError, match="cannot write"):
+            images.write_new(path, b"new", overwrite=True)
+        assert path.read_bytes() == b"old"
+        assert [p.name for p in tmp_path.iterdir()] == ["vault"]
 
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
     def test_new_files_are_private(self, tmp_path):

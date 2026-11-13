@@ -45,7 +45,15 @@ class InsufficientSharesError(ShareError):
 
 
 class InconsistentSharesError(ShareError):
-    """The shares do not belong to a single split."""
+    """The shares do not belong to a single split, or authenticate several secrets.
+
+    ``candidates`` lists one recovery per secret the shares authenticate, when
+    there is more than one, so the caller can show which shares back which.
+    """
+
+    def __init__(self, message: str, rejected: tuple = (), *, candidates: tuple = ()) -> None:
+        super().__init__(message, rejected)
+        self.candidates = candidates
 
 
 class ShareAuthenticationError(ShareError):
