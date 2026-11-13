@@ -31,6 +31,7 @@ The results land in MyDrive/shardpix_alaska/data (docs/data in this
 repository) and the charts in MyDrive/shardpix_alaska/assets.
 """
 
+import collections
 import concurrent.futures as cf
 import json
 import multiprocessing as mp
@@ -92,6 +93,10 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
+
+# Checkpoints are loaded with weights_only=True (no arbitrary pickles); the
+# MultiStepLR state keeps its milestones in a Counter.
+torch.serialization.add_safe_globals([collections.Counter])
 
 from shardpix import jpeg  # noqa: E402
 from shardpix.analysis import ensemble, features, jpeg_benchmark, pooled  # noqa: E402
@@ -415,7 +420,7 @@ def train_stage(q, payload, init, covers, stegos, quant, train, val):
     sched = torch.optim.lr_scheduler.MultiStepLR(opt, [int(epochs * 0.75)], 0.1)
     first, best = 1, (1.0, float("inf"))
     if ckpt_path.exists():
-        ckpt = torch.load(ckpt_path, map_location=DEVICE)
+        ckpt = torch.load(ckpt_path, map_location=DEVICE, weights_only=True)
         model.load_state_dict(ckpt["model"])
         opt.load_state_dict(ckpt["opt"])
         sched.load_state_dict(ckpt["sched"])
@@ -454,7 +459,7 @@ def train_stage(q, payload, init, covers, stegos, quant, train, val):
             },
             ckpt_path,
         )
-    return torch.load(best_path, map_location=DEVICE), epochs
+    return torch.load(best_path, map_location=DEVICE, weights_only=True), epochs
 
 
 # --------------------------------------------------------------------------- measurement
@@ -494,7 +499,7 @@ def run_srnet(q, folder, previous):
         best_path = Path(CHECKPOINTS) / f"{TAG}-q{q}-{STRATEGY}-{payload}.best.pt"
         if key in saved and best_path.exists():
             log(f"q{q} {payload}: already measured, skipped")
-            state = torch.load(best_path, map_location=DEVICE)
+            state = torch.load(best_path, map_location=DEVICE, weights_only=True)
             continue
         stegos, _, stego_path = coefficients(q, folder, payload)
         state, epochs = train_stage(q, payload, state, covers, stegos, quant, train, val)

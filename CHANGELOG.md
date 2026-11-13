@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- CI hardening (#30): `permissions: contents: read`, actions pinned by
+  commit SHA with `persist-credentials: false`, `semgrep` pinned and run on a
+  vendored rule set (`.semgrep/python.yml`) instead of rules fetched at run
+  time, and a new `ml` job that installs CPU PyTorch and runs the CNN tests
+  that were always skipped. `scripts/srnet_colab.py` loads its checkpoints
+  with `weights_only=True`. New tests cover a JPEG payload exactly at
+  capacity and greyscale and CMYK JPEG round trips.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
