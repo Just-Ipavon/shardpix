@@ -121,6 +121,7 @@ def load_image(path: str | Path) -> Carrier:
             warnings.simplefilter("ignore", Image.DecompressionBombWarning)
             with Image.open(path) as image:
                 check_size(path, *image.size)
+                check_lossless_source(path, image)
                 image.load()
                 return from_pil(image)
     except FileNotFoundError as exc:
@@ -129,6 +130,40 @@ def load_image(path: str | Path) -> Carrier:
         raise UnsupportedImageError(f"{path}: image is too large ({exc})") from exc
     except (OSError, SyntaxError, ValueError) as exc:
         raise UnsupportedImageError(f"{path}: not a readable image ({exc})") from exc
+
+
+def _raw_modes(image: Image.Image) -> list[str]:
+    modes = []
+    for tile in image.tile:
+        args = tile.args if hasattr(tile, "args") else tile[3]
+        mode = args if isinstance(args, str) else (args[0] if args else "")
+        if isinstance(mode, str):
+            modes.append(mode)
+    return modes
+
+
+def check_lossless_source(path: str | Path, image: Image.Image) -> None:
+    """Refuse a cover that would lose data on the way to an 8-bit carrier.
+
+    Pillow opens a 16-bit RGB PNG or TIFF as an 8-bit ``RGB`` image, and keeps
+    only the first frame of an animated GIF or PNG or of a multi-page TIFF;
+    the stego image would then visibly differ from its cover. Call it on an
+    opened image before ``load()``, while its tiles still describe the file.
+    """
+    depth = image.tag_v2.get(258) if hasattr(image, "tag_v2") else None
+    deep = any(";16" in m or ";32" in m for m in _raw_modes(image)) or bool(
+        depth and max(depth if isinstance(depth, tuple) else (depth,)) > 8
+    )
+    if deep and image.mode not in _REJECTED_MODES:
+        raise UnsupportedImageError(
+            f"{path}: 16-bit images are not supported; export the cover as 8-bit"
+        )
+    frames = getattr(image, "n_frames", 1)
+    if frames > 1 and image.format not in {"JPEG", "MPO"}:
+        raise UnsupportedImageError(
+            f"{path}: image with {frames} frames or pages; only the first would be kept. "
+            "Use a single still image"
+        )
 
 
 def check_size(path: str | Path, width: int, height: int) -> None:

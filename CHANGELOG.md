@@ -40,6 +40,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- 16-bit colour PNG and TIFF covers are refused, as docs/07 already said;
+  Pillow opened them as 8-bit RGB and the stego image silently lost the extra
+  depth (16-bit greyscale was already refused). Animated GIF and PNG and
+  multi-page TIFF covers are refused too, instead of coming back as a single
+  still image (#25).
 - A truncated JPEG is refused as a cover ("truncated JPEG (no end-of-image
   marker)") instead of being accepted while libjpeg printed "Premature end of
   JPEG file" and filled in the missing blocks. Malformed JPEG headers now name
