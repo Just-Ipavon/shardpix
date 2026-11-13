@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- The benchmark modules no longer default to a `docs/data` path relative to
+  the working directory when it is not there: outside a repository checkout
+  they ask for `--data` instead of writing results wherever they run.
+  `shardpix.analysis.cnn` without PyTorch fails with an install hint.
+  The CLI's warning for JPEG files decoded to pixels, which no input could
+  reach (every JPEG is embedded natively), is removed with
+  `SealedImage.from_jpeg`; `Carrier.from_jpeg` stays for library callers
+  of `load_image` (#37).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

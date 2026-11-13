@@ -45,7 +45,7 @@ from PIL import Image
 
 from .. import stego, vault
 from ..images import Carrier
-from . import ensemble, features
+from . import default_data_dir, ensemble, features
 from .benchmark import SCENARIO_BY_KEY, THEMES, _finish, _style_axes, embed_random
 
 SWEEP = (0.4, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005)
@@ -598,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     suffix = "" if args.strategy == "shardpix" else f"_{args.strategy}"
     if args.data is None:
-        args.data = Path(f"docs/data/ml_benchmark_{args.size}{suffix}.json")
+        args.data = default_data_dir(parser) / f"ml_benchmark_{args.size}{suffix}.json"
     global STRATEGY, CACHE
     STRATEGY = args.strategy
     CACHE = args.cache

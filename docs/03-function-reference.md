@@ -612,7 +612,6 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0.10: detected prefix at which `analyze` reports the chi-square signature. |
 | `RS_ALERT` | 0.10: RS estimate at which `analyze` reports LSB replacement. Clean photographs measured −2.5% to +8.3% in the benchmark. |
-| `JPEG_WARNING` | Text shown when a non-JPEG file was nonetheless decoded as JPEG by Pillow; JPEG files are embedded natively (format 7). |
 | `LOW_QUALITY_WARNING` | Text shown when a JPEG cover's estimated quality is below `jpeg.SAFE_QUALITY` (90). |
 | `STRUCTURE_WARNING` | Text shown when `EmbedReport.structure_kept` is False: a progressive cover or one with restart markers, written back as baseline without them (06 SR-09). |
 | `OUTPUT_SUFFIXES` | Extensions accepted for the stego file: `.jpg`/`.jpeg` for a JPEG cover, `.png` otherwise. |

@@ -641,7 +641,6 @@ Test: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0,10: prefisso rilevato a partire dal quale `analyze` segnala la firma del chi quadrato. |
 | `RS_ALERT` | 0,10: stima RS a partire dalla quale `analyze` segnala un LSB replacement. Le fotografie pulite hanno misurato da −2,5% a +8,3% nel benchmark. |
-| `JPEG_WARNING` | Testo mostrato quando un file non JPEG è stato comunque decodificato come JPEG da Pillow; i file JPEG ricevono l'inserimento in modo nativo (formato 7). |
 | `LOW_QUALITY_WARNING` | Testo mostrato quando la qualità stimata di un'immagine di copertura JPEG è inferiore a `jpeg.SAFE_QUALITY` (90). |
 | `STRUCTURE_WARNING` | Testo mostrato quando `EmbedReport.structure_kept` è False: un'immagine di copertura progressiva o con marcatori di restart, riscritta come baseline senza di essi (06 SR-09). |
 | `OUTPUT_SUFFIXES` | Estensioni accettate per il file stego: `.jpg`/`.jpeg` per un'immagine di copertura JPEG, `.png` altrimenti. |

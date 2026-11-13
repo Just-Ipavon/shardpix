@@ -92,12 +92,6 @@ passphrase:
 CHI_SQUARE_ALERT = 0.10
 """Detected prefix (fraction of the image) above which the chi-square attack is reported."""
 
-JPEG_WARNING = (
-    "[yellow]warning:[/] {names} decoded from JPEG. Changing a decoded JPEG by +-1 breaks its "
-    "8x8 block structure, which JPEG-compatibility steganalysis can detect at any rate; "
-    "prefer photos that were never JPEG-compressed, such as RAW exports (docs/07)."
-)
-
 LOW_QUALITY_WARNING = (
     "[yellow]warning:[/] {names} JPEG quality about {quality}, below {safe}: "
     "a recompressed photo, such as one saved from a chat app or a social network. At "
@@ -463,8 +457,6 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
             "[yellow]warning:[/] no passphrase - anyone running shardpix can locate and "
             "read this payload"
         )
-    if cover.pixels is not None and cover.pixels.from_jpeg:
-        console.print(JPEG_WARNING.format(names=f"{escape(str(args.cover))} was"))
     if cover.coefficients is not None and cover.coefficients.quality < jpeg.SAFE_QUALITY:
         console.print(
             LOW_QUALITY_WARNING.format(
@@ -636,10 +628,6 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
             "image; the vault still needs "
             f"{header.threshold} of them"
         )
-    jpegs = [image.cover.name for image in result.images if image.from_jpeg]
-    if jpegs:
-        verb = "was" if len(jpegs) == 1 else "were"
-        console.print(JPEG_WARNING.format(names=f"{escape(', '.join(jpegs))} {verb}"))
     low = [
         image
         for image in result.images
