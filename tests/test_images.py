@@ -98,6 +98,50 @@ class TestSave:
             assert np.array_equal(reloaded.pixels, carrier.pixels)
 
 
+def _png16_rgb(path):
+    """A 16-bit RGB PNG, which Pillow opens as plain 8-bit RGB."""
+    import struct
+    import zlib
+
+    width = height = 16
+    row = np.arange(width * 3, dtype=">u2").tobytes()
+    raw = b"".join(b"\x00" + row for _ in range(height))
+
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    header = struct.pack(">IIBBBBB", width, height, 16, 2, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw))
+        + chunk(b"IEND", b"")
+    )
+    return path
+
+
+class TestLossyCovers:
+    def test_16_bit_rgb_png_is_refused(self, tmp_path):
+        with pytest.raises(UnsupportedImageError, match="16-bit"):
+            load_image(_png16_rgb(tmp_path / "deep.png"))
+
+    @pytest.mark.parametrize("name", ["anim.gif", "anim.png", "pages.tiff"])
+    def test_multi_frame_images_are_refused(self, tmp_path, name):
+        frames = [Image.new("RGB", (16, 16), (i * 80, 0, 0)) for i in range(3)]
+        path = tmp_path / name
+        frames[0].save(path, save_all=True, append_images=frames[1:])
+        with pytest.raises(UnsupportedImageError, match="3 frames or pages"):
+            load_image(path)
+
+    def test_single_frame_8_bit_covers_still_load(self, tmp_path):
+        for name in ("still.gif", "still.tiff", "still.png"):
+            path = tmp_path / name
+            Image.new("RGB", (16, 16), (1, 2, 3)).save(path)
+            assert load_image(path).pixels.shape[:2] == (16, 16)
+
+
 class TestWriteNew:
     def test_refuses_existing_files(self, tmp_path):
         from shardpix.errors import ShardpixError

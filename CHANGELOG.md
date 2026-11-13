@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- 16-bit colour PNG and TIFF covers are refused, as docs/07 already said;
+  Pillow opened them as 8-bit RGB and the stego image silently lost the extra
+  depth (16-bit greyscale was already refused). Animated GIF and PNG and
+  multi-page TIFF covers are refused too, instead of coming back as a single
+  still image (#25).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

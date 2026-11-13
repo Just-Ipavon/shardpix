@@ -103,7 +103,8 @@ termine di confronto per i benchmark.
 | Foto PNG, TIFF o BMP a 8 bit | Inserisce i dati nei pixel (formato 6) | PNG | **Buona immagine di copertura** |
 | RAW / DNG (iPhone ProRAW, RAW di Android) | Non viene letta direttamente: esportala in PNG o TIFF a 8 bit | PNG | **Buona immagine di copertura**, dopo l'esportazione |
 | HEIC ("Alta efficienza" dell'iPhone) | Non leggibile (Pillow non supporta HEIF) | — | Imposta la fotocamera su JPEG; convertire un HEIC in JPEG comprime la foto due volte |
-| PNG o TIFF a 16 bit | Rifiutata | — | Esportala a 8 bit |
+| PNG o TIFF a 16 bit (in scala di grigi o a colori) | Rifiutata | — | Esportala a 8 bit |
+| GIF o PNG animati, TIFF a più pagine | Rifiutata: resterebbe solo il primo fotogramma | — | Esporta un fotogramma come immagine fissa |
 | Screenshot | Inserisce i dati nei pixel | PNG | Funziona, ma le zone uniformi lasciano poca texture; meglio usare foto |
 
 Il tipo di file viene riconosciuto dai primi byte del file, non dal nome, e il
