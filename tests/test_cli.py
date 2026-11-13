@@ -327,6 +327,26 @@ class TestVaultCommands:
         assert (tmp_path / "notes.txt").read_text() == "the treasure is under the oak"
         assert "Recovered notes.txt" in capsys.readouterr().out
 
+    def test_verify_command_writes_nothing_and_exits_by_result(
+        self, tmp_path, covers, passphrase_file, capsys, monkeypatch
+    ):
+        secret = tmp_path / "plan.txt"
+        secret.write_text("top secret plan")
+        out = tmp_path / "sealed"
+        pw = ("--passphrase-file", passphrase_file)
+        assert run("seal", secret, *covers, "-k", "3", "-d", out, *pw) == 0
+        monkeypatch.chdir(tmp_path)
+        secret.unlink()
+        before = sorted(tmp_path.rglob("*"))
+        images = [out / f"photo{i}.png" for i in range(4)]
+        capsys.readouterr()
+        assert run("verify", out / "plan.txt.spx", *images, *pw) == 0
+        text = capsys.readouterr().out
+        assert "OK" in text and "top secret plan" not in text
+        assert run("verify", out / "plan.txt.spx", *images[:2], *pw) == 1
+        assert "need 3 shares" in capsys.readouterr().out
+        assert sorted(tmp_path.rglob("*")) == before
+
     def test_seal_name_with_a_separator_is_a_usage_error(self, tmp_path, covers, capsys):
         secret = tmp_path / "s.txt"
         secret.write_text("x")

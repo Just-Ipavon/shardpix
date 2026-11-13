@@ -662,6 +662,7 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
             vault_name=args.name,
             force=args.force,
             progress=progress,
+            check=not args.no_check,
         )
     header = result.header
     console.print(
@@ -739,6 +740,22 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
         f"to [bold]{escape(str(output))}[/]"
     )
     return 0
+
+
+def cmd_verify(args: argparse.Namespace, console: Console) -> int:
+    passphrase = read_passphrase(args, confirm=False)
+    with progress_bar("Verifying") as progress:
+        result = vault.verify(args.vault, args.images, passphrase, progress)
+    console.print(_outcome_table(result.outcomes))
+    header = result.header
+    if result.opens:
+        console.print(
+            f"[green]OK[/]: these images open vault {header.group} "
+            f"(threshold {header.threshold} of {header.shares})"
+        )
+        return 0
+    console.print(f"[bold red]not enough[/]: {escape(result.detail)}")
+    return 1
 
 
 def cmd_inspect(args: argparse.Namespace, console: Console) -> int:
@@ -1007,6 +1024,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace a vault or images already in the output folder (without -f "
         "shardpix refuses and writes nothing)",
     )
+    p.add_argument(
+        "--no-check",
+        action="store_true",
+        help="skip reading every written image and the vault back from disk before "
+        "reporting success (twice as fast; a write fault would then go unnoticed)",
+    )
     p.set_defaults(handler=cmd_seal)
 
     p = _command(
@@ -1046,6 +1069,22 @@ def build_parser() -> argparse.ArgumentParser:
         "A name restored from the vault never replaces a file",
     )
     p.set_defaults(handler=cmd_unseal)
+
+    p = _command(
+        sub,
+        "verify",
+        "check that images still open a vault, without writing anything",
+        "Does everything 'unseal' does except write the file: reads the share in\n"
+        "each image, rebuilds the key and trial-decrypts the vault in memory, then\n"
+        "reports what happened to every image and whether the threshold is met.\n"
+        "The plaintext is never written or printed. Exit status 0 when the images\n"
+        "open the vault, 1 when they do not.\n\n" + KEYING_NOTE,
+        "  shardpix verify notes.pdf.spx a.jpg b.jpg c.jpg d.jpg e.jpg -p",
+    )
+    p.add_argument("vault", type=Path, help="the vault file (.spx) written by 'seal'")
+    p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images to check")
+    _add_passphrase_options(p)
+    p.set_defaults(handler=cmd_verify)
 
     p = _command(
         sub,
