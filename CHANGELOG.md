@@ -62,6 +62,16 @@ All notable changes to this project are documented here. The format follows
   warning that it is visible in `ps` and the shell history. The README, the
   help examples and docs/02 no longer put a secret on the command line.
 
+### Changed
+
+- CI hardening (#30): `permissions: contents: read`, actions pinned by
+  commit SHA with `persist-credentials: false`, `semgrep` pinned and run on a
+  vendored rule set (`.semgrep/python.yml`) instead of rules fetched at run
+  time, and a new `ml` job that installs CPU PyTorch and runs the CNN tests
+  that were always skipped. `scripts/srnet_colab.py` loads its checkpoints
+  with `weights_only=True`. New tests cover a JPEG payload exactly at
+  capacity and greyscale and CMYK JPEG round trips.
+
 ### Fixed
 
 - The benchmark modules no longer default to a `docs/data` path relative to

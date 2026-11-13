@@ -369,3 +369,29 @@ class TestQuality:
     def test_standard_table_matches_libjpeg_at_50(self):
         # Quality 50 is the table of the standard itself.
         assert jpeg.standard_table(50)[0, :4].tolist() == [16, 11, 10, 16]
+
+
+class TestCoverageGaps:
+    """#30: capacity edge and the other JPEG colour layouts, end to end."""
+
+    def test_payload_exactly_at_capacity(self, tmp_path, photo):
+        cover = jpeg.load(photo)
+        room = jpeg.capacity(cover)
+        payload = bytes(range(256)) * (room // 256) + bytes(room % 256)
+        assert len(payload) == room
+        loaded, _ = round_trip(tmp_path, cover, payload)
+        assert jpeg.extract(loaded, "pw") == payload
+        with pytest.raises(CapacityError):
+            jpeg.embed(cover, payload + b"x", "pw")
+
+    @pytest.mark.parametrize("mode", ["L", "CMYK"])
+    def test_greyscale_and_cmyk_round_trip(self, tmp_path, photo, mode):
+        path = tmp_path / f"{mode}.jpg"
+        Image.open(photo).convert(mode).save(path, quality=95)
+        cover = media.open_cover(path)
+        data, _ = media.hide(cover, b"other layouts", "pw")
+        out = tmp_path / f"out-{mode}.jpg"
+        out.write_bytes(data)
+        assert media.reveal(out, "pw") == b"other layouts"
+        with Image.open(out) as stego:
+            assert stego.mode == mode
