@@ -200,6 +200,13 @@ def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> N
         raise ShardpixError(f"{path} already exists; use --force to overwrite it")
 
 
+def _vault_name(value: str) -> str:
+    """argparse type for ``seal --name``: a file name, never a path."""
+    if not vault.is_bare_name(value):
+        raise argparse.ArgumentTypeError(f"{value!r} must be a file name, not a path")
+    return value
+
+
 @contextmanager
 def progress_bar(title: str) -> Iterator[Progress | None]:
     """A progress bar on stderr while the block runs; nothing when not a terminal.
@@ -919,6 +926,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--name",
+        type=_vault_name,
         help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
         "followed by .spx, e.g. notes.pdf.spx)",
     )

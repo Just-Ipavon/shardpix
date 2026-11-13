@@ -245,6 +245,18 @@ class TestSealValidation:
         result = vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name="blob.bin")
         assert result.vault_path.name == "blob.bin"
 
+    @pytest.mark.parametrize("name", ["../escaped.spx", "sub/v.spx", "..\\v.spx", "..", ""])
+    def test_vault_name_is_never_a_path(self, tmp_path, covers, secret_file, name):
+        with pytest.raises(VaultError, match="file name, not a path"):
+            vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name=name)
+        assert not (tmp_path / "escaped.spx").exists()
+
+    def test_no_share_at_all_names_the_likely_causes(self, sealed):
+        with pytest.raises(VaultError, match="none of the 5 images holds a share") as exc:
+            vault.unseal(sealed.vault_path, images_of(sealed), "wrong passphrase")
+        assert "no shares given" not in str(exc.value)
+        assert len(exc.value.outcomes) == 5
+
 
 class TestSafeFilename:
     @pytest.mark.parametrize(

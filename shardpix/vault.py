@@ -235,6 +235,8 @@ def seal(
 
     # Each image keeps its kind: a phone JPEG gives a JPEG, anything else a PNG.
     outputs = [out_dir / f"{cover.stem}{media.kind_suffix(cover)}" for cover in covers]
+    if vault_name is not None and not is_bare_name(vault_name):
+        raise VaultError(f"the vault name {vault_name!r} must be a file name, not a path")
     vault_path = out_dir / (vault_name or f"{source.name}{VAULT_SUFFIX}")
     if len({_identity(p) for p in [*outputs, vault_path]}) != count + 1:
         raise VaultError(
@@ -310,6 +312,11 @@ def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
     return header, data[HEADER_BYTES:]
 
 
+def is_bare_name(name: str) -> bool:
+    """Whether ``name`` names a file in the current directory, on any system."""
+    return name not in {"", ".", ".."} and PurePath(name.replace("\\", "/")).name == name
+
+
 def safe_filename(name: str) -> str:
     """Reduce a stored file name to a bare, harmless file name.
 
@@ -378,6 +385,12 @@ def unseal(
         return tuple(outcomes[p] for p in images if p in outcomes)
 
     report(1.0, "rebuilding the key")
+    if not shares:
+        raise VaultError(
+            f"cannot open the vault: none of the {len(images)} images holds a share of it "
+            "(wrong or missing passphrase, edited images, or images of another vault)",
+            ordered(),
+        )
     try:
         recoveries = shamir.recover_all(shares)
     except ShareError as exc:
