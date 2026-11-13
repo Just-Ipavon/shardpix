@@ -660,10 +660,11 @@ class TestLowQualityJpeg:
 
     def test_embed_warns_on_a_recompressed_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 75)
-        assert (
-            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
-            == 0
-        )
+        argv = ("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+        assert run(*argv) == 1                                   # unsuitable: refused
+        assert "--allow-unsuitable" in capsys.readouterr().err
+        assert not (tmp_path / "out.jpg").exists()
+        assert run(*argv, "--allow-unsuitable") == 0
         out = " ".join(capsys.readouterr().out.split())
         assert "JPEG quality about 75" in out
         assert "original files" in out
@@ -692,6 +693,7 @@ class TestLowQualityJpeg:
                 "-d",
                 tmp_path / "out",
                 "--insecure-no-passphrase",
+                "--allow-unsuitable",
             )
             == 0
         )
@@ -704,10 +706,9 @@ class TestLowQualityJpeg:
 
         photo = self._photo(tmp_path, 95)
         Image.open(photo).save(photo, quality=95, progressive=True)
-        assert (
-            run("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
-            == 0
-        )
+        argv = ("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
+        assert run(*argv) == 1
+        assert run(*argv, "--allow-unsuitable") == 0
         out = " ".join(capsys.readouterr().out.split())
         assert "photo.jpg is a progressive JPEG" in out
 

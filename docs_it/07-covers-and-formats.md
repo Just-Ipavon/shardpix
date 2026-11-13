@@ -97,6 +97,13 @@ termine di confronto per i benchmark.
 
 ## 7.4 Che cosa succede a ciascun tipo di file in ingresso
 
+`shardpix lint IMMAGINI…` controlla un gruppo di foto rispetto a questa
+sezione prima di usarle. `seal` ed `embed` eseguono lo stesso controllo
+(`shardpix/covers.py` è l'unico punto che lo definisce): rifiutano le immagini
+che non possono contenere una quota, e quelle segnate come inadatte qui sotto
+(JPEG ricompresso, progressivo o con marcatori di restart, immagine a
+tavolozza) salvo `--allow-unsuitable`.
+
 | File in ingresso | Che cosa fa shardpix | File in uscita | Giudizio |
 | --- | --- | --- | --- |
 | JPEG da smartphone o fotocamera | Inserisce i dati nei coefficienti (formato 7) | JPEG | **Buona immagine di copertura**, così com'è |

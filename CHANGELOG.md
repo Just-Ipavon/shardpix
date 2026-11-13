@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `shardpix lint IMAGES…` (#33) reports, per image, whether it is a suitable
+  cover: refused (unreadable, truncated, 16-bit, several frames, too small
+  for a share), unsuitable (recompressed JPEG below quality 90, progressive
+  or restart-marker JPEG, palette image) or worth a note (extra images after
+  the first in a phone JPEG). `seal` and `embed` run the same check before
+  writing anything and refuse unsuitable covers unless `--allow-unsuitable`
+  (until now they only warned afterwards). `shardpix/covers.py` is the one
+  place that defines a suitable cover.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
