@@ -661,7 +661,7 @@ class TestLowQualityJpeg:
     def test_embed_warns_on_a_recompressed_photo(self, tmp_path, capsys):
         photo = self._photo(tmp_path, 75)
         argv = ("embed", photo, "-o", tmp_path / "out.jpg", "-t", "x", "--insecure-no-passphrase")
-        assert run(*argv) == 1                                   # unsuitable: refused
+        assert run(*argv) == 1  # unsuitable: refused
         assert "--allow-unsuitable" in capsys.readouterr().err
         assert not (tmp_path / "out.jpg").exists()
         assert run(*argv, "--allow-unsuitable") == 0
