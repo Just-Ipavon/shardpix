@@ -137,6 +137,14 @@ def load(path: str | Path) -> JpegCover:
     check_size(path, *_dimensions(path))
     try:
         image = jpeglib.read_dct(str(path))
+        # The size libjpeg itself parsed, read from the header before any
+        # coefficient is allocated: the limit holds even where its parser and
+        # ours would disagree about the frame header (SR-11, #31).
+        width, height = int(image.width), int(image.height)
+    except Exception as exc:  # noqa: BLE001 - libjpeg errors have no common type
+        raise UnsupportedImageError(f"{path}: not a readable JPEG ({exc})") from exc
+    check_size(path, width, height)
+    try:
         image.load()
     except Exception as exc:  # noqa: BLE001 - libjpeg errors have no common type
         raise UnsupportedImageError(f"{path}: not a readable JPEG ({exc})") from exc
@@ -301,6 +309,8 @@ def embed_coefficients(
 _META_MARKERS = frozenset(range(0xE0, 0xF0)) | {0xFE}
 """APPn and COM: metadata, copied from the cover byte for byte."""
 _DQT, _DHT, _SOS = 0xDB, 0xC4, 0xDA
+_STANDALONE = frozenset({0x01, *range(0xD0, 0xD8)})
+"""Markers without a length field: TEM and RST0-RST7."""
 
 
 def _segments(data: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
@@ -312,6 +322,9 @@ def _segments(data: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
         marker = data[i + 1]
         if marker == 0xFF:  # fill byte
             i += 1
+            continue
+        if marker in _STANDALONE:  # TEM, RSTn: no length field
+            i += 2
             continue
         if marker == _SOS:
             return segments, data[i:]

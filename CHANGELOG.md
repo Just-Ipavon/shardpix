@@ -64,6 +64,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Decode limits from the decoder (#31): JPEG covers are also checked against
+  `MAX_PIXELS` with the width and height libjpeg itself parsed, before any
+  coefficient is allocated (the Pillow path already used Pillow's header
+  size). The project's own header parser skips standalone markers (TEM,
+  RSTn) instead of reading a length they do not have. A deterministic corpus
+  of malformed JPEG, PNG and MPO files (truncations, byte flips, inserted
+  markers, inflated sizes) runs with the tests: every case must end in a
+  formatted error and stay under a memory bound.
 - CI hardening (#30): `permissions: contents: read`, actions pinned by
   commit SHA with `persist-credentials: false`, `semgrep` pinned and run on a
   vendored rule set (`.semgrep/python.yml`) instead of rules fetched at run
