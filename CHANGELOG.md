@@ -6,16 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- The benchmark modules no longer default to a `docs/data` path relative to
-  the working directory when it is not there: outside a repository checkout
-  they ask for `--data` instead of writing results wherever they run.
-  `shardpix.analysis.cnn` without PyTorch fails with an install hint.
-  The CLI's warning for JPEG files decoded to pixels, which no input could
-  reach (every JPEG is embedded natively), is removed with
-  `SealedImage.from_jpeg`; `Carrier.from_jpeg` stays for library callers
-  of `load_image` (#37).
 ### Security
 
 - **`combine` no longer picks the largest of two share sets.** Anyone who has
@@ -50,6 +40,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The benchmark modules no longer default to a `docs/data` path relative to
+  the working directory when it is not there: outside a repository checkout
+  they ask for `--data` instead of writing results wherever they run.
+  `shardpix.analysis.cnn` without PyTorch fails with an install hint.
+  The CLI's warning for JPEG files decoded to pixels, which no input could
+  reach (every JPEG is embedded natively), is removed with
+  `SealedImage.from_jpeg`; `Carrier.from_jpeg` stays for library callers
+  of `load_image` (#37).
 - JPEG outputs keep everything after the cover's first image: a second MPO
   frame, a gain map, depth data, a motion-photo video or a vendor trailer was
   dropped while `structure_kept` stayed true, leaving an MPF index that
