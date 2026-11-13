@@ -6,13 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- Secrets off the command line (#29): `embed -i -` and `split -i -` read the
-  payload from standard input, and `-t -` asks for the text without echo (or
-  reads one line from a pipe). A literal `-t VALUE` still works, with a
-  warning that it is visible in `ps` and the shell history. The README, the
-  help examples and docs/02 no longer put a secret on the command line.
 ### Security
 
 - **`combine` no longer picks the largest of two share sets.** Anyone who has
@@ -44,6 +37,14 @@ All notable changes to this project are documented here. The format follows
   `a.jpg`, and `-o` on `embed`, `extract` and `combine` had the same gap.
   Paths are now compared case-folded and by file identity (hard links), and
   the `-i` payload and `--passphrase-file` count as inputs too.
+
+### Added
+
+- Secrets off the command line (#29): `embed -i -` and `split -i -` read the
+  payload from standard input, and `-t -` asks for the text without echo (or
+  reads one line from a pipe). A literal `-t VALUE` still works, with a
+  warning that it is visible in `ps` and the shell history. The README, the
+  help examples and docs/02 no longer put a secret on the command line.
 
 ### Fixed
 
