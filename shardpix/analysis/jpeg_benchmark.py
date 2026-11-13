@@ -34,7 +34,7 @@ import jpeglib
 import numpy as np
 
 from .. import jpeg, stego, vault
-from . import ensemble, features
+from . import default_data_dir, ensemble, features
 from .ml_benchmark import _summary, split
 
 STRATEGIES = {
@@ -196,7 +196,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache", type=Path, default=None)
-    parser.add_argument("--data", type=Path, default=Path("docs/data"))
+    parser.add_argument(
+        "--data",
+        type=Path,
+        default=None,
+        help="results directory; default: docs/data in a checkout",
+    )
     parser.add_argument("--rerun", action="store_true", help="measure again what is stored")
     parser.add_argument(
         "--detectors", default="dctr", help="comma-separated: " + ", ".join(DETECTORS)
@@ -210,6 +215,8 @@ def main(argv: list[str] | None = None) -> int:
         "--dataset-name", default="BOSSbase 1.01, 512x512, JPEG", help="description in the data"
     )
     args = parser.parse_args(argv)
+    if args.data is None:
+        args.data = default_data_dir(parser)
     detectors = tuple(d.strip() for d in args.detectors.split(",") if d.strip())
     unknown = [d for d in detectors if d not in DETECTORS]
     if unknown:

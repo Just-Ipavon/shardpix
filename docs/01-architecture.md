@@ -273,7 +273,6 @@ classDiagram
         +Path output
         +int share_index
         +EmbedReport report
-        +bool from_jpeg
         +str format
         +int|None jpeg_quality
     }

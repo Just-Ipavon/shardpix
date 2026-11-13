@@ -79,7 +79,6 @@ class TestRoundTrip:
         result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
         assert [image.output.suffix for image in result.images] == [".jpg"] * 3
         assert {image.format for image in result.images} == {"JPEG (format 7)"}
-        assert not any(image.from_jpeg for image in result.images)
         opened = vault.unseal(result.vault_path, images_of(result)[1:], PASSPHRASE)
         assert opened.data == secret_file.read_bytes()
 

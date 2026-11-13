@@ -123,9 +123,6 @@ class SealedImage:
     output: Path
     share_index: int
     report: stego.EmbedReport
-    from_jpeg: bool = False
-    """The cover was a JPEG decoded to pixels (only for formats Pillow reads as JPEG
-    but that are not baseline JPEG files); JPEG files are embedded natively."""
     format: str = "PNG (format 6)"
     jpeg_quality: int | None = None
     """Estimated quality of a JPEG cover; ``None`` for pixel covers."""
@@ -288,14 +285,12 @@ def seal(
             opened_cover, share.to_bytes(), passphrase, random_bytes, method, image_progress
         )
         write_new(output, stego_file, overwrite=force)
-        decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
         sealed.append(
             SealedImage(
                 cover,
                 output,
                 share.index,
                 embed_report,
-                decoded_jpeg,
                 opened_cover.format_name,
                 None if opened_cover.coefficients is None else opened_cover.coefficients.quality,
             )
