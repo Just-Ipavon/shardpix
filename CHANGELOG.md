@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- **`combine` no longer picks the largest of two share sets.** Anyone who has
+  seen one share can make a whole set that authenticates a secret of their
+  choice, as large as they like; `combine` returned the secret of the largest
+  set with exit code 0. It now fails whenever the shares authenticate more
+  than one secret, and lists the shares (file and line) behind each, so the
+  forged set can be left out. `unseal` was not affected: the vault's GCM tag
+  decides there.
+- **`--force` keeps outputs private.** Overwriting truncated the existing
+  file in place, so it kept its mode and owner: `unseal -f`, `extract -f` or
+  `combine -o FILE -f` over a world-readable file, or over one another user
+  had planted in a shared directory, left the plaintext readable by others
+  (SR-12 promised mode 0600 for every output). The data now goes to a new
+  0600 file that atomically replaces the old one, which also means a crash
+  never leaves a half-written vault.
+- **Restored names stay harmless.** `unseal` without `-o` writes the name
+  stored by whoever made the vault. `.bashrc`, `.envrc` or `-rf` came back
+  unchanged, and `--force` let such a name replace a shell startup file. Leading
+  dots and dashes are now removed, `:<>|?*"` become `_` (no NTFS alternate
+  data streams), and Windows device names are recognised after the trailing
+  spaces Win32 ignores (`CON .` used to pass as `CON `), including `COM¹`,
+  `LPT³`, `CONIN$` and `CONOUT$`. `--force` no longer applies to a restored
+  name: replacing an existing file takes `-o`. The property test now checks
+  names the way Win32 reads them.
+- **No input is overwritten, whatever the case.** The CLI compared output and
+  input paths exactly, although SP-11 promised case-folded checks: on macOS
+  or Windows `unseal -f` restoring `A.JPG` could overwrite the share image
+  `a.jpg`, and `-o` on `embed`, `extract` and `combine` had the same gap.
+  Paths are now compared case-folded and by file identity (hard links), and
+  the `-i` payload and `--passphrase-file` count as inputs too.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

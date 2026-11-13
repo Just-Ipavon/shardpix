@@ -61,9 +61,13 @@ _WINDOWS_RESERVED = {
     "PRN",
     "AUX",
     "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
+    "CONIN$",
+    "CONOUT$",
+    "CLOCK$",
+    *(f"COM{i}" for i in (*"123456789", "¹", "²", "³")),
+    *(f"LPT{i}" for i in (*"123456789", "¹", "²", "³")),
 }
+_UNSAFE_CHARACTERS = str.maketrans(dict.fromkeys(':<>|?*"', "_"))
 
 SHARE_BYTES = shamir.share_size(KEY_BYTES)
 """Size of the share hidden in each image."""
@@ -316,13 +320,20 @@ def safe_filename(name: str) -> str:
     The name comes from inside an authenticated vault, but whoever made the
     vault may not be trustworthy: the restored name must never point outside
     the chosen directory, carry control characters (terminal escape
-    sequences, NUL), or be a reserved device name on Windows.
+    sequences, NUL), be a hidden file (``.bashrc``, ``.envrc``) or look like
+    an option (``-rf``), name an NTFS alternate data stream, or be a reserved
+    device name on Windows, which ignores trailing dots and spaces.
     """
     base = PurePath(name.replace("\\", "/")).name
     base = "".join(c for c in base if unicodedata.category(c) not in {"Cc", "Cf"})
-    base = base.strip().rstrip(".")
-    stem = base.split(".")[0].upper()
-    if base in {"", ".", ".."} or stem in _WINDOWS_RESERVED:
+    base = base.translate(_UNSAFE_CHARACTERS)
+    while True:
+        trimmed = base.strip().rstrip(". ").lstrip(".-")
+        if trimmed == base:
+            break
+        base = trimmed
+    stem = base.split(".")[0].strip().upper()
+    if not base or stem in _WINDOWS_RESERVED:
         return FALLBACK_NAME
     return base
 
