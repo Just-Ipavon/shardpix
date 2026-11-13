@@ -549,9 +549,14 @@ può essere letto.
 
 Mantiene solo il nome base (gestendo `/` e `\`), rimuove i caratteri di
 controllo e di formato (categorie Unicode Cc e Cf: NUL, sequenze di escape del
-terminale, override bidirezionali), elimina punti e spazi finali e sostituisce
-nomi vuoti, `.`, `..` e nomi di dispositivo Windows (`CON`, `NUL`, `COM1`, …)
-con `FALLBACK_NAME`. Test: `TestSafeFilename`, `TestRestoredNames`.
+terminale, override bidirezionali), sostituisce `:<>|?*"` con `_` (niente
+flussi di dati alternativi NTFS), poi finché non cambia più nulla elimina gli
+spazi, i punti finali e i punti e trattini iniziali (niente file nascosti come
+`.bashrc`, niente nomi simili a opzioni come `-rf`). I nomi vuoti e i nomi di
+dispositivo Windows, confrontati come fa Win32 dopo aver tolto gli spazi
+(`CON`, `NUL`, `COM1`, `COM¹`, `CONIN$`, …), diventano `FALLBACK_NAME`. La CLI
+non permette mai a `--force` di sostituire un file con un nome ripristinato:
+serve `-o`. Test: `TestSafeFilename`, `TestRestoredNames`.
 
 ### `_read_share(path, passphrase)` *(privata)*
 

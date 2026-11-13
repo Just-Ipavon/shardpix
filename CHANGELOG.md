@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format follows
   (SR-12 promised mode 0600 for every output). The data now goes to a new
   0600 file that atomically replaces the old one, which also means a crash
   never leaves a half-written vault.
+- **Restored names stay harmless.** `unseal` without `-o` writes the name
+  stored by whoever made the vault. `.bashrc`, `.envrc` or `-rf` came back
+  unchanged, and `--force` let such a name replace a shell startup file. Leading
+  dots and dashes are now removed, `:<>|?*"` become `_` (no NTFS alternate
+  data streams), and Windows device names are recognised after the trailing
+  spaces Win32 ignores (`CON .` used to pass as `CON `), including `COM¹`,
+  `LPT³`, `CONIN$` and `CONOUT$`. `--force` no longer applies to a restored
+  name: replacing an existing file takes `-o`. The property test now checks
+  names the way Win32 reads them.
 
 ## [3.0.0] — 2026-10-18
 

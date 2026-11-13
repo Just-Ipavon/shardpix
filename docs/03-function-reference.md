@@ -522,9 +522,12 @@ Returns header and ciphertext; raises `VaultError` if the file cannot be read.
 
 Keeps the base name only (handling `/` and `\`), removes control and format
 characters (Unicode categories Cc and Cf: NUL, terminal escapes, bidi
-overrides), strips trailing dots and spaces, and replaces empty names, `.`,
-`..` and Windows device names (`CON`, `NUL`, `COM1`, …) with
-`FALLBACK_NAME`. Tests: `TestSafeFilename`, `TestRestoredNames`.
+overrides), replaces `:<>|?*"` with `_` (no NTFS alternate data streams),
+then until nothing changes strips spaces, trailing dots and leading dots and
+dashes (no hidden files such as `.bashrc`, no option-like `-rf`). Empty names
+and Windows device names, compared as Win32 does after trimming spaces
+(`CON`, `NUL`, `COM1`, `COM¹`, `CONIN$`, …), become `FALLBACK_NAME`. The CLI
+never lets `--force` replace a file under a restored name: that needs `-o`. Tests: `TestSafeFilename`, `TestRestoredNames`.
 
 ### `_read_share(path, passphrase)` *(private)*
 

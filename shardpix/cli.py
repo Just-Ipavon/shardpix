@@ -684,9 +684,19 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
     with progress_bar("Unsealing") as progress:
         result = vault.unseal(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
-    output = args.output if args.output is not None else Path(result.filename)
-    check_output(output, force=args.force, inputs=inputs)
-    write_new(output, result.data, overwrite=args.force)
+    if args.output is not None:
+        output, force = args.output, args.force
+    else:
+        # The name comes from whoever made the vault: --force never lets it
+        # replace a file, so it cannot overwrite a startup file or an input.
+        output, force = Path(result.filename), False
+        if output.exists() or output.is_symlink():
+            raise ShardpixError(
+                f"the vault restores {result.filename}, which already exists here; "
+                "choose where to write it with -o (--force applies only to -o)"
+            )
+    check_output(output, force=force, inputs=inputs)
+    write_new(output, result.data, overwrite=force)
     console.print(
         f"Recovered [bold]{escape(result.filename)}[/] ({format_bytes(len(result.data))}) "
         f"to [bold]{escape(str(output))}[/]"
@@ -988,7 +998,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-f",
         "--force",
         action="store_true",
-        help="replace the output file if it already exists (without -f shardpix refuses)",
+        help="replace the -o file if it already exists (without -f shardpix refuses). "
+        "A name restored from the vault never replaces a file",
     )
     p.set_defaults(handler=cmd_unseal)
 
