@@ -256,15 +256,16 @@ the layers can be used and demonstrated independently.
    reported and skipped.
 2. The system groups shares by split and searches each group for clusters
    (04 §4.6).
-3. The system returns the largest cluster's secret and reports which shares
-   were used, which were additionally verified and which were rejected.
+3. The system returns the secret of the one cluster found and reports which
+   shares were used, which were additionally verified and which were
+   rejected.
 
 #### Alternative flows
 
 | Id | Condition | Behaviour |
 | --- | --- | --- |
 | A1 | Fewer than k distinct indices | Error. |
-| A2 | Two clusters of equal size | Error: one set is forged and there is no way to tell which. |
+| A2 | Two clusters, of any sizes | Error listing the shares (file and line) behind each secret: one set is forged, and its size does not tell which, since one holder can fabricate any number of shares. |
 | A3 | Two different splits can each be recovered | Error: combine them separately. |
 | A4 | Search budget exhausted | Error; occurs only with adversarial input far beyond realistic use. |
 

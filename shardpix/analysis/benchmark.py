@@ -27,7 +27,7 @@ import numpy as np
 
 from .. import stego, vault
 from ..images import Carrier, from_pil, load_image
-from . import chi_square, rs
+from . import chi_square, default_data_dir, rs
 
 RATES = (0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75)
 CHI_SQUARE_RATE = 0.5
@@ -517,10 +517,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("covers", nargs="*", type=Path, help="cover images (default: samples)")
     parser.add_argument("--out", type=Path, default=Path("assets"), help="where charts go")
     parser.add_argument(
-        "--data", type=Path, default=Path("docs/data/benchmark.json"), help="raw results (JSON)"
+        "--data",
+        type=Path,
+        default=None,
+        help="raw results (JSON); default: docs/data/benchmark.json in a repository checkout",
     )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
+    if args.data is None:
+        args.data = default_data_dir(parser) / "benchmark.json"
 
     covers = load_covers(args.covers)
     print(f"Benchmarking {len(covers)} covers")

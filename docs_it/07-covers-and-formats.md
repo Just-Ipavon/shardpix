@@ -89,7 +89,10 @@ scrypt, che chiunque poteva decodificare senza chiave (06 §6.4, SR-07); 4 e
   conservati byte per byte. La disposizione dei marcatori segue l'immagine
   di copertura (ordine dei segmenti, raggruppamento delle tabelle, tabelle di
   Huffman ottimizzate quando l'immagine di copertura le ha), con le eccezioni
-  del §7.6.
+  del §7.6. Ciò che segue la prima immagine (un secondo fotogramma MPO, una
+  gain map, dati di profondità, il video di una motion photo, un trailer del
+  produttore) viene copiato dopo di essa senza modifiche, e l'indice
+  Multi-Picture viene aggiornato perché punti ancora alle altre immagini.
 
 I formati usati in precedenza (3: un bit per campione con LSB matching o
 replacement) non sono più offerti dalla CLI. Restano nella libreria solo come
@@ -103,7 +106,8 @@ termine di confronto per i benchmark.
 | Foto PNG, TIFF o BMP a 8 bit | Inserisce i dati nei pixel (formato 6) | PNG | **Buona immagine di copertura** |
 | RAW / DNG (iPhone ProRAW, RAW di Android) | Non viene letta direttamente: esportala in PNG o TIFF a 8 bit | PNG | **Buona immagine di copertura**, dopo l'esportazione |
 | HEIC ("Alta efficienza" dell'iPhone) | Non leggibile (Pillow non supporta HEIF) | — | Imposta la fotocamera su JPEG; convertire un HEIC in JPEG comprime la foto due volte |
-| PNG o TIFF a 16 bit | Rifiutata | — | Esportala a 8 bit |
+| PNG o TIFF a 16 bit (in scala di grigi o a colori) | Rifiutata | — | Esportala a 8 bit |
+| GIF o PNG animati, TIFF a più pagine | Rifiutata: resterebbe solo il primo fotogramma | — | Esporta un fotogramma come immagine fissa |
 | Screenshot | Inserisce i dati nei pixel | PNG | Funziona, ma le zone uniformi lasciano poca texture; meglio usare foto |
 
 Il tipo di file viene riconosciuto dai primi byte del file, non dal nome, e il

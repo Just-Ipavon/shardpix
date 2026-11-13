@@ -262,16 +262,16 @@ modo indipendente.
    malformate vengono segnalate e ignorate.
 2. Il sistema raggruppa le quote per suddivisione e cerca gruppi coerenti in
    ciascun insieme (04 §4.6).
-3. Il sistema restituisce il segreto del gruppo più grande e riporta quali quote
-   sono state usate, quali sono state ulteriormente verificate e quali sono
-   state rifiutate.
+3. Il sistema restituisce il segreto dell'unico gruppo trovato e riporta quali
+   quote sono state usate, quali sono state ulteriormente verificate e quali
+   sono state rifiutate.
 
 #### Flussi alternativi
 
 | Id | Condizione | Comportamento |
 | --- | --- | --- |
 | A1 | Meno di k indici distinti | Errore. |
-| A2 | Due gruppi di uguale dimensione | Errore: uno dei due insiemi è contraffatto e non c'è modo di stabilire quale. |
+| A2 | Due gruppi, di qualunque dimensione | Errore che elenca le quote (file e riga) dietro ciascun segreto: un insieme è contraffatto, e la sua dimensione non dice quale, perché un solo detentore può fabbricare un numero qualsiasi di quote. |
 | A3 | Due suddivisioni diverse possono essere recuperate ciascuna | Errore: combinarle separatamente. |
 | A4 | Budget di ricerca esaurito | Errore; si verifica solo con input avversariali ben oltre l'uso realistico. |
 

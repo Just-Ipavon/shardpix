@@ -143,12 +143,15 @@ Converts back to Pillow, letting it infer the mode from the array shape.
 
 ### `write_new(path, data, *, overwrite=False) -> None`
 
-Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`) unless
-`overwrite` (then `O_TRUNC`): checking and creating are one atomic step, and an
-existing name — including a dangling symbolic link — is refused rather than
-followed (06 SR-03). `O_NOFOLLOW` is always set, and a symbolic link at the
-destination is refused even with `overwrite`. New files get mode `0o600`
-whatever the umask (06 SR-12). Raises `ShardpixError`. Every output of the
+Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`):
+checking and creating are one atomic step, and an existing name — including a
+dangling symbolic link — is refused rather than followed (06 SR-03). With
+`overwrite` the bytes go to a new private file in the same directory, which
+then replaces the destination with `os.replace`: the old file's mode, owner
+and hard links never carry over, and a crash leaves either the old file or
+the new one. `O_NOFOLLOW` is always set, and a symbolic link at the
+destination is refused even with `overwrite`. Every file it writes has mode
+`0o600` whatever the umask (06 SR-12). Raises `ShardpixError`. Every output of the
 CLI and of `seal` goes through it. Test: `TestWriteNew`.
 
 ### `save_png(carrier, path, *, overwrite=False) -> None`
@@ -461,7 +464,8 @@ Tests: `TestRobustSearch`, `TestMixedSplits`.
 ### `combine(shares) -> Recovery`
 
 `recover_all`, then refuses ambiguity: `InconsistentSharesError` if clusters
-come from two splits, or if the two largest clusters are the same size.
+come from two splits, or if one split yields more than one cluster, whatever
+their sizes (the error's `candidates` lists each recovery).
 Tests: `TestAuthentication`, `TestRobustSearch`.
 
 ---
@@ -518,9 +522,12 @@ Returns header and ciphertext; raises `VaultError` if the file cannot be read.
 
 Keeps the base name only (handling `/` and `\`), removes control and format
 characters (Unicode categories Cc and Cf: NUL, terminal escapes, bidi
-overrides), strips trailing dots and spaces, and replaces empty names, `.`,
-`..` and Windows device names (`CON`, `NUL`, `COM1`, …) with
-`FALLBACK_NAME`. Tests: `TestSafeFilename`, `TestRestoredNames`.
+overrides), replaces `:<>|?*"` with `_` (no NTFS alternate data streams),
+then until nothing changes strips spaces, trailing dots and leading dots and
+dashes (no hidden files such as `.bashrc`, no option-like `-rf`). Empty names
+and Windows device names, compared as Win32 does after trimming spaces
+(`CON`, `NUL`, `COM1`, `COM¹`, `CONIN$`, …), become `FALLBACK_NAME`. The CLI
+never lets `--force` replace a file under a restored name: that needs `-o`. Tests: `TestSafeFilename`, `TestRestoredNames`.
 
 ### `_read_share(path, passphrase)` *(private)*
 
@@ -612,7 +619,6 @@ Tests: `test_rs.py::TestFlips`, `TestEstimate`.
 | --- | --- |
 | `CHI_SQUARE_ALERT` | 0.10: detected prefix at which `analyze` reports the chi-square signature. |
 | `RS_ALERT` | 0.10: RS estimate at which `analyze` reports LSB replacement. Clean photographs measured −2.5% to +8.3% in the benchmark. |
-| `JPEG_WARNING` | Text shown when a non-JPEG file was nonetheless decoded as JPEG by Pillow; JPEG files are embedded natively (format 7). |
 | `LOW_QUALITY_WARNING` | Text shown when a JPEG cover's estimated quality is below `jpeg.SAFE_QUALITY` (90). |
 | `STRUCTURE_WARNING` | Text shown when `EmbedReport.structure_kept` is False: a progressive cover or one with restart markers, written back as baseline without them (06 SR-09). |
 | `OUTPUT_SUFFIXES` | Extensions accepted for the stego file: `.jpg`/`.jpeg` for a JPEG cover, `.png` otherwise. |
