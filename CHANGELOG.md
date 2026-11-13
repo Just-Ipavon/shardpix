@@ -6,13 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- HEIC covers (#36) with the optional `shardpix[heic]` extra
-  (`pillow-heif`): decoded to pixels and written as PNG (format 6), like
-  other lossy inputs that are not JPEG. Without the extra, a HEIC file is
-  refused with the install hint instead of "not a readable image".
-  docs/07 and the README explain the trade-off (JPEG stays the better cover).
 ### Security
 
 - **`combine` no longer picks the largest of two share sets.** Anyone who has
@@ -47,6 +40,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- HEIC covers (#36) with the optional `shardpix[heic]` extra
+  (`pillow-heif`): decoded to pixels and written as PNG (format 6), like
+  other lossy inputs that are not JPEG. Without the extra, a HEIC file is
+  refused with the install hint instead of "not a readable image".
+  docs/07 and the README explain the trade-off (JPEG stays the better cover).
 - `shardpix lint IMAGES…` (#33) reports, per image, whether it is a suitable
   cover: refused (unreadable, truncated, 16-bit, several frames, too small
   for a share), unsuitable (recompressed JPEG below quality 90, progressive
