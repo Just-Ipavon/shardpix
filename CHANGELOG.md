@@ -6,16 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- `shardpix verify VAULT IMAGES…` (#32): reports, image by image, whether
-  each holds a valid share and whether together they open the vault
-  (trial-decrypted in memory), without writing or printing the plaintext;
-  exit status 0 or 1. `vault.verify` is the library form.
-- `seal` reads every written image and the vault back from disk before
-  reporting success, and fails with "self-check failed" naming the file if
-  one does not give back its share or the source; `--no-check` skips it
-  (#32).
 ### Security
 
 - **`combine` no longer picks the largest of two share sets.** Anyone who has
@@ -50,6 +40,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `shardpix verify VAULT IMAGES…` (#32): reports, image by image, whether
+  each holds a valid share and whether together they open the vault
+  (trial-decrypted in memory), without writing or printing the plaintext;
+  exit status 0 or 1. `vault.verify` is the library form.
+- `seal` reads every written image and the vault back from disk before
+  reporting success, and fails with "self-check failed" naming the file if
+  one does not give back its share or the source; `--no-check` skips it
+  (#32).
 - Secrets off the command line (#29): `embed -i -` and `split -i -` read the
   payload from standard input, and `-t -` asks for the text without echo (or
   reads one line from a pipe). A literal `-t VALUE` still works, with a
