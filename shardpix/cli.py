@@ -25,7 +25,13 @@ from rich.table import Table
 
 from . import __version__, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
-from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
+from .errors import (
+    InconsistentSharesError,
+    ShardpixError,
+    ShareError,
+    ShareFormatError,
+    VaultError,
+)
 from .images import load_image, write_new
 from .progress import Progress
 
@@ -326,12 +332,15 @@ def read_secret(args: argparse.Namespace) -> bytes:
     return args.text.encode("utf-8")
 
 
-def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
+def read_shares(
+    sources: list[str], origins: dict[bytes, str] | None = None
+) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
     """Parse shares from files (or ``-`` for stdin), one share per line.
 
     Blank lines and lines starting with ``#`` are ignored. Malformed shares are
     returned as ``(origin, reason)`` pairs instead of aborting the whole run:
-    one damaged share should not hide the others.
+    one damaged share should not hide the others. ``origins``, when given,
+    maps each share's bytes to the ``file:line`` it was first read from.
     """
     shares: list[shamir.Share] = []
     problems: list[tuple[str, str]] = []
@@ -346,9 +355,13 @@ def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str,
                 continue
             origin = "stdin" if source == "-" else source
             try:
-                shares.append(shamir.Share.from_text(line))
+                share = shamir.Share.from_text(line)
             except ShareFormatError as exc:
                 problems.append((f"{origin}:{number}", str(exc)))
+                continue
+            shares.append(share)
+            if origins is not None:
+                origins.setdefault(share.to_bytes(), f"{origin}:{number}")
     return shares, problems
 
 
@@ -742,12 +755,22 @@ def cmd_combine(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
         inputs = tuple(Path(s) for s in args.shares if s != "-")
         check_output(args.output, force=args.force, inputs=inputs)
-    shares, problems = read_shares(args.shares)
+    origins: dict[bytes, str] = {}
+    shares, problems = read_shares(args.shares, origins)
     report = console if args.output is not None else make_console(stderr=True)
     for origin, reason in problems:
         report.print(f"[yellow]skipped[/] {escape(origin)}: {escape(reason)}")
 
-    recovery = shamir.combine(shares)
+    try:
+        recovery = shamir.combine(shares)
+    except InconsistentSharesError as exc:
+        for number, candidate in enumerate(exc.candidates, start=1):
+            backers = ", ".join(
+                f"{_share_label(s)} {origins.get(s.to_bytes(), '?')}"
+                for s in (*candidate.used, *candidate.confirmed)
+            )
+            report.print(f"[red]secret {number}[/] authenticated by {escape(backers)}")
+        raise
 
     used = ", ".join(_share_label(s) for s in recovery.used)
     report.print(

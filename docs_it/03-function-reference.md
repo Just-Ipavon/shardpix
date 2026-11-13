@@ -484,8 +484,9 @@ segreto diverso* o *autenticazione fallita*. Solleva
 ### `combine(shares) -> Recovery`
 
 `recover_all`, poi rifiuta l'ambiguità: `InconsistentSharesError` se i
-cluster provengono da due suddivisioni, o se i due cluster più grandi hanno
-la stessa dimensione. Test: `TestAuthentication`, `TestRobustSearch`.
+cluster provengono da due suddivisioni, o se una suddivisione produce più di
+un cluster, qualunque sia la dimensione (`candidates` dell'errore elenca ogni
+recupero). Test: `TestAuthentication`, `TestRobustSearch`.
 
 ---
 

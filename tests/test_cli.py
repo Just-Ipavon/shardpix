@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import cli, stego
+from shardpix import cli, shamir, stego
 from shardpix.images import load_image
 
 
@@ -258,6 +258,20 @@ class TestSplitCombine:
         shares.write_text(lines[0] + "\n")
         assert run("combine", shares) == 1
         assert "need 3 shares" in capsys.readouterr().err
+
+    def test_a_larger_forged_set_is_refused(self, tmp_path, capsys):
+        assert run("split", "-t", "genuine", "-k", "3", "-n", "5") == 0
+        honest = capsys.readouterr().out.splitlines()
+        group = shamir.Share.from_text(honest[0]).group_id
+        forged = shamir.split(b"forged!", 3, 6, group_id=group)
+        a, b = tmp_path / "honest.txt", tmp_path / "mallory.txt"
+        a.write_text("\n".join(honest) + "\n")
+        b.write_text("".join(s.to_text() + "\n" for s in forged))
+        assert run("combine", a, b) == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "2 different secrets" in captured.err
+        assert f"{a}:1" in captured.err and f"{b}:6" in captured.err
 
     def test_threshold_larger_than_shares(self, capsys):
         assert run("split", "-t", "secret", "-k", "4", "-n", "3") == 1

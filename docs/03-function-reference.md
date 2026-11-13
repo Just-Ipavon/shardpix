@@ -461,7 +461,8 @@ Tests: `TestRobustSearch`, `TestMixedSplits`.
 ### `combine(shares) -> Recovery`
 
 `recover_all`, then refuses ambiguity: `InconsistentSharesError` if clusters
-come from two splits, or if the two largest clusters are the same size.
+come from two splits, or if one split yields more than one cluster, whatever
+their sizes (the error's `candidates` lists each recovery).
 Tests: `TestAuthentication`, `TestRobustSearch`.
 
 ---

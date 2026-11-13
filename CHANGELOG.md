@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- **`combine` no longer picks the largest of two share sets.** Anyone who has
+  seen one share can make a whole set that authenticates a secret of their
+  choice, as large as they like; `combine` returned the secret of the largest
+  set with exit code 0. It now fails whenever the shares authenticate more
+  than one secret, and lists the shares (file and line) behind each, so the
+  forged set can be left out. `unseal` was not affected: the vault's GCM tag
+  decides there.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
