@@ -18,10 +18,12 @@ Reconstruction looks for *clusters*: sets of shares that interpolate to a
 secret and MAC key under which every one of them verifies. A share verifies
 under one MAC key only, so clusters never overlap. Genuine shares form one
 cluster; a damaged share forms none; someone who fabricates ``k`` mutually
-consistent shares forms a second, separate cluster. The largest cluster
-wins, a tie is reported as ambiguous, and every other share is identified
-and reported with a reason. A caller holding an independent check - the
-vault's AES-GCM tag - can instead try every cluster in turn.
+consistent shares forms a second, separate cluster. Anyone who has seen one
+share can fabricate a cluster of any size, so :func:`combine` accepts a
+secret only when it is the one the shares authenticate: two clusters are
+reported as ambiguous whatever their sizes, and every other share is
+identified and reported with a reason. A caller holding an independent
+check - the vault's AES-GCM tag - can instead try every cluster in turn.
 
 Binary share format (big-endian)::
 
@@ -391,11 +393,15 @@ def _raise_no_cluster(
 def combine(shares: Iterable[Share]) -> Recovery:
     """Recover the secret from a collection of shares.
 
-    Returns the recovery supported by the most shares. If two different
-    secrets are each supported by the same number of shares there is no way
-    to tell the genuine one from a forgery, and
-    :class:`InconsistentSharesError` is raised - as it is when shares of two
-    unrelated splits could each be recovered.
+    Returns the one secret the shares authenticate. A share carries no
+    authenticator from outside the split: anyone who has seen one share knows
+    the group id, threshold and secret length, and can make a whole set of
+    shares of their own that authenticate each other. The size of a set
+    therefore says nothing about which one is genuine, so whenever the shares
+    authenticate two different secrets :class:`InconsistentSharesError` is
+    raised, listing the shares behind each; drop the forged set and combine
+    again. It is raised too when shares of two unrelated splits could each be
+    recovered. :func:`recover_all` returns every candidate.
     """
     recoveries = recover_all(shares)
     groups = {r.group_id for r in recoveries}
@@ -406,12 +412,14 @@ def combine(shares: Iterable[Share]) -> Recovery:
             recoveries[0].rejected,
         )
     if len(recoveries) > 1:
-        first, second = recoveries[0], recoveries[1]
-        support = len(first.used) + len(first.confirmed)
-        if support == len(second.used) + len(second.confirmed):
-            raise InconsistentSharesError(
-                f"two different secrets are each authenticated by {support} shares; "
-                "one of the two sets is forged and there is no way to tell which",
-                first.rejected,
-            )
+        sizes = " and ".join(str(len(r.used) + len(r.confirmed)) for r in recoveries)
+        members = {s for r in recoveries for s in (*r.used, *r.confirmed)}
+        raise InconsistentSharesError(
+            f"the shares authenticate {len(recoveries)} different secrets, backed by "
+            f"{sizes} shares; one of the sets is forged, and since anyone holding a share "
+            "can make a whole set, the number of shares behind a secret does not show "
+            "which: keep only the shares you trust and combine again",
+            tuple(r for r in recoveries[0].rejected if r.share not in members),
+            candidates=tuple(recoveries),
+        )
     return recoveries[0]

@@ -16,6 +16,79 @@ All notable changes to this project are documented here. The format follows
   reporting success, and fails with "self-check failed" naming the file if
   one does not give back its share or the source; `--no-check` skips it
   (#32).
+### Security
+
+- **`combine` no longer picks the largest of two share sets.** Anyone who has
+  seen one share can make a whole set that authenticates a secret of their
+  choice, as large as they like; `combine` returned the secret of the largest
+  set with exit code 0. It now fails whenever the shares authenticate more
+  than one secret, and lists the shares (file and line) behind each, so the
+  forged set can be left out. `unseal` was not affected: the vault's GCM tag
+  decides there.
+- **`--force` keeps outputs private.** Overwriting truncated the existing
+  file in place, so it kept its mode and owner: `unseal -f`, `extract -f` or
+  `combine -o FILE -f` over a world-readable file, or over one another user
+  had planted in a shared directory, left the plaintext readable by others
+  (SR-12 promised mode 0600 for every output). The data now goes to a new
+  0600 file that atomically replaces the old one, which also means a crash
+  never leaves a half-written vault.
+- **Restored names stay harmless.** `unseal` without `-o` writes the name
+  stored by whoever made the vault. `.bashrc`, `.envrc` or `-rf` came back
+  unchanged, and `--force` let such a name replace a shell startup file. Leading
+  dots and dashes are now removed, `:<>|?*"` become `_` (no NTFS alternate
+  data streams), and Windows device names are recognised after the trailing
+  spaces Win32 ignores (`CON .` used to pass as `CON `), including `COM¹`,
+  `LPT³`, `CONIN$` and `CONOUT$`. `--force` no longer applies to a restored
+  name: replacing an existing file takes `-o`. The property test now checks
+  names the way Win32 reads them.
+- **No input is overwritten, whatever the case.** The CLI compared output and
+  input paths exactly, although SP-11 promised case-folded checks: on macOS
+  or Windows `unseal -f` restoring `A.JPG` could overwrite the share image
+  `a.jpg`, and `-o` on `embed`, `extract` and `combine` had the same gap.
+  Paths are now compared case-folded and by file identity (hard links), and
+  the `-i` payload and `--passphrase-file` count as inputs too.
+
+### Added
+
+- Secrets off the command line (#29): `embed -i -` and `split -i -` read the
+  payload from standard input, and `-t -` asks for the text without echo (or
+  reads one line from a pipe). A literal `-t VALUE` still works, with a
+  warning that it is visible in `ps` and the shell history. The README, the
+  help examples and docs/02 no longer put a secret on the command line.
+
+### Fixed
+
+- The benchmark modules no longer default to a `docs/data` path relative to
+  the working directory when it is not there: outside a repository checkout
+  they ask for `--data` instead of writing results wherever they run.
+  `shardpix.analysis.cnn` without PyTorch fails with an install hint.
+  The CLI's warning for JPEG files decoded to pixels, which no input could
+  reach (every JPEG is embedded natively), is removed with
+  `SealedImage.from_jpeg`; `Carrier.from_jpeg` stays for library callers
+  of `load_image` (#37).
+- JPEG outputs keep everything after the cover's first image: a second MPO
+  frame, a gain map, depth data, a motion-photo video or a vendor trailer was
+  dropped while `structure_kept` stayed true, leaving an MPF index that
+  pointed past the end of the file. The bytes are now copied back unchanged
+  and the MPF offsets shifted by the change in the primary image's size; if
+  the index cannot be read, the bytes are still kept and the structure is
+  reported as changed (#24).
+- 16-bit colour PNG and TIFF covers are refused, as docs/07 already said;
+  Pillow opened them as 8-bit RGB and the stego image silently lost the extra
+  depth (16-bit greyscale was already refused). Animated GIF and PNG and
+  multi-page TIFF covers are refused too, instead of coming back as a single
+  still image (#25).
+- A truncated JPEG is refused as a cover ("truncated JPEG (no end-of-image
+  marker)") instead of being accepted while libjpeg printed "Premature end of
+  JPEG file" and filled in the missing blocks. Malformed JPEG headers now name
+  the file in the error, like every other image error (#26).
+- `seal --name` accepts a file name only: a value with a path separator
+  (`../escaped.spx`) is a usage error (exit 2) instead of writing the vault
+  outside `-d`; `vault.seal` refuses it too (#28).
+- `unseal` with a missing or wrong passphrase said "no shares given". When no
+  image yields a share of the vault it now says so and names the likely
+  causes: wrong or missing passphrase, edited images, or images of another
+  vault (#27).
 
 ## [3.0.0] — 2026-10-18
 
