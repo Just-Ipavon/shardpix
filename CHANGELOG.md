@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Decode limits from the decoder (#31): JPEG covers are also checked against
+  `MAX_PIXELS` with the width and height libjpeg itself parsed, before any
+  coefficient is allocated (the Pillow path already used Pillow's header
+  size). The project's own header parser skips standalone markers (TEM,
+  RSTn) instead of reading a length they do not have. A deterministic corpus
+  of malformed JPEG, PNG and MPO files (truncations, byte flips, inserted
+  markers, inflated sizes) runs with the tests: every case must end in a
+  formatted error and stay under a memory bound.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the
