@@ -62,8 +62,9 @@ good covers:
   (trees, streets, fabric), never shared online. Use the original files, not
   photos saved from a chat or a social network: they are recompressed, and
   shardpix warns when a JPEG's quality is below 90. Send the results as files,
-  not as photos in a messaging app, which recompresses them. HEIC is not
-  supported: set the iPhone camera to 'Most Compatible' (JPEG).
+  not as photos in a messaging app, which recompresses them. HEIC photos
+  need 'pip install shardpix[heic]' and give a PNG; JPEG ('Most Compatible'
+  on an iPhone) stays JPEG and is the better cover.
 
 options used by several commands:
   -k N    how many images (or shares) are needed to open; with -k 3 any 3 do

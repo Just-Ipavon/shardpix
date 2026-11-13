@@ -27,11 +27,16 @@ Documentation = "https://github.com/Just-Ipavon/shardpix/tree/main/docs"
 Issues = "https://github.com/Just-Ipavon/shardpix/issues"
 
 [project.optional-dependencies]
+# HEIC/HEIF covers (iPhone "High Efficiency" photos), decoded to pixels.
+heic = [
+    "pillow-heif>=0.18",
+]
 dev = [
     "hypothesis>=6.100",
     "pytest>=8.0",
     "ruff>=0.5",
     "scipy>=1.10",
+    "pillow-heif>=0.18",
 ]
 audit = [
     "bandit>=1.7",

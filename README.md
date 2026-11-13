@@ -196,7 +196,7 @@ bytes of each cover and hides the share the way that file is stored:
 | --- | --- | --- |
 | JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 7): never decoded or recompressed, same quality tables, EXIF and marker layout (a progressive JPEG is written back as baseline, with a warning) | `.jpg` |
 | PNG, TIFF, BMP, RAW export | In the pixels (format 6) | `.png` |
-| iPhone HEIC | Not readable: set the camera to *Most Compatible* (JPEG) | — |
+| iPhone HEIC | With `pip install "shardpix[heic]"`: decoded to pixels; better: set the camera to *Most Compatible* (JPEG) | PNG |
 
 Choose textured photos you took yourself and never shared, and send the
 results as files, not as "photos" in a messaging app, which re-compresses

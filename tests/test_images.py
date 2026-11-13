@@ -183,3 +183,41 @@ class TestSizeLimit:
         from shardpix import images
 
         assert 120_000_000 <= images.MAX_PIXELS
+
+
+class TestHeic:
+    """#36: HEIC covers through the optional pillow-heif decoder."""
+
+    def _heic(self, tmp_path):
+        pillow_heif = pytest.importorskip("pillow_heif")
+        pillow_heif.register_heif_opener()
+        path = tmp_path / "phone.heic"
+        Image.fromarray(natural_image(96, 128)).save(path, quality=95)
+        return path
+
+    def test_heic_cover_round_trips_as_png(self, tmp_path):
+        from shardpix import media
+
+        path = self._heic(tmp_path)
+        cover = media.open_cover(path)
+        assert cover.suffix == ".png"
+        data, _ = media.hide(cover, b"from an iphone", "pw")
+        out = tmp_path / "out.png"
+        out.write_bytes(data)
+        assert media.reveal(out, "pw") == b"from an iphone"
+
+    def test_missing_decoder_gives_an_install_hint(self, tmp_path, monkeypatch):
+        import builtins
+
+        path = tmp_path / "phone.heic"
+        path.write_bytes(b"\x00\x00\x00\x18ftypheic" + bytes(64))
+        real_import = builtins.__import__
+
+        def no_heif(name, *args, **kwargs):
+            if name == "pillow_heif":
+                raise ImportError(name)
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_heif)
+        with pytest.raises(UnsupportedImageError, match=r"shardpix\[heic\]"):
+            load_image(path)

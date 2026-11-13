@@ -203,7 +203,7 @@ memorizzato:
 | --- | --- | --- |
 | JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 7): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker (un JPEG progressivo viene riscritto come baseline, con un avviso) | `.jpg` |
 | PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 6) | `.png` |
-| HEIC dell'iPhone | Non leggibile: imposta la fotocamera su *Più compatibile* (JPEG) | — |
+| HEIC dell'iPhone | Con `pip install "shardpix[heic]"`: decodificata in pixel; meglio impostare la fotocamera su *Più compatibile* (JPEG) | PNG |
 
 Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
 come file, non come "foto" in un'app di messaggistica, che le ricomprime.

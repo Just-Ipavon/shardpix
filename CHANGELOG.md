@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- HEIC covers (#36) with the optional `shardpix[heic]` extra
+  (`pillow-heif`): decoded to pixels and written as PNG (format 6), like
+  other lossy inputs that are not JPEG. Without the extra, a HEIC file is
+  refused with the install hint instead of "not a readable image".
+  docs/07 and the README explain the trade-off (JPEG stays the better cover).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

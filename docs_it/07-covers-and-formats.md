@@ -28,7 +28,8 @@ Quattro regole contano più di tutto il resto:
    come documento"), mai come "foto" in un'app di messaggistica, che la
    ricomprimerebbe;
 4. su iPhone, lascia la fotocamera su *Più compatibile* (JPEG) anziché su
-   *Alta efficienza* (HEIC), che shardpix non è in grado di leggere.
+   *Alta efficienza* (HEIC): una foto HEIC si legge con `shardpix[heic]`, ma
+   viene decodificata in pixel ed esce come PNG, mentre un JPEG resta JPEG.
 
 Il resto di questo documento spiega il perché. Le misure su cui si basa sono
 in 05 §5.5.
@@ -102,7 +103,7 @@ termine di confronto per i benchmark.
 | JPEG da smartphone o fotocamera | Inserisce i dati nei coefficienti (formato 7) | JPEG | **Buona immagine di copertura**, così com'è |
 | Foto PNG, TIFF o BMP a 8 bit | Inserisce i dati nei pixel (formato 6) | PNG | **Buona immagine di copertura** |
 | RAW / DNG (iPhone ProRAW, RAW di Android) | Non viene letta direttamente: esportala in PNG o TIFF a 8 bit | PNG | **Buona immagine di copertura**, dopo l'esportazione |
-| HEIC ("Alta efficienza" dell'iPhone) | Non leggibile (Pillow non supporta HEIF) | — | Imposta la fotocamera su JPEG; convertire un HEIC in JPEG comprime la foto due volte |
+| HEIC ("Alta efficienza" dell'iPhone) | Con `pip install "shardpix[heic]"` (pillow-heif): decodificata in pixel, inserimento nei pixel (formato 6); senza, rifiutata con questa indicazione | PNG | Funziona, ma un PNG tra le foto HEIC/JPEG del telefono si nota; meglio la fotocamera su JPEG. Convertire un HEIC in JPEG comprime la foto due volte |
 | PNG o TIFF a 16 bit | Rifiutata | — | Esportala a 8 bit |
 | Screenshot | Inserisce i dati nei pixel | PNG | Funziona, ma le zone uniformi lasciano poca texture; meglio usare foto |
 
@@ -168,5 +169,5 @@ file in uscita deve avere l'estensione corrispondente (`.jpg` o `.png`).
 | --- | --- |
 | Uno smartphone | Usa le sue foto JPEG così come sono: con texture, a piena risoluzione, mai condivise |
 | Esportazioni da RAW o foto PNG | Usale: danno file in uscita PNG (formato 6) |
-| Foto HEIC | Imposta la fotocamera su JPEG per le foto che userai |
+| Foto HEIC | Imposta la fotocamera su JPEG per le foto che userai, oppure installa `shardpix[heic]` e accetta un PNG in uscita |
 | Immagini prese dal web | Non usarle: basta una ricerca inversa per immagini per trovare l'originale |
