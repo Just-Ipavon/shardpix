@@ -112,9 +112,41 @@ def from_pil(image: Image.Image) -> Carrier:
     return Carrier(pixels=pixels, mode=image.mode, icc_profile=icc, source_format=source_format)
 
 
+_HEIF_BRANDS = frozenset({b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"})
+
+
+def is_heif(path: str | Path) -> bool:
+    """True for an HEIF/HEIC file (ISO-BMFF ``ftyp`` box with a HEIF brand)."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(12)
+    except OSError:
+        return False
+    return head[4:8] == b"ftyp" and head[8:12] in _HEIF_BRANDS
+
+
+def _enable_heif(path: Path) -> None:
+    """Register pillow-heif's opener, or explain how to get it."""
+    try:
+        from pillow_heif import register_heif_opener
+    except ImportError as exc:
+        raise UnsupportedImageError(
+            f"{path}: HEIC needs the optional decoder: pip install 'shardpix[heic]' "
+            "(or set the camera to 'Most Compatible' to take JPEG photos)"
+        ) from exc
+    register_heif_opener()
+
+
 def load_image(path: str | Path) -> Carrier:
-    """Read an image from disk as a carrier."""
+    """Read an image from disk as a carrier.
+
+    HEIC/HEIF photos are read through the optional ``pillow-heif`` decoder
+    (``shardpix[heic]``): decoded to pixels like any other lossy input, they
+    give a PNG (format 6).
+    """
     path = Path(path)
+    if is_heif(path):
+        _enable_heif(path)
     try:
         with warnings.catch_warnings():
             # Pillow's own warning starts at 89 megapixels; MAX_PIXELS decides here.

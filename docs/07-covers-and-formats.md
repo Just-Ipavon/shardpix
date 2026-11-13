@@ -25,7 +25,8 @@ Four rules matter more than anything else:
 3. send the result as a **file** (e-mail attachment, cloud drive, "send as
    document"), never as a "photo" in a messaging app, which re-compresses it;
 4. on iPhone, keep the camera on *Most Compatible* (JPEG) rather than *High
-   Efficiency* (HEIC), which shardpix cannot read.
+   Efficiency* (HEIC): a HEIC photo can be read with `shardpix[heic]`, but it
+   is decoded to pixels and comes out as a PNG, while a JPEG stays JPEG.
 
 The rest of this document explains why. The measurements behind it are in
 05 §5.5.
@@ -102,7 +103,7 @@ JPEG, palette image) unless `--allow-unsuitable`.
 | JPEG from a phone or camera | Embeds in the coefficients (format 7) | JPEG | **Good cover**, as taken |
 | PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 6) | PNG | **Good cover** |
 | RAW / DNG (iPhone ProRAW, Android RAW) | Not read directly: export it to an 8-bit PNG or TIFF | PNG | **Good cover**, after export |
-| HEIC (iPhone "High Efficiency") | Not readable (no HEIF support in Pillow) | — | Switch the camera to JPEG; converting HEIC to JPEG compresses the photo twice |
+| HEIC (iPhone "High Efficiency") | With `pip install "shardpix[heic]"` (pillow-heif): decoded to pixels, embedded in the pixels (format 6); without it, refused with that hint | PNG | Works, but a PNG among the phone's HEIC/JPEG photos stands out; prefer the camera on JPEG. Converting HEIC to JPEG compresses the photo twice |
 | 16-bit PNG or TIFF (greyscale or colour) | Refused | — | Export as 8-bit |
 | Animated GIF or PNG, multi-page TIFF | Refused: only the first frame would be kept | — | Export one frame as a still image |
 | Screenshot | Embeds in the pixels | PNG | Works, but flat areas leave little texture; prefer photos |
@@ -163,5 +164,5 @@ the output must carry the matching extension (`.jpg` or `.png`).
 | --- | --- |
 | A phone | Use its JPEG photos as they are: textured, full resolution, never shared |
 | RAW exports or PNG photos | Use them: they give PNG outputs (format 6) |
-| HEIC photos | Switch the camera to JPEG for the photos you will use |
+| HEIC photos | Switch the camera to JPEG for the photos you will use, or install `shardpix[heic]` and accept a PNG output |
 | Images from the web | Do not use them: the original is one reverse image search away |
