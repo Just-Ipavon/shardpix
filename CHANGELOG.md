@@ -38,6 +38,16 @@ All notable changes to this project are documented here. The format follows
   Paths are now compared case-folded and by file identity (hard links), and
   the `-i` payload and `--passphrase-file` count as inputs too.
 
+### Fixed
+
+- `seal --name` accepts a file name only: a value with a path separator
+  (`../escaped.spx`) is a usage error (exit 2) instead of writing the vault
+  outside `-d`; `vault.seal` refuses it too (#28).
+- `unseal` with a missing or wrong passphrase said "no shares given". When no
+  image yields a share of the vault it now says so and names the likely
+  causes: wrong or missing passphrase, edited images, or images of another
+  vault (#27).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

@@ -327,6 +327,16 @@ class TestVaultCommands:
         assert (tmp_path / "notes.txt").read_text() == "the treasure is under the oak"
         assert "Recovered notes.txt" in capsys.readouterr().out
 
+    def test_seal_name_with_a_separator_is_a_usage_error(self, tmp_path, covers, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        argv = ("seal", secret, *covers[:2], "-k", "2", "-d", tmp_path / "s8")
+        with pytest.raises(SystemExit) as exc:
+            run(*argv, "--name", "../escaped.spx", "--insecure-no-passphrase")
+        assert exc.value.code == 2
+        assert "not a path" in capsys.readouterr().err
+        assert not (tmp_path / "escaped.spx").exists()
+
     def test_restored_name_never_replaces_a_file(
         self, tmp_path, covers, passphrase_file, capsys, monkeypatch
     ):
