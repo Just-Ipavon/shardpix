@@ -148,13 +148,16 @@ dell'array.
 
 ### `write_new(path, data, *, overwrite=False) -> None`
 
-Scrive byte in un nuovo file con creazione esclusiva (`O_CREAT | O_EXCL`),
-salvo `overwrite` (allora `O_TRUNC`): verifica e creazione sono un unico
-passo atomico, e un nome esistente — compreso un collegamento simbolico
-pendente — viene rifiutato anziché seguito (06 SR-03). `O_NOFOLLOW` è sempre
-impostato, e un collegamento simbolico nella destinazione viene rifiutato
-anche con `overwrite`. I nuovi file ricevono i permessi `0o600` qualunque sia
-la umask (06 SR-12). Solleva `ShardpixError`. Ogni output della CLI e di
+Scrive byte in un nuovo file con creazione esclusiva (`O_CREAT | O_EXCL`):
+verifica e creazione sono un unico passo atomico, e un nome esistente —
+compreso un collegamento simbolico pendente — viene rifiutato anziché seguito
+(06 SR-03). Con `overwrite` i byte vanno in un nuovo file privato nella stessa
+cartella, che poi sostituisce la destinazione con `os.replace`: permessi,
+proprietario e hard link del vecchio file non passano mai al nuovo, e un
+crash lascia o il vecchio file o il nuovo. `O_NOFOLLOW` è sempre impostato, e
+un collegamento simbolico nella destinazione viene rifiutato anche con
+`overwrite`. Ogni file scritto ha i permessi `0o600` qualunque sia la umask
+(06 SR-12). Solleva `ShardpixError`. Ogni output della CLI e di
 `seal` passa da qui. Test: `TestWriteNew`.
 
 ### `save_png(carrier, path, *, overwrite=False) -> None`

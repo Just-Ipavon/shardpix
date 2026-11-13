@@ -143,12 +143,15 @@ Converts back to Pillow, letting it infer the mode from the array shape.
 
 ### `write_new(path, data, *, overwrite=False) -> None`
 
-Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`) unless
-`overwrite` (then `O_TRUNC`): checking and creating are one atomic step, and an
-existing name — including a dangling symbolic link — is refused rather than
-followed (06 SR-03). `O_NOFOLLOW` is always set, and a symbolic link at the
-destination is refused even with `overwrite`. New files get mode `0o600`
-whatever the umask (06 SR-12). Raises `ShardpixError`. Every output of the
+Writes bytes to a new file with exclusive creation (`O_CREAT | O_EXCL`):
+checking and creating are one atomic step, and an existing name — including a
+dangling symbolic link — is refused rather than followed (06 SR-03). With
+`overwrite` the bytes go to a new private file in the same directory, which
+then replaces the destination with `os.replace`: the old file's mode, owner
+and hard links never carry over, and a crash leaves either the old file or
+the new one. `O_NOFOLLOW` is always set, and a symbolic link at the
+destination is refused even with `overwrite`. Every file it writes has mode
+`0o600` whatever the umask (06 SR-12). Raises `ShardpixError`. Every output of the
 CLI and of `seal` goes through it. Test: `TestWriteNew`.
 
 ### `save_png(carrier, path, *, overwrite=False) -> None`

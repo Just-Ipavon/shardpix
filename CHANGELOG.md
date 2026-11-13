@@ -15,6 +15,13 @@ All notable changes to this project are documented here. The format follows
   than one secret, and lists the shares (file and line) behind each, so the
   forged set can be left out. `unseal` was not affected: the vault's GCM tag
   decides there.
+- **`--force` keeps outputs private.** Overwriting truncated the existing
+  file in place, so it kept its mode and owner: `unseal -f`, `extract -f` or
+  `combine -o FILE -f` over a world-readable file, or over one another user
+  had planted in a shared directory, left the plaintext readable by others
+  (SR-12 promised mode 0600 for every output). The data now goes to a new
+  0600 file that atomically replaces the old one, which also means a crash
+  never leaves a half-written vault.
 
 ## [3.0.0] — 2026-10-18
 
