@@ -163,7 +163,7 @@ the layers can be used and demonstrated independently.
 | **Primary actor** | Owner |
 | **Preconditions** | A cover image, a payload no larger than its capacity, and a passphrase. |
 | **Postconditions** | An image that looks like the cover and carries the sealed payload: a PNG, or a JPEG if the cover is a JPEG (A3). |
-| **Trigger** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
+| **Trigger** | `shardpix embed photo.png -o out.png -t - -p` |
 
 #### Main flow
 
@@ -222,7 +222,7 @@ the layers can be used and demonstrated independently.
 | **Primary actor** | Owner |
 | **Preconditions** | A secret of 1–65,535 bytes. |
 | **Postconditions** | n printable shares, any k of which recover the secret. |
-| **Trigger** | `shardpix split -t "safe code 4815" -k 3 -n 5 -d shares/` |
+| **Trigger** | `shardpix split -t - -k 3 -n 5 -d shares/` |
 
 #### Main flow
 
@@ -256,15 +256,16 @@ the layers can be used and demonstrated independently.
    reported and skipped.
 2. The system groups shares by split and searches each group for clusters
    (04 §4.6).
-3. The system returns the largest cluster's secret and reports which shares
-   were used, which were additionally verified and which were rejected.
+3. The system returns the secret of the one cluster found and reports which
+   shares were used, which were additionally verified and which were
+   rejected.
 
 #### Alternative flows
 
 | Id | Condition | Behaviour |
 | --- | --- | --- |
 | A1 | Fewer than k distinct indices | Error. |
-| A2 | Two clusters of equal size | Error: one set is forged and there is no way to tell which. |
+| A2 | Two clusters, of any sizes | Error listing the shares (file and line) behind each secret: one set is forged, and its size does not tell which, since one holder can fabricate any number of shares. |
 | A3 | Two different splits can each be recovered | Error: combine them separately. |
 | A4 | Search budget exhausted | Error; occurs only with adversarial input far beyond realistic use. |
 

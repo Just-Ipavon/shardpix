@@ -167,7 +167,7 @@ modo indipendente.
 | **Attore primario** | Proprietario |
 | **Precondizioni** | Un'immagine di copertura, un carico non più grande della sua capacità e una passphrase. |
 | **Postcondizioni** | Un'immagine che appare come l'immagine di copertura e trasporta il carico sigillato: un PNG, o un JPEG se l'immagine di copertura è un JPEG (A3). |
-| **Evento scatenante** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
+| **Evento scatenante** | `shardpix embed photo.png -o out.png -t - -p` |
 
 #### Flusso principale
 
@@ -228,7 +228,7 @@ modo indipendente.
 | **Attore primario** | Proprietario |
 | **Precondizioni** | Un segreto di 1–65.535 byte. |
 | **Postcondizioni** | n quote stampabili, k qualsiasi delle quali permettono di recuperare il segreto. |
-| **Evento scatenante** | `shardpix split -t "safe code 4815" -k 3 -n 5 -d shares/` |
+| **Evento scatenante** | `shardpix split -t - -k 3 -n 5 -d shares/` |
 
 #### Flusso principale
 
@@ -262,16 +262,16 @@ modo indipendente.
    malformate vengono segnalate e ignorate.
 2. Il sistema raggruppa le quote per suddivisione e cerca gruppi coerenti in
    ciascun insieme (04 §4.6).
-3. Il sistema restituisce il segreto del gruppo più grande e riporta quali quote
-   sono state usate, quali sono state ulteriormente verificate e quali sono
-   state rifiutate.
+3. Il sistema restituisce il segreto dell'unico gruppo trovato e riporta quali
+   quote sono state usate, quali sono state ulteriormente verificate e quali
+   sono state rifiutate.
 
 #### Flussi alternativi
 
 | Id | Condizione | Comportamento |
 | --- | --- | --- |
 | A1 | Meno di k indici distinti | Errore. |
-| A2 | Due gruppi di uguale dimensione | Errore: uno dei due insiemi è contraffatto e non c'è modo di stabilire quale. |
+| A2 | Due gruppi, di qualunque dimensione | Errore che elenca le quote (file e riga) dietro ciascun segreto: un insieme è contraffatto, e la sua dimensione non dice quale, perché un solo detentore può fabbricare un numero qualsiasi di quote. |
 | A3 | Due suddivisioni diverse possono essere recuperate ciascuna | Errore: combinarle separatamente. |
 | A4 | Budget di ricerca esaurito | Errore; si verifica solo con input avversariali ben oltre l'uso realistico. |
 

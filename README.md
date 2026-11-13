@@ -126,12 +126,13 @@ shardpix seal minutes.pdf photos/*.png -k 3 -p
 # Open it with any three of the images
 shardpix unseal sealed/minutes.pdf.spx sealed/beach.png sealed/cat.png sealed/street.png -p -o minutes-opened.pdf
 
-# Hide a short message in one image, and read it back
-shardpix embed photo.png -o holiday.png -t "meet me at noon" -p
+# Hide a short message in one image (typed without echo), and read it back
+shardpix embed photo.png -o holiday.png -t - -p
 shardpix extract holiday.png -p
 
 # Split a secret into printable shares, any 2 of 3 recover it
-shardpix split -t "safe code 4815" -k 2 -n 3 -d shares/
+# (-t - asks for it without echo; -i - reads it from a pipe)
+shardpix split -t - -k 2 -n 3 -d shares/
 shardpix combine shares/share-*-1.txt shares/share-*-3.txt
 
 # Look for the statistical fingerprints of LSB embedding
