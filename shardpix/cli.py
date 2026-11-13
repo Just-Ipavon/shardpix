@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import glob
+import os
 import re
 import sys
 from collections.abc import Callable, Iterator
@@ -25,7 +26,13 @@ from rich.table import Table
 
 from . import __version__, jpeg, media, shamir, stego, vault
 from .analysis import chi_square, rs
-from .errors import ShardpixError, ShareError, ShareFormatError, VaultError
+from .errors import (
+    InconsistentSharesError,
+    ShardpixError,
+    ShareError,
+    ShareFormatError,
+    VaultError,
+)
 from .images import load_image, write_new
 from .progress import Progress
 
@@ -190,14 +197,40 @@ def require_passphrase(args: argparse.Namespace) -> str | None:
 
 
 def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> None:
-    """Refuse to overwrite an input, or an existing file without ``--force``."""
+    """Refuse to overwrite an input, or an existing file without ``--force``.
+
+    Paths are compared resolved and case-folded, as ``seal`` does, so ``A.JPG``
+    is refused for ``a.jpg`` on any system (they are one file on macOS and
+    Windows), and by file identity where both exist, which catches hard links.
+    """
     if path.is_dir():
         raise ShardpixError(f"{path} is a directory; give a file name")
-    resolved = path.resolve()
-    if any(resolved == p.resolve() for p in inputs):
-        raise ShardpixError(f"{path} is also an input; choose a different output path")
+    target = vault._identity(path)
+    for source in inputs:
+        if target == vault._identity(source) or _same_file(path, source):
+            raise ShardpixError(f"{path} is also an input; choose a different output path")
     if path.exists() and not force:
         raise ShardpixError(f"{path} already exists; use --force to overwrite it")
+
+
+def _vault_name(value: str) -> str:
+    """argparse type for ``seal --name``: a file name, never a path."""
+    if not vault.is_bare_name(value):
+        raise argparse.ArgumentTypeError(f"{value!r} must be a file name, not a path")
+    return value
+
+
+def _same_file(first: Path, second: Path) -> bool:
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
+def input_files(args: argparse.Namespace, *paths: Path) -> tuple[Path, ...]:
+    """``paths`` plus the payload (``-i``) and passphrase files the command reads."""
+    extra = (getattr(args, "input", None), getattr(args, "passphrase_file", None))
+    return (*paths, *(Path(p) for p in extra if p is not None))
 
 
 @contextmanager
@@ -326,12 +359,15 @@ def read_secret(args: argparse.Namespace) -> bytes:
     return args.text.encode("utf-8")
 
 
-def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
+def read_shares(
+    sources: list[str], origins: dict[bytes, str] | None = None
+) -> tuple[list[shamir.Share], list[tuple[str, str]]]:
     """Parse shares from files (or ``-`` for stdin), one share per line.
 
     Blank lines and lines starting with ``#`` are ignored. Malformed shares are
     returned as ``(origin, reason)`` pairs instead of aborting the whole run:
-    one damaged share should not hide the others.
+    one damaged share should not hide the others. ``origins``, when given,
+    maps each share's bytes to the ``file:line`` it was first read from.
     """
     shares: list[shamir.Share] = []
     problems: list[tuple[str, str]] = []
@@ -346,9 +382,13 @@ def read_shares(sources: list[str]) -> tuple[list[shamir.Share], list[tuple[str,
                 continue
             origin = "stdin" if source == "-" else source
             try:
-                shares.append(shamir.Share.from_text(line))
+                share = shamir.Share.from_text(line)
             except ShareFormatError as exc:
                 problems.append((f"{origin}:{number}", str(exc)))
+                continue
+            shares.append(share)
+            if origins is not None:
+                origins.setdefault(share.to_bytes(), f"{origin}:{number}")
     return shares, problems
 
 
@@ -428,7 +468,7 @@ def cmd_capacity(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_embed(args: argparse.Namespace, console: Console) -> int:
-    check_output(args.output, force=args.force, inputs=(args.cover,))
+    check_output(args.output, force=args.force, inputs=input_files(args, args.cover))
     payload = read_secret(args)
     cover = media.open_cover(args.cover)
     if args.output.suffix.lower() not in OUTPUT_SUFFIXES[cover.suffix]:
@@ -480,7 +520,7 @@ def cmd_embed(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_extract(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        check_output(args.output, force=args.force, inputs=(args.image,))
+        check_output(args.output, force=args.force, inputs=input_files(args, args.image))
     passphrase = read_passphrase(args, confirm=False)
     with progress_bar("Extracting") as progress:
         if progress is not None:
@@ -664,16 +704,26 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
 
 
 def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
-    inputs = (args.vault, *args.images)
+    inputs = input_files(args, args.vault, *args.images)
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=inputs)
     passphrase = read_passphrase(args, confirm=False)
     with progress_bar("Unsealing") as progress:
         result = vault.unseal(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
-    output = args.output if args.output is not None else Path(result.filename)
-    check_output(output, force=args.force, inputs=inputs)
-    write_new(output, result.data, overwrite=args.force)
+    if args.output is not None:
+        output, force = args.output, args.force
+    else:
+        # The name comes from whoever made the vault: --force never lets it
+        # replace a file, so it cannot overwrite a startup file or an input.
+        output, force = Path(result.filename), False
+        if output.exists() or output.is_symlink():
+            raise ShardpixError(
+                f"the vault restores {result.filename}, which already exists here; "
+                "choose where to write it with -o (--force applies only to -o)"
+            )
+    check_output(output, force=force, inputs=inputs)
+    write_new(output, result.data, overwrite=force)
     console.print(
         f"Recovered [bold]{escape(result.filename)}[/] ({format_bytes(len(result.data))}) "
         f"to [bold]{escape(str(output))}[/]"
@@ -725,7 +775,7 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
     args.directory.mkdir(parents=True, exist_ok=True)
     paths = [args.directory / f"share-{s.group}-{s.index}.txt" for s in shares]
     for path in paths:
-        check_output(path, force=args.force)
+        check_output(path, force=args.force, inputs=input_files(args))
     for share, path in zip(shares, paths, strict=True):
         write_new(path, (share.to_text() + "\n").encode("utf-8"), overwrite=args.force)
 
@@ -740,14 +790,24 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
 
 def cmd_combine(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
-        inputs = tuple(Path(s) for s in args.shares if s != "-")
+        inputs = input_files(args, *(Path(s) for s in args.shares if s != "-"))
         check_output(args.output, force=args.force, inputs=inputs)
-    shares, problems = read_shares(args.shares)
+    origins: dict[bytes, str] = {}
+    shares, problems = read_shares(args.shares, origins)
     report = console if args.output is not None else make_console(stderr=True)
     for origin, reason in problems:
         report.print(f"[yellow]skipped[/] {escape(origin)}: {escape(reason)}")
 
-    recovery = shamir.combine(shares)
+    try:
+        recovery = shamir.combine(shares)
+    except InconsistentSharesError as exc:
+        for number, candidate in enumerate(exc.candidates, start=1):
+            backers = ", ".join(
+                f"{_share_label(s)} {origins.get(s.to_bytes(), '?')}"
+                for s in (*candidate.used, *candidate.confirmed)
+            )
+            report.print(f"[red]secret {number}[/] authenticated by {escape(backers)}")
+        raise
 
     used = ", ".join(_share_label(s) for s in recovery.used)
     report.print(
@@ -919,6 +979,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--name",
+        type=_vault_name,
         help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
         "followed by .spx, e.g. notes.pdf.spx)",
     )
@@ -965,7 +1026,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-f",
         "--force",
         action="store_true",
-        help="replace the output file if it already exists (without -f shardpix refuses)",
+        help="replace the -o file if it already exists (without -f shardpix refuses). "
+        "A name restored from the vault never replaces a file",
     )
     p.set_defaults(handler=cmd_unseal)
 

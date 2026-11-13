@@ -245,6 +245,18 @@ class TestSealValidation:
         result = vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name="blob.bin")
         assert result.vault_path.name == "blob.bin"
 
+    @pytest.mark.parametrize("name", ["../escaped.spx", "sub/v.spx", "..\\v.spx", "..", ""])
+    def test_vault_name_is_never_a_path(self, tmp_path, covers, secret_file, name):
+        with pytest.raises(VaultError, match="file name, not a path"):
+            vault.seal(secret_file, covers[:2], 2, tmp_path / "out", vault_name=name)
+        assert not (tmp_path / "escaped.spx").exists()
+
+    def test_no_share_at_all_names_the_likely_causes(self, sealed):
+        with pytest.raises(VaultError, match="none of the 5 images holds a share") as exc:
+            vault.unseal(sealed.vault_path, images_of(sealed), "wrong passphrase")
+        assert "no shares given" not in str(exc.value)
+        assert len(exc.value.outcomes) == 5
+
 
 class TestSafeFilename:
     @pytest.mark.parametrize(
@@ -331,6 +343,20 @@ class TestRestoredNames:
             ("lpt1.txt", vault.FALLBACK_NAME),
             ("trailing. ", "trailing"),
             ("BOX", "BOX"),
+            (".bashrc", "bashrc"),
+            (".envrc", "envrc"),
+            ("-rf", "rf"),
+            ("..-.profile", "profile"),
+            ("CON .", vault.FALLBACK_NAME),
+            ("NUL .", vault.FALLBACK_NAME),
+            ("COM1 . .", vault.FALLBACK_NAME),
+            ("CON .txt", vault.FALLBACK_NAME),
+            ("COM¹", vault.FALLBACK_NAME),
+            ("lpt³.log", vault.FALLBACK_NAME),
+            ("CONIN$", vault.FALLBACK_NAME),
+            ("conout$.txt", vault.FALLBACK_NAME),
+            ("foo.txt::$DATA", "foo.txt__$DATA"),
+            ('a<b>|c?*"d.txt', "a_b__c___d.txt"),
         ],
     )
     def test_control_characters_and_reserved_names(self, name, expected):
