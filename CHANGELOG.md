@@ -40,6 +40,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A truncated JPEG is refused as a cover ("truncated JPEG (no end-of-image
+  marker)") instead of being accepted while libjpeg printed "Premature end of
+  JPEG file" and filled in the missing blocks. Malformed JPEG headers now name
+  the file in the error, like every other image error (#26).
 - `seal --name` accepts a file name only: a value with a path separator
   (`../escaped.spx`) is a usage error (exit 2) instead of writing the vault
   outside `-d`; `vault.seal` refuses it too (#28).
