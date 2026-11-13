@@ -148,12 +148,25 @@ def load(path: str | Path) -> JpegCover:
 _SOF_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
 
 
+_EOI = b"\xff\xd9"
+
+
 def _dimensions(path: Path) -> tuple[int, int]:
-    """Width and height from the frame header, read before libjpeg allocates anything."""
+    """Width and height from the frame header, read before libjpeg allocates anything.
+
+    A file without an end-of-image marker after its scan is refused: libjpeg
+    would warn about a premature end on stderr and fill in the missing blocks,
+    so the stego image would be a "repaired" picture, not the cover. Entropy-
+    coded data stuffs every ``FF`` byte, so ``FF D9`` there is always the EOI.
+    """
     try:
-        segments, _ = _segments(path.read_bytes())
+        segments, scan = _segments(path.read_bytes())
     except OSError as exc:
         raise UnsupportedImageError(f"{path}: cannot read ({exc.strerror or exc})") from exc
+    except UnsupportedImageError as exc:
+        raise UnsupportedImageError(f"{path}: {exc}") from exc
+    if _EOI not in scan:
+        raise UnsupportedImageError(f"{path}: truncated JPEG (no end-of-image marker)")
     for marker, segment in segments:
         if marker in _SOF_MARKERS and len(segment) >= 9:
             height = int.from_bytes(segment[5:7], "big")
@@ -288,7 +301,6 @@ def embed_coefficients(
 _META_MARKERS = frozenset(range(0xE0, 0xF0)) | {0xFE}
 """APPn and COM: metadata, copied from the cover byte for byte."""
 _DQT, _DHT, _SOS = 0xDB, 0xC4, 0xDA
-_EOI = b"\xff\xd9"
 
 
 def _segments(data: bytes) -> tuple[list[tuple[int, bytes]], bytes]:

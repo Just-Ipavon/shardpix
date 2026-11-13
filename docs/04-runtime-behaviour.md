@@ -231,8 +231,8 @@ Index combinations crossed with one share per index then guarantee that a
 flood of impostors reusing one index costs one attempt per impostor, not an
 explosion of combinations.
 
-`combine` takes the first (largest) recovery and refuses ties; `unseal` tries
-them all against the vault tag.
+`combine` accepts a single recovery and refuses two or more, whatever their
+sizes; `unseal` tries them all against the vault tag.
 
 ## 4.7 Life of one image during unseal
 
