@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `shardpix verify VAULT IMAGES…` (#32): reports, image by image, whether
+  each holds a valid share and whether together they open the vault
+  (trial-decrypted in memory), without writing or printing the plaintext;
+  exit status 0 or 1. `vault.verify` is the library form.
+- `seal` reads every written image and the vault back from disk before
+  reporting success, and fails with "self-check failed" naming the file if
+  one does not give back its share or the source; `--no-check` skips it
+  (#32).
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

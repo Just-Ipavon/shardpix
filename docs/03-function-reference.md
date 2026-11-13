@@ -500,15 +500,18 @@ case-insensitive file system are refused everywhere. `_check_new_file`
 refuses inputs always and existing files without `force`; `_write` turns an
 `OSError` into `VaultError`.
 
-### `seal(source, covers, threshold, out_dir, passphrase=None, *, method, vault_name, force, random_bytes, progress=None)`
+### `seal(source, covers, threshold, out_dir, passphrase=None, *, method, vault_name, force, random_bytes, progress=None, check=True)`
 
 Validation runs before anything is written: cover count and threshold, distinct
 covers, output directory, file size, file name length, output collisions
 (including `vault_name` against image names), overwrites, and that every cover
 can hold `SHARE_BYTES`. Then the key, group id and nonce are drawn, the file
-is encrypted, the key is split and each share embedded. Raises `VaultError`,
+is encrypted, the key is split and each share embedded. With `check` every
+image is read back from disk and must give its share, and the vault file must
+decrypt to the source, before success is reported (`VaultError` "self-check
+failed" otherwise; `seal --no-check` skips it). Raises `VaultError`,
 `UnsupportedImageError` or `CapacityError`. Tests: `TestRoundTrip`,
-`TestSealValidation`, `TestOutputCollisions`.
+`TestSealValidation`, `TestOutputCollisions`, `TestVerifyAndSelfCheck`.
 
 ### `read_vault(path)`
 
@@ -534,6 +537,13 @@ other vaults and duplicates, runs `shamir.recover_all`, and tries each
 cluster's key against the vault tag. Raises `VaultError` carrying the
 per-image outcomes when no cluster exists or none opens the vault. Tests:
 `TestFailures`, `TestForgedSets`, `test_known_answers.py`.
+
+### `verify(vault_path, images, passphrase=None, progress=None) -> VerifyResult`
+
+The same checks as `unseal`, including the trial decryption in memory, but the
+plaintext is discarded: returns `opens`, the per-image outcomes and, when the
+images do not open the vault, the reason. Backs `shardpix verify`, which exits
+0 or 1. Tests: `TestVerifyAndSelfCheck`.
 
 ---
 

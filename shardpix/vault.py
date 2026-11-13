@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from . import media, shamir, stego
 from .errors import (
     PayloadNotFoundError,
+    ShardpixError,
     ShareError,
     ShareFormatError,
     UnsupportedImageError,
@@ -200,12 +201,15 @@ def seal(
     force: bool = False,
     random_bytes: RandomBytes = os.urandom,
     progress: Progress | None = None,
+    check: bool = True,
 ) -> SealResult:
     """Encrypt ``source`` and hide one share of its key in each cover image.
 
     Every check - readable covers, enough capacity, no overwrites - runs
     before anything is written, so a failure leaves the output directory as
-    it was.
+    it was. With ``check`` (the default) every image is read back from disk
+    and must give its share, and the vault file must decrypt to the source,
+    before success is reported; this doubles the key derivations.
     """
     source, out_dir = Path(source), Path(out_dir)
     covers = [Path(c) for c in covers]
@@ -282,6 +286,8 @@ def seal(
             opened_cover, share.to_bytes(), passphrase, random_bytes, method, image_progress
         )
         write_new(output, stego_file, overwrite=force)
+        if check:
+            _check_share_written(output, share, passphrase)
         decoded_jpeg = opened_cover.pixels is not None and opened_cover.pixels.from_jpeg
         sealed.append(
             SealedImage(
@@ -296,8 +302,34 @@ def seal(
         )
     report(1.0, f"writing {vault_path.name}")
     write_new(vault_path, header.to_bytes() + ciphertext, overwrite=force)
+    if check:
+        written_header, written = read_vault(vault_path)
+        try:
+            ok = AESGCM(key).decrypt(header.nonce, written, written_header.to_bytes()) == plaintext
+        except (InvalidTag, ValueError):
+            ok = False
+        if not ok:
+            raise VaultError(
+                f"self-check failed: {vault_path} does not decrypt to the source "
+                "as written; do not rely on this vault"
+            )
 
     return SealResult(vault_path, header, len(data), tuple(sealed))
+
+
+def _check_share_written(path: Path, share: shamir.Share, passphrase: str | None) -> None:
+    """Read ``path`` back from disk; it must give exactly ``share``."""
+    try:
+        payload = media.reveal(path, passphrase)
+    except ShardpixError as exc:
+        raise VaultError(
+            f"self-check failed: {path} does not give back its share ({exc}); "
+            "do not rely on this image"
+        ) from exc
+    if payload != share.to_bytes():
+        raise VaultError(
+            f"self-check failed: {path} gives back a different share; do not rely on this image"
+        )
 
 
 def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
@@ -347,6 +379,53 @@ def unseal(
     progress: Progress | None = None,
 ) -> UnsealResult:
     """Recover the file sealed in ``vault_path`` from (some of) its images."""
+    header, plaintext, outcomes = _open(vault_path, images, passphrase, progress)
+    name_length = int.from_bytes(plaintext[:2], "big")
+    name = plaintext[2 : 2 + name_length].decode("utf-8", errors="replace")
+    return UnsealResult(
+        filename=safe_filename(name),
+        data=plaintext[2 + name_length :],
+        header=header,
+        outcomes=outcomes,
+    )
+
+
+@dataclass(frozen=True)
+class VerifyResult:
+    """Whether a set of images opens a vault, image by image; no plaintext."""
+
+    header: VaultHeader
+    opens: bool
+    outcomes: tuple[ImageOutcome, ...]
+    detail: str = ""
+
+
+def verify(
+    vault_path: Path,
+    images: Sequence[Path],
+    passphrase: str | None = None,
+    progress: Progress | None = None,
+) -> VerifyResult:
+    """Check which images hold a valid share of ``vault_path`` and whether they open it.
+
+    The key is rebuilt and the vault trial-decrypted in memory, so a share that
+    authenticates but belongs to a forged set is still caught; the plaintext is
+    discarded, never returned or written.
+    """
+    header, _ciphertext = read_vault(vault_path)
+    try:
+        _, _plaintext, outcomes = _open(vault_path, images, passphrase, progress)
+    except VaultError as exc:
+        return VerifyResult(header, False, exc.outcomes, str(exc))
+    return VerifyResult(header, True, outcomes)
+
+
+def _open(
+    vault_path: Path,
+    images: Sequence[Path],
+    passphrase: str | None,
+    progress: Progress | None,
+) -> tuple[VaultHeader, bytes, tuple[ImageOutcome, ...]]:
     header, ciphertext = read_vault(vault_path)
     images = list(dict.fromkeys(Path(p) for p in images))
     report = span(progress, 0.0, 1.0)
@@ -435,11 +514,4 @@ def unseal(
             path, Status.REJECTED, rejection.reason, rejection.share.index
         )
 
-    name_length = int.from_bytes(plaintext[:2], "big")
-    name = plaintext[2 : 2 + name_length].decode("utf-8", errors="replace")
-    return UnsealResult(
-        filename=safe_filename(name),
-        data=plaintext[2 + name_length :],
-        header=header,
-        outcomes=ordered(),
-    )
+    return header, plaintext, ordered()

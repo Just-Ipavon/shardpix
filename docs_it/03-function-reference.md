@@ -532,9 +532,12 @@ dimensione del file, lunghezza del nome del file, collisioni fra output
 (incluso `vault_name` rispetto ai nomi delle immagini), sovrascritture, e che
 ogni immagine di copertura possa contenere `SHARE_BYTES`. Poi vengono estratti
 chiave, id di gruppo e nonce, il file viene cifrato, la chiave suddivisa e
-ogni quota inserita. Solleva `VaultError`, `UnsupportedImageError` o
-`CapacityError`. Test: `TestRoundTrip`, `TestSealValidation`,
-`TestOutputCollisions`.
+ogni quota inserita. Con `check` ogni immagine viene riletta dal disco e deve
+restituire la sua quota, e il file del vault deve decifrarsi nel file
+originale, prima di segnalare il successo (altrimenti `VaultError`
+"self-check failed"; `seal --no-check` lo salta). Solleva `VaultError`,
+`UnsupportedImageError` o `CapacityError`. Test: `TestRoundTrip`,
+`TestSealValidation`, `TestOutputCollisions`, `TestVerifyAndSelfCheck`.
 
 ### `read_vault(path)`
 
@@ -561,6 +564,13 @@ di altri vault e i duplicati, esegue `shamir.recover_all` e prova la chiave di
 ciascun cluster contro il tag del vault. Solleva `VaultError`, con gli esiti
 per immagine, quando non esiste alcun cluster o nessuno apre il vault. Test:
 `TestFailures`, `TestForgedSets`, `test_known_answers.py`.
+
+### `verify(vault_path, images, passphrase=None, progress=None) -> VerifyResult`
+
+Gli stessi controlli di `unseal`, compresa la decifratura di prova in memoria,
+ma il testo in chiaro viene scartato: restituisce `opens`, gli esiti per
+immagine e, quando le immagini non aprono il vault, il motivo. È alla base di
+`shardpix verify`, che esce con 0 o 1. Test: `TestVerifyAndSelfCheck`.
 
 ---
 
