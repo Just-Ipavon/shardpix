@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Secrets off the command line (#29): `embed -i -` and `split -i -` read the
+  payload from standard input, and `-t -` asks for the text without echo (or
+  reads one line from a pipe). A literal `-t VALUE` still works, with a
+  warning that it is visible in `ps` and the shell history. The README, the
+  help examples and docs/02 no longer put a secret on the command line.
+
 ## [3.0.0] — 2026-10-18
 
 Major version. A second security review of 2.0.0 (docs/06 §6.13; like the

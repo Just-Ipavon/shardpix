@@ -167,7 +167,7 @@ modo indipendente.
 | **Attore primario** | Proprietario |
 | **Precondizioni** | Un'immagine di copertura, un carico non più grande della sua capacità e una passphrase. |
 | **Postcondizioni** | Un'immagine che appare come l'immagine di copertura e trasporta il carico sigillato: un PNG, o un JPEG se l'immagine di copertura è un JPEG (A3). |
-| **Evento scatenante** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
+| **Evento scatenante** | `shardpix embed photo.png -o out.png -t - -p` |
 
 #### Flusso principale
 
@@ -228,7 +228,7 @@ modo indipendente.
 | **Attore primario** | Proprietario |
 | **Precondizioni** | Un segreto di 1–65.535 byte. |
 | **Postcondizioni** | n quote stampabili, k qualsiasi delle quali permettono di recuperare il segreto. |
-| **Evento scatenante** | `shardpix split -t "safe code 4815" -k 3 -n 5 -d shares/` |
+| **Evento scatenante** | `shardpix split -t - -k 3 -n 5 -d shares/` |
 
 #### Flusso principale
 
