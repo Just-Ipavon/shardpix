@@ -59,8 +59,8 @@ quick start:
       encrypt notes.pdf, hide one share in each photo; any 3 open it
   shardpix unseal sealed/notes.pdf.spx sealed/a.jpg sealed/c.jpg sealed/e.jpg -p
       open the vault with three of its images
-  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p
-      hide a short message in one image
+  shardpix embed photo.jpg -o out.jpg -t - -p
+      hide a short message in one image (typed hidden, like the passphrase)
   shardpix analyze suspicious.png
       look for the fingerprints of naive LSB embedding
 
@@ -343,13 +343,35 @@ def positive_int(value: str) -> int:
     return number
 
 
+TEXT_ON_COMMAND_LINE_WARNING = (
+    "warning: text given on the command line is visible to other users (ps) and "
+    "stays in the shell history; use -t - to type it hidden, or -i - to pipe it"
+)
+
+
 def read_secret(args: argparse.Namespace) -> bytes:
-    """Return the bytes given with ``--text`` or ``--input``."""
+    """Return the bytes given with ``--text`` or ``--input``.
+
+    ``-i -`` reads standard input to its end. ``-t -`` asks for the text without
+    echo at a terminal, or reads one line from standard input otherwise. A
+    literal ``-t`` value works, with a warning: it is visible in ``ps`` and in
+    the shell history.
+    """
     if args.input is not None:
+        if str(args.input) == "-":
+            return sys.stdin.buffer.read()
         try:
             return args.input.read_bytes()
         except OSError as exc:
             raise ShardpixError(f"cannot read {args.input}: {exc.strerror}") from exc
+    if args.text == "-":
+        if sys.stdin.isatty():
+            try:
+                return getpass.getpass("Text (hidden): ").encode("utf-8")
+            except (EOFError, KeyboardInterrupt) as exc:
+                raise ShardpixError("no text entered") from exc
+        return sys.stdin.readline().rstrip("\r\n").encode("utf-8")
+    print(TEXT_ON_COMMAND_LINE_WARNING, file=sys.stderr)
     return args.text.encode("utf-8")
 
 
@@ -865,7 +887,7 @@ def build_parser() -> argparse.ArgumentParser:
         "anything else gives a PNG (format 6). The changes are placed where the\n"
         "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
         "much fits. The cover itself is never modified.\n\n" + KEYING_NOTE,
-        '  shardpix embed photo.jpg -o out.jpg -t "meet at noon" -p\n'
+        "  shardpix embed photo.jpg -o out.jpg -t - -p\n"
         "  shardpix embed scan.png -o out.png -i contract.pdf --passphrase-file pw.txt",
     )
     p.add_argument("cover", type=Path, help="cover image (JPEG from a phone, PNG, TIFF, ...)")
@@ -878,13 +900,19 @@ def build_parser() -> argparse.ArgumentParser:
         "or .jpeg for a JPEG cover and in .png for any other cover. Never the cover itself",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="the message to hide, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-t",
+        "--text",
+        help="the message to hide; '-t -' asks for it without echo (a literal value is "
+        "visible in ps and the shell history). Use either -t or -i",
+    )
     source.add_argument(
         "-i",
         "--input",
         type=Path,
         metavar="FILE",
-        help="a file to hide, of any type, up to the capacity of the cover (use either -t or -i)",
+        help="a file to hide, of any type, up to the capacity of the cover; '-i -' reads "
+        "standard input (use either -t or -i)",
     )
     _add_passphrase_options(p, hiding=True)
     p.add_argument(
@@ -1065,18 +1093,24 @@ def build_parser() -> argparse.ArgumentParser:
         "Plain Shamir secret sharing, without images: prints n printable,\n"
         "authenticated shares, one per line, or writes one file per share with\n"
         "-d. Any k recover the secret with 'combine'; k-1 reveal nothing.",
-        '  shardpix split -t "correct horse battery staple" -k 2 -n 3\n'
+        "  shardpix split -t - -k 2 -n 3\n"
+        "  pass show bank/pin | shardpix split -i - -k 2 -n 3 -d shares/\n"
         "  shardpix split -i seed.txt -k 3 -n 5 -d shares/",
     )
     source = p.add_mutually_exclusive_group(required=True)
-    source.add_argument("-t", "--text", help="the secret to split, in quotes (use either -t or -i)")
+    source.add_argument(
+        "-t",
+        "--text",
+        help="the secret to split; '-t -' asks for it without echo (a literal value is "
+        "visible in ps and the shell history). Use either -t or -i",
+    )
     source.add_argument(
         "-i",
         "--input",
         type=Path,
         metavar="FILE",
-        help="a small file to split, such as a key or a seed phrase (use either -t or -i; "
-        "for large files use 'seal')",
+        help="a small file to split, such as a key or a seed phrase; '-i -' reads standard "
+        "input (use either -t or -i; for large files use 'seal')",
     )
     p.add_argument(
         "-k",

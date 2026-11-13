@@ -131,12 +131,13 @@ shardpix seal verbale.pdf foto/*.png -k 3 -p
 # Aprilo con tre immagini qualsiasi
 shardpix unseal sealed/verbale.pdf.spx sealed/spiaggia.png sealed/gatto.png sealed/strada.png -p -o verbale-aperto.pdf
 
-# Nascondi un breve messaggio in un'immagine e rileggilo
-shardpix embed foto.png -o vacanze.png -t "ci vediamo a mezzogiorno" -p
+# Nascondi un breve messaggio in un'immagine (digitato senza eco) e rileggilo
+shardpix embed foto.png -o vacanze.png -t - -p
 shardpix extract vacanze.png -p
 
 # Dividi un segreto in quote stampabili: 2 qualsiasi su 3 lo ricostruiscono
-shardpix split -t "codice cassaforte 4815" -k 2 -n 3 -d quote/
+# (-t - lo chiede senza eco; -i - lo legge da una pipe)
+shardpix split -t - -k 2 -n 3 -d quote/
 shardpix combine quote/share-*-1.txt quote/share-*-3.txt
 
 # Cerca le impronte statistiche dell'inserimento nei bit meno significativi

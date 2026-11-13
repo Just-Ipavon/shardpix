@@ -163,7 +163,7 @@ the layers can be used and demonstrated independently.
 | **Primary actor** | Owner |
 | **Preconditions** | A cover image, a payload no larger than its capacity, and a passphrase. |
 | **Postconditions** | An image that looks like the cover and carries the sealed payload: a PNG, or a JPEG if the cover is a JPEG (A3). |
-| **Trigger** | `shardpix embed photo.png -o out.png -t "meet at noon" -p` |
+| **Trigger** | `shardpix embed photo.png -o out.png -t - -p` |
 
 #### Main flow
 
@@ -222,7 +222,7 @@ the layers can be used and demonstrated independently.
 | **Primary actor** | Owner |
 | **Preconditions** | A secret of 1–65,535 bytes. |
 | **Postconditions** | n printable shares, any k of which recover the secret. |
-| **Trigger** | `shardpix split -t "safe code 4815" -k 3 -n 5 -d shares/` |
+| **Trigger** | `shardpix split -t - -k 3 -n 5 -d shares/` |
 
 #### Main flow
 

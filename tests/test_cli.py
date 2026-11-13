@@ -823,3 +823,54 @@ class TestAnalyzeJpeg:
         image.write_dct(str(tmp_path / "jsteg.jpg"))
         assert run("analyze", tmp_path / "jsteg.jpg", "--steps", "20") == 0
         assert "Suspicious" in capsys.readouterr().out
+
+
+class TestSecretsOffTheCommandLine:
+    """#29: secrets can come from stdin or a hidden prompt, and -t VALUE warns."""
+
+    def test_split_reads_stdin(self, tmp_path, monkeypatch, capsys):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"seed words\n")))
+        directory = tmp_path / "shares"
+        assert run("split", "-i", "-", "-k", "2", "-n", "3", "-d", directory) == 0
+        files = sorted(directory.iterdir())
+        out = tmp_path / "back.txt"
+        assert run("combine", files[0], files[2], "-o", out) == 0
+        assert out.read_bytes() == b"seed words\n"
+        assert "warning: text" not in capsys.readouterr().err
+
+    def test_text_dash_reads_one_line_from_a_pipe(self, tmp_path, monkeypatch, capsys):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"pin 4815\r\n")))
+        assert run("split", "-t", "-", "-k", "2", "-n", "2") == 0
+        lines = capsys.readouterr().out.splitlines()
+        shares = tmp_path / "s.txt"
+        shares.write_text("\n".join(lines) + "\n")
+        out = tmp_path / "pin"
+        assert run("combine", shares, "-o", out) == 0
+        assert out.read_bytes() == b"pin 4815"
+
+    def test_text_dash_prompts_without_echo_at_a_terminal(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+        monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "typed secret")
+        assert run("split", "-t", "-", "-k", "2", "-n", "2") == 0
+        assert len(capsys.readouterr().out.splitlines()) == 2
+
+    def test_literal_text_warns(self, capsys):
+        assert run("split", "-t", "visible", "-k", "2", "-n", "2") == 0
+        assert "visible to other users" in capsys.readouterr().err
+
+    def test_embed_reads_the_payload_from_stdin(
+        self, cover_png, passphrase_file, tmp_path, monkeypatch, capsysbinary
+    ):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"\x00binary\xff")))
+        out = tmp_path / "stego.png"
+        argv = ("embed", cover_png, "-o", out, "-i", "-", "--passphrase-file", passphrase_file)
+        assert run(*argv) == 0
+        capsysbinary.readouterr()
+        assert run("extract", out, "--passphrase-file", passphrase_file) == 0
+        assert capsysbinary.readouterr().out == b"\x00binary\xff"
