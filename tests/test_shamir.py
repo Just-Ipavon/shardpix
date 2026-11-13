@@ -263,16 +263,30 @@ class TestRobustSearch:
         assert recovery.secret == SECRET
         assert len(recovery.rejected) == 40
 
-    def test_fabricated_set_loses_to_a_larger_genuine_set(self, shares):
+    def test_fabricated_set_is_refused_even_when_smaller(self, shares):
         forged = forge_cluster(shares, 3, 3)
-        recovery = shamir.combine([*forged, *shares])
-        assert recovery.secret == SECRET
-        reasons = {r.reason for r in recovery.rejected}
-        assert reasons == {"authenticates a different secret: one of the two sets is forged"}
+        with pytest.raises(InconsistentSharesError, match="2 different secrets") as exc:
+            shamir.combine([*forged, *shares])
+        assert {r.secret for r in exc.value.candidates} >= {SECRET}
+        assert exc.value.rejected == ()
+
+    def test_fabricated_set_larger_than_the_genuine_one_is_refused(self, shares):
+        """One holder can mint more shares than the honest ones: size proves nothing."""
+        forged = forge_cluster(shares, 6, 3)
+        with pytest.raises(InconsistentSharesError, match="does not show which") as exc:
+            shamir.combine([*shares, *forged])
+        assert [len(c.used) + len(c.confirmed) for c in exc.value.candidates] == [6, 5]
+
+    def test_unrelated_bad_shares_are_still_reported_when_refusing(self, shares):
+        forged = forge_cluster(shares, 3, 3)
+        bad = flip_first_value_byte(shares[4])
+        with pytest.raises(InconsistentSharesError) as exc:
+            shamir.combine([*forged, *shares[:4], bad])
+        assert [r.share for r in exc.value.rejected] == [bad]
 
     def test_fabricated_set_of_equal_size_is_ambiguous(self, shares):
         forged = forge_cluster(shares, 3, 3)
-        with pytest.raises(InconsistentSharesError, match="one of the two sets is forged"):
+        with pytest.raises(InconsistentSharesError, match="one of the sets is forged"):
             shamir.combine([*forged, *shares[:3]])
 
     def test_recover_all_lists_both_candidates(self, shares):
@@ -328,7 +342,7 @@ class TestSearchBudgetAndReports:
         forged = forge_cluster(shares, 3, 3)
         with pytest.raises(InconsistentSharesError) as exc:
             shamir.combine([*forged, *shares[:3]])
-        assert len(exc.value.rejected) == 3
+        assert exc.value.rejected == () and len(exc.value.candidates) == 2
         others = shamir.split(os.urandom(32), 3, 3)
         with pytest.raises(InconsistentSharesError) as exc:
             shamir.combine([*shares[:3], *others])

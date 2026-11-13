@@ -212,7 +212,22 @@ def test_restored_names_are_always_harmless(name):
     assert "/" not in safe and "\\" not in safe
     assert safe not in {".", ".."}
     assert not any(unicodedata.category(c) in {"Cc", "Cf"} for c in safe)
-    assert safe.split(".")[0].upper() not in vault._WINDOWS_RESERVED
+    assert not safe.startswith((".", "-")) and not any(c in safe for c in ':<>|?*"')
+    # Win32 drops trailing dots and spaces, and spaces before the extension.
+    win32 = safe.rstrip(". ")
+    assert win32 == safe
+    assert win32.split(".")[0].strip().upper() not in vault._WINDOWS_RESERVED
+
+
+@given(
+    st.sampled_from(sorted(vault._WINDOWS_RESERVED)),
+    st.text(alphabet=" .", max_size=6),
+    st.sampled_from(["", ".txt", " .txt"]),
+    st.booleans(),
+)
+def test_reserved_device_names_never_survive_padding(device, padding, suffix, lower):
+    name = (device.lower() if lower else device) + padding + suffix
+    assert vault.safe_filename(name) == vault.FALLBACK_NAME
 
 
 # --------------------------------------------------------------------------- analysis

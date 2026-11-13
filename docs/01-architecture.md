@@ -536,12 +536,13 @@ on a bad share listed first.
 **Decision.** Recovery searches for clusters of mutually authenticating
 shares — disjoint blocks first, then index combinations with one share per
 index, within a budget of 10,000 attempts. Clusters never overlap. `combine`
-returns the largest and refuses ties; `unseal` tries every cluster against the
-vault's AES-GCM tag.
+returns a secret only when the shares authenticate exactly one, and refuses
+two clusters whatever their sizes: one holder can fabricate more shares than
+the honest ones. `unseal` tries every cluster against the vault's AES-GCM tag.
 
 **Consequences.** One damaged share among twenty costs two attempts, not
-thousands. A forged set is never accepted by `unseal`, and is reported as
-such. The budget bounds the worst case at the price of a clear error in
+thousands. A forged set is never accepted by `unseal`, and makes `combine`
+fail instead of returning either secret. The budget bounds the worst case at the price of a clear error in
 adversarial inputs far beyond realistic use.
 
 ### ADR-10 — Lossless output for pixel covers (JPEG covers: see ADR-13)

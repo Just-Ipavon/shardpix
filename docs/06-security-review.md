@@ -455,7 +455,11 @@ decoded.
 Files were created with the umask, typically mode 0644, including recovered
 plaintext and text shares. `images.write_new` now creates every output with
 mode 0600 and `O_NOFOLLOW`, which also refuses a symbolic link when
-overwriting with `--force`.
+overwriting with `--force`. Until the release after 3.0.0, `--force` truncated
+the existing file in place, which kept its mode and owner: a world-readable
+file, or one another user had created in a shared directory, then held the
+recovered plaintext. Overwriting now writes a new private file and renames it
+over the old one.
 
 ### SR-13 — Secrets not wiped (Medium, accepted)
 
