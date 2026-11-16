@@ -40,6 +40,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `seal -` reads the file to protect from standard input, with `--filename`
+  for the name the vault stores and `unseal` restores, so a secret never has
+  to be written to disk unencrypted first (#29; `embed` and `split` already
+  took `-i -` and `-t -`).
+- Type checking with mypy in CI (`[tool.mypy]`, in the `dev` extra), and the
+  three benchmark `main()`s run end to end on tiny synthetic covers in the
+  `ml` job (#30).
 - **Per-holder passphrases (#35).** `seal -P` asks for one passphrase per
   image (`--holder-passphrase-files` reads them from files, in the images'
   order), so each holder knows only their own and can read only their own
@@ -107,6 +114,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `python -m shardpix.analysis.benchmark` with your own covers no longer
+  fails drawing the clipped-RS chart, which assumed the scikit-image sample
+  named `astronaut`; found by the new benchmark test (#30).
 - The benchmark modules no longer default to a `docs/data` path relative to
   the working directory when it is not there: outside a repository checkout
   they ask for `--data` instead of writing results wherever they run.

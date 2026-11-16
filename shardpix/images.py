@@ -166,7 +166,7 @@ def load_image(path: str | Path) -> Carrier:
 
 def _raw_modes(image: Image.Image) -> list[str]:
     modes = []
-    for tile in image.tile:
+    for tile in getattr(image, "tile", None) or []:  # ImageFile only (Pillow stubs)
         args = tile.args if hasattr(tile, "args") else tile[3]
         mode = args if isinstance(args, str) else (args[0] if args else "")
         if isinstance(mode, str):

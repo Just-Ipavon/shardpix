@@ -160,6 +160,7 @@ shardpix analyze sospetta.png
 | `-t, --text` / `-i, --input` | Cosa nascondere: un testo tra virgolette o un file (`embed`, `split`) |
 | `-o, --output` | File di output |
 | `--name` | Nome del file vault (`seal`) |
+| `--filename` | Con `seal -`: sigilla lo standard input con questo nome (il segreto non tocca mai il disco in chiaro) |
 | `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
 
 Le passphrase non sono mai accettate come argomenti della riga di comando:

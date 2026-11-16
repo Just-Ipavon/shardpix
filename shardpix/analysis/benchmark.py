@@ -350,8 +350,13 @@ def plot_rs(results: dict, out: Path, mode: str) -> Path:
 
 
 def plot_rs_clipped(results: dict, out: Path, mode: str, cover: str = "astronaut") -> Path:
+    """RS on one cover with clipped regions: the sample photo ``astronaut``, or
+    the first cover measured when the run used other images."""
     import matplotlib.pyplot as plt
 
+    measured = results["rs_sweep"]["replacement"]
+    if cover not in measured:
+        cover = next(iter(measured))
     theme = THEMES[mode]
     rates = np.array(results["rates"]) * 100
     fig, ax = _rs_axes(theme, rates)

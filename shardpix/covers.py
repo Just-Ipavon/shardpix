@@ -81,7 +81,7 @@ def assess(path: str | Path, need_bytes: int = 0) -> Assessment:
 
 
 def _jpeg_findings(path: Path, cover: media.Cover) -> list[Finding]:
-    findings = []
+    findings: list[Finding] = []
     data = path.read_bytes()
     try:
         segments, scan = jpeg._segments(data)
@@ -126,7 +126,7 @@ def _jpeg_findings(path: Path, cover: media.Cover) -> list[Finding]:
 
 
 def _pixel_findings(path: Path) -> list[Finding]:
-    findings = []
+    findings: list[Finding] = []
     try:
         with Image.open(path) as image:
             mode = image.mode

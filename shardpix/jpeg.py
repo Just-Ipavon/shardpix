@@ -32,6 +32,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import jpeglib
 import numpy as np
@@ -317,7 +318,8 @@ _STANDALONE = frozenset({0x01, *range(0xD0, 0xD8)})
 
 def _segments(data: bytes) -> tuple[list[tuple[int, bytes]], bytes]:
     """The header segments ``(marker, bytes)`` after SOI, and the rest from the first SOS."""
-    segments, i = [], 2
+    segments: list[tuple[int, bytes]] = []
+    i = 2
     while True:
         if i + 4 > len(data) or data[i] != 0xFF:
             raise UnsupportedImageError("malformed JPEG header")
@@ -373,7 +375,8 @@ def _match_structure(source: bytes, encoded: bytes) -> tuple[bytes, bool]:
     out, scan = _segments(encoded)
     tables = {(m, k): t for m, s in out if m in (_DQT, _DHT) for k, t in _tables(m, s)}
     others = {m: s for m, s in out if m not in _META_MARKERS and m not in (_DQT, _DHT)}
-    used, layout = set(), []
+    used: set[int | tuple[int, int]] = set()
+    layout: list[bytes] = []
     for marker, segment in src:
         if marker in _META_MARKERS:
             layout.append(segment)
@@ -441,16 +444,16 @@ def _keep_trailer(source: bytes, data: bytes, kept: bool) -> tuple[bytes, bool]:
     trailer = source[_primary_end(source) :]
     if not trailer:
         return data, kept
-    data = bytearray(data[: _primary_end(bytes(data))])
-    old, new = _mpf_header(source), _mpf_header(bytes(data))
+    out = bytearray(data[: _primary_end(bytes(data))])
+    old, new = _mpf_header(source), _mpf_header(bytes(out))
     if old is None and new is None:
-        return bytes(data) + trailer, kept
+        return bytes(out) + trailer, kept
     if old is None or new is None:
-        return bytes(data) + trailer, False
-    delta = (len(data) - new) - (_primary_end(source) - old)
-    if not _shift_mp_entries(data, new, delta):
-        return bytes(data) + trailer, False
-    return bytes(data) + trailer, kept
+        return bytes(out) + trailer, False
+    delta = (len(out) - new) - (_primary_end(source) - old)
+    if not _shift_mp_entries(out, new, delta):
+        return bytes(out) + trailer, False
+    return bytes(out) + trailer, kept
 
 
 def _mpf_header(data: bytes) -> int | None:
@@ -469,7 +472,8 @@ def _mpf_header(data: bytes) -> int | None:
 
 def _shift_mp_entries(data: bytearray, header: int, delta: int) -> bool:
     """Add ``delta`` to every non-zero image offset of the MP Entry table, in place."""
-    order = {b"II*\x00": "little", b"MM\x00*": "big"}.get(bytes(data[header : header + 4]))
+    orders: dict[bytes, Literal["little", "big"]] = {b"II*\x00": "little", b"MM\x00*": "big"}
+    order = orders.get(bytes(data[header : header + 4]))
     if order is None:
         return False
 

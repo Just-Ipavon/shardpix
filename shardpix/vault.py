@@ -153,6 +153,8 @@ class VaultHeader:
     def to_bytes(self) -> bytes:
         """The header as stored, which is also the AES-GCM associated data."""
         if self.version == LEGACY_VERSION:
+            if self.threshold is None or self.shares is None:
+                raise VaultError("a format-1 header needs its threshold and share count")
             return (
                 MAGIC
                 + bytes([LEGACY_VERSION])
@@ -274,7 +276,7 @@ def _write(path: Path, write: Callable[[], object]) -> None:
 
 
 def seal(
-    source: Path,
+    source: Path | None,
     covers: Sequence[Path],
     threshold: int,
     out_dir: Path,
@@ -287,6 +289,8 @@ def seal(
     progress: Progress | None = None,
     check: bool = True,
     vault_version: int = VERSION,
+    data: bytes | None = None,
+    filename: str | None = None,
 ) -> SealResult:
     """Encrypt ``source`` and hide one share of its key in each cover image.
 
@@ -295,6 +299,9 @@ def seal(
     it was. With ``check`` (the default) every image is read back from disk
     and must give its share, and the vault file must decrypt to the source,
     before success is reported; this doubles the key derivations.
+    With ``source=None``, the contents come from ``data`` (read from standard
+    input by the CLI, never written to disk) and ``filename`` is the name the
+    vault stores and ``unseal`` restores.
     ``vault_version=1`` writes the old, unpadded format with *k* and *n* in
     clear (tests and reproducible benchmarks only).
     ``passphrase`` is one passphrase for every image, or a sequence with one
@@ -303,7 +310,13 @@ def seal(
     """
     if vault_version not in (VERSION, LEGACY_VERSION):
         raise VaultError(f"cannot write vault format {vault_version}")
-    source, out_dir = Path(source), Path(out_dir)
+    if (source is None) == (data is None):
+        raise VaultError("give either a source file or the data itself")
+    if source is not None:
+        source = Path(source)
+    elif not filename or not is_bare_name(filename):
+        raise VaultError("sealing data needs a file name to store (a name, not a path)")
+    out_dir = Path(out_dir)
     covers = [Path(c) for c in covers]
     count = len(covers)
     if count < 2:
@@ -318,15 +331,19 @@ def seal(
         raise VaultError(f"{out_dir} exists and is not a directory")
     per_cover = _per_cover(passphrase, count)
 
-    try:
-        if source.stat().st_size > MAX_FILE_BYTES:
-            raise VaultError("files larger than 2 GiB are not supported")
-        data = source.read_bytes()
-    except OSError as exc:
-        raise VaultError(f"cannot read {source}: {exc.strerror}") from exc
+    if source is not None:
+        try:
+            if source.stat().st_size > MAX_FILE_BYTES:
+                raise VaultError("files larger than 2 GiB are not supported")
+            data = source.read_bytes()
+        except OSError as exc:
+            raise VaultError(f"cannot read {source}: {exc.strerror}") from exc
+        filename = source.name
+    if data is None or filename is None:  # unreachable: checked above
+        raise VaultError("nothing to seal")
     if len(data) > MAX_FILE_BYTES:  # the file grew after stat()
         raise VaultError("files larger than 2 GiB are not supported")
-    name = source.name.encode("utf-8")
+    name = filename.encode("utf-8")
     if len(name) > MAX_NAME_BYTES:
         raise VaultError("the file name is too long to store in the vault")
 
@@ -334,13 +351,13 @@ def seal(
     outputs = [out_dir / f"{cover.stem}{media.kind_suffix(cover)}" for cover in covers]
     if vault_name is not None and not is_bare_name(vault_name):
         raise VaultError(f"the vault name {vault_name!r} must be a file name, not a path")
-    vault_path = out_dir / (vault_name or f"{source.name}{VAULT_SUFFIX}")
+    vault_path = out_dir / (vault_name or f"{filename}{VAULT_SUFFIX}")
     if len({_identity(p) for p in [*outputs, vault_path]}) != count + 1:
         raise VaultError(
             "output names collide (covers with the same name, or a vault name equal to an "
             "image name); rename the covers or choose another --name"
         )
-    protected = {_identity(p) for p in [source, *covers]}
+    protected = {_identity(p) for p in [*([source] if source else []), *covers]}
     for path in [*outputs, vault_path]:
         _check_new_file(path, force, protected)
 
@@ -414,6 +431,8 @@ def seal(
 def _plaintext(header: VaultHeader, name: bytes, data: bytes) -> bytes:
     if header.version == LEGACY_VERSION:
         return len(name).to_bytes(2, "big") + name + data
+    if header.threshold is None or header.shares is None:
+        raise VaultError("the vault's threshold and share count are needed to seal it")
     inner = (
         bytes([header.threshold, header.shares])
         + len(data).to_bytes(8, "big")
