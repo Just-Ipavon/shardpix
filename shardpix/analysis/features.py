@@ -280,7 +280,7 @@ def gfr(blocks: np.ndarray, quant: np.ndarray, step: float) -> np.ndarray:
     groups = (phase_r[:, None] * 5 + phase_c[None, :]).ravel()
     per_group = np.bincount(groups, minlength=25).astype(np.float64)
     bins = GFR_T + 1
-    out = []
+    out: list[np.ndarray] = []
     for si in range(len(GFR_SIGMAS)):
         q = step * (si + 1)
         for pi in range(2):

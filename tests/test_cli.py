@@ -895,3 +895,79 @@ class TestSecretsOffTheCommandLine:
         capsysbinary.readouterr()
         assert run("extract", out, "--passphrase-file", passphrase_file) == 0
         assert capsysbinary.readouterr().out == b"\x00binary\xff"
+
+    def test_seal_reads_the_file_from_stdin(self, tmp_path, passphrase_file, monkeypatch, capsys):
+        import io
+
+        from PIL import Image
+
+        from .conftest import processed_image
+
+        covers = []
+        for i in range(3):
+            path = tmp_path / f"c{i}.png"
+            Image.fromarray(processed_image(64, 80, seed=i)).save(path)
+            covers.append(path)
+        secret = b"wallet seed: correct horse\n\x00\xff"
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(secret)))
+        out = tmp_path / "sealed"
+        argv = (
+            "seal",
+            "-",
+            *covers,
+            "-k",
+            "2",
+            "-d",
+            out,
+            "--filename",
+            "seed.txt",
+            "--passphrase-file",
+            passphrase_file,
+        )
+        assert run(*argv) == 0
+        assert "Sealed seed.txt" in capsys.readouterr().out
+        assert sorted(p.name for p in out.iterdir()) == [
+            "c0.png",
+            "c1.png",
+            "c2.png",
+            "seed.txt.spx",
+        ]
+        monkeypatch.chdir(tmp_path)
+        assert (
+            run(
+                "unseal",
+                out / "seed.txt.spx",
+                out / "c0.png",
+                out / "c2.png",
+                "--passphrase-file",
+                passphrase_file,
+            )
+            == 0
+        )
+        assert (tmp_path / "seed.txt").read_bytes() == secret
+
+    def test_seal_from_stdin_needs_a_bare_filename(self, cover_png, capsys):
+        argv = ("seal", "-", cover_png, cover_png, "-k", "2", "--insecure-no-passphrase")
+        assert run(*argv) != 0
+        assert "needs --filename" in capsys.readouterr().err
+        with pytest.raises(SystemExit):
+            run(*argv, "--filename", "../x")
+
+    def test_filename_only_with_stdin(self, tmp_path, cover_png, capsys):
+        secret = tmp_path / "s.txt"
+        secret.write_text("x")
+        assert (
+            run(
+                "seal",
+                secret,
+                cover_png,
+                cover_png,
+                "-k",
+                "2",
+                "--filename",
+                "y.txt",
+                "--insecure-no-passphrase",
+            )
+            != 0
+        )
+        assert "--filename only applies" in capsys.readouterr().err

@@ -155,6 +155,7 @@ shardpix analyze suspicious.png
 | `-t, --text` / `-i, --input` | What to hide: a text in quotes, or a file (`embed`, `split`) |
 | `-o, --output` | Output file |
 | `--name` | Vault file name (`seal`) |
+| `--filename` | With `seal -`: seal standard input under this name (the secret never touches the disk unencrypted) |
 | `-f, --force` | Overwrite existing outputs (inputs are never overwritten) |
 
 Passphrases are never accepted as command line arguments, which would leave

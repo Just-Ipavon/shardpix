@@ -74,11 +74,13 @@ def _list_words(tokens: list[str]) -> int | None:
     best: list[int | None] = [0] + [None] * len(tokens)
     for end in range(1, len(tokens) + 1):
         for start in (end - 1, end - 2):
-            if start < 0 or best[start] is None:
+            before = best[start] if start >= 0 else None
+            if before is None:
                 continue
             if "-".join(tokens[start:end]) in words:
-                candidate = best[start] + 1
-                if best[end] is None or candidate < best[end]:
+                candidate = before + 1
+                current = best[end]
+                if current is None or candidate < current:
                     best[end] = candidate
     return best[-1]
 

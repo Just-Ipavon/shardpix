@@ -763,9 +763,20 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
         for cover, holder in zip(args.covers, holders, strict=True):
             _check_strength(args, holder, f"{cover.name}: ")
     passphrase = holders if holders is not None else require_passphrase(args)
+    from_stdin = str(args.file) == "-"
+    if from_stdin and not args.filename:
+        raise ShardpixError(
+            "sealing standard input needs --filename NAME: the name the vault stores and "
+            "'unseal' restores"
+        )
+    if args.filename and not from_stdin:
+        raise ShardpixError("--filename only applies when FILE is '-' (standard input)")
+    # Read after the passphrase prompts, so piping the data in and typing at
+    # the terminal do not mix; the data is never written to disk unencrypted.
+    data = sys.stdin.buffer.read() if from_stdin else None
     with progress_bar("Sealing") as progress:
         result = vault.seal(
-            args.file,
+            None if from_stdin else args.file,
             args.covers,
             args.threshold,
             args.directory,
@@ -774,10 +785,13 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
             force=args.force,
             progress=progress,
             check=not args.no_check,
+            data=data,
+            filename=args.filename,
         )
     header = result.header
     console.print(
-        f"Sealed [bold]{escape(str(args.file))}[/] ({format_bytes(result.plaintext_bytes)}) "
+        f"Sealed [bold]{escape(args.filename or str(args.file))}[/] "
+        f"({format_bytes(result.plaintext_bytes)}) "
         f"into [bold]{escape(str(result.vault_path))}[/]"
     )
     console.print(
@@ -1124,9 +1138,21 @@ def build_parser() -> argparse.ArgumentParser:
         "Give each image to a different holder, keep the vault anywhere, and never\n"
         "publish the original covers.\n\n" + KEYING_NOTE,
         "  shardpix seal notes.pdf a.jpg b.jpg c.jpg d.jpg e.jpg -k 3 -p\n"
-        "  shardpix seal keys.txt photos/*.jpg -k 2 -d out --name keys.spx -p",
+        "  shardpix seal keys.txt photos/*.jpg -k 2 -d out --name keys.spx -p\n"
+        "  pass show wallet | shardpix seal - photos/*.jpg -k 2 --filename seed.txt \\\n"
+        "      --passphrase-file holders.txt",
     )
-    p.add_argument("file", type=Path, help="the file to protect, of any type and size")
+    p.add_argument(
+        "file",
+        type=Path,
+        help="the file to protect, of any type and size; '-' reads it from standard input "
+        "(with --filename), so a secret never has to be written to disk first",
+    )
+    p.add_argument(
+        "--filename",
+        type=_vault_name,
+        help="with FILE '-': the name stored in the vault and restored by 'unseal'",
+    )
     p.add_argument(
         "covers",
         type=Path,

@@ -36,6 +36,9 @@ jobs:
       - name: Format
         run: ruff format --check .
 
+      - name: Type check
+        run: mypy
+
       - name: Test
         run: pytest -q
 
@@ -106,5 +109,5 @@ jobs:
           pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev,ml]"
 
-      - name: Test (torch-dependent tests run here)
-        run: pytest -q tests/test_ml.py -rs
+      - name: Test (torch- and matplotlib-dependent tests run here)
+        run: pytest -q tests/test_ml.py tests/test_benchmarks.py -rs

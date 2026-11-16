@@ -33,6 +33,7 @@ heic = [
 ]
 dev = [
     "hypothesis>=6.100",
+    "mypy>=1.10",
     "pytest>=8.0",
     "ruff>=0.5",
     "scipy>=1.10",
@@ -68,6 +69,12 @@ also_copy = ["shardpix/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+files = ["shardpix"]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
 
 [tool.ruff]
 line-length = 100

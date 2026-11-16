@@ -124,6 +124,11 @@ def _cache_path(cache: Path, detector: str, tag: str, quality: int, name: str, s
     return cache / f"{prefix}v{FEATURES_VERSION}-q{quality}-{name}-{len(_PATHS)}-seed{seed}.npy"
 
 
+def _chunk_file(path: Path | None, start: int) -> Path | None:
+    """Where one chunk of a feature file is saved while a run is in progress."""
+    return None if path is None else path.with_name(f"{path.stem}.part{start}.npy")
+
+
 def feature_matrices(
     strategy: str,
     payload: str,
@@ -150,12 +155,7 @@ def feature_matrices(
         for start in range(0, len(_PATHS), CHUNK):
             # Each chunk is saved as it completes, so a run killed halfway
             # resumes from the last chunk instead of from the first image.
-            chunk_files = {
-                d: None
-                if paths[d] is None
-                else paths[d].with_name(f"{paths[d].stem}.part{start}.npy")
-                for d in missing
-            }
+            chunk_files = {d: _chunk_file(paths[d], start) for d in missing}
             if all(f is not None and f.exists() for f in chunk_files.values()):
                 for d in missing:
                     parts[d].append(np.load(chunk_files[d]))
@@ -173,9 +173,10 @@ def feature_matrices(
             print(f"    {name}: {stop}/{len(_PATHS)} images", flush=True)
     for d in missing:
         done[d] = np.concatenate(parts[d])
-        if paths[d] is not None:
-            np.save(paths[d], done[d])
-            for part in paths[d].parent.glob(f"{paths[d].stem}.part*.npy"):
+        final = paths[d]
+        if final is not None:
+            np.save(final, done[d])
+            for part in final.parent.glob(f"{final.stem}.part*.npy"):
                 part.unlink()
     return done
 
