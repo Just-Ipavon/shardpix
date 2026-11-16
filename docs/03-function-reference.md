@@ -34,7 +34,7 @@ graph LR
         P2["shamir: split, recover_all, combine"]
         P3["stego: derive_key, SampleOrder,<br/>embed, extract"]
         P5["stc, costs: syndrome-trellis codes,<br/>HiLL and UERD costs"]
-        P6["jpeg: format 7 on coefficients<br/>(reads 5)"]
+        P6["jpeg: format 9 on coefficients<br/>(reads 7, 5)"]
         P4["chi_square, rs"]
     end
 
@@ -189,7 +189,7 @@ cannot be written. Test: `TestSave`.
 
 ### `class Method(str, Enum)`
 
-`ADAPTIVE` (default): format 6 (format 4 with `version=4`), ±1 changes
+`ADAPTIVE` (default): format 8 (format 6 or 4 with `version=`), ±1 changes
 chosen by syndrome-trellis codes where the HiLL cost is lowest (ADR-12). `MATCHING`: format 3, a mismatching
 sample moves by ±1 at random. `REPLACEMENT`: format 3, its least significant
 bit is overwritten.
@@ -210,7 +210,7 @@ take the cover's marker layout (a progressive cover, restart markers).
 
 ### `derive_key(passphrase, salt, log_n=None, version=3) -> StegoKey`
 
-With a passphrase: NFC-normalise it, run scrypt with salt
+With a passphrase: NFC-normalise it, run Argon2id (formats 8, 9) or scrypt (3-7) with salt
 `domain ‖ "|" ‖ salt` (the domain of `version`), then expand three subkeys with HKDF-SHA256 under
 distinct labels. Without one: hash the domain and salt instead — the payload
 is still scattered and encrypted, but anyone can read it. NFC normalisation
@@ -321,7 +321,7 @@ their own rules.
 
 ### `embed(carrier, payload, passphrase=None, method=ADAPTIVE, random_bytes=os.urandom, progress=None, *, version=None)`
 
-Returns `(stego carrier, EmbedReport)`. `ADAPTIVE` writes format 6, or
+Returns `(stego carrier, EmbedReport)`. `ADAPTIVE` writes format 8, or
 format 4 with `version=4` (the benchmarks, so published measurements stay
 reproducible); `MATCHING` and `REPLACEMENT` write format 3. Format 3 writes
 the public bytes and the frame one bit per sample. The adaptive formats
@@ -334,7 +334,7 @@ also when the body does not fit after the header codes). Tests: `TestRoundTrip`,
 
 ### `extract(carrier, passphrase=None) -> bytes`
 
-Tries format 6, then 4, then 3. Format 6 always costs one scrypt, so a
+Tries format 8, then 6, 4, 3. Formats 8 and 6 always cost one Argon2id and one scrypt, so a
 format-4 image costs about two. For each: reads the salt (and, in formats
 3 and 4, the cost) the way that format writes them, refuses a cost byte of
 the other format or a cost outside the accepted range before any key
@@ -792,7 +792,7 @@ Non-zero AC coefficients; capacity as for pixels, over that count.
 
 ### `embed(cover, payload, passphrase=None, random_bytes=os.urandom, progress=None) -> (bytes, EmbedReport)`
 
-`embed_coefficients` on the cover (format 7), then the JPEG file re-encoded
+`embed_coefficients` on the cover (format 9), then the JPEG file re-encoded
 by `_encode` with the new luminance; the report's `structure_kept` says
 whether the output has the cover's layout. Raises `CapacityError` like
 `stego.embed`. Tests: `test_jpeg.py::TestFormat5`, `TestStructure`.
@@ -808,7 +808,7 @@ than 7 or 5.
 
 ### `extract(cover, passphrase=None) -> bytes`
 
-Mirrors `stego.extract`: tries format 7, then 5; one error for every
+Mirrors `stego.extract`: tries format 9, then 7, then 5; one error for every
 failure.
 
 ### `_dimensions`, `_segments`, `_tables`, `_match_structure`, `_encode` *(private)*
@@ -837,7 +837,7 @@ first bytes, never from its name.
 
 ### `hide(cover, payload, passphrase=None, random_bytes=os.urandom, method=ADAPTIVE, progress=None) -> (bytes, EmbedReport)`
 
-Format 7 for a JPEG, format 6 (or format 3 with a baseline `method`) for
+Format 9 for a JPEG, format 8 (or format 3 with a baseline `method`) for
 pixels, returned as the bytes of the file to write. `reveal(path,
 passphrase)` is the inverse. Tests: `test_jpeg.py::TestMedia`,
 `test_vault.py`.

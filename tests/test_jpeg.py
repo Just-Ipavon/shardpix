@@ -139,11 +139,37 @@ class TestFormat5:
         """
         monkeypatch.setattr(stego, "SCRYPT_LOG_N", 17)
         cover = jpeg.load(arithmetic_jpeg(tmp_path / "pinned.jpg"))
+        coefficients, _ = jpeg.embed_coefficients(
+            cover.coefficients(),
+            cover.blocks.shape,
+            cover.quant,
+            b"known answer",
+            "pw",
+            deterministic_random(),
+            version=jpeg.SCRYPT_VERSION,
+        )
+        (tmp_path / "s.jpg").write_bytes(jpeg._encode(cover, coefficients)[0])
+        stego_cover = jpeg.load(tmp_path / "s.jpg")
+        digest = hashlib.sha256(stego_cover.coefficients().astype("<i4").tobytes()).hexdigest()
+        assert digest == ("f04d1717bc624c1b1f38fde1e7415acd2cf0453bd7c72a43e68424d202a23671")
+        assert jpeg.extract(stego_cover, "pw") == b"known answer"
+
+    def test_known_answer_format_9(self, tmp_path, monkeypatch):
+        """Format 9 (Argon2id, production parameters) is pinned the same way."""
+        from .conftest import PRODUCTION_ARGON2
+
+        for name, value in zip(
+            ("ARGON2_MEMORY_KIB", "ARGON2_ITERATIONS", "ARGON2_LANES"),
+            PRODUCTION_ARGON2,
+            strict=True,
+        ):
+            monkeypatch.setattr(stego, name, value)
+        cover = jpeg.load(arithmetic_jpeg(tmp_path / "pinned.jpg"))
         data, _ = jpeg.embed(cover, b"known answer", "pw", deterministic_random())
         (tmp_path / "s.jpg").write_bytes(data)
         stego_cover = jpeg.load(tmp_path / "s.jpg")
         digest = hashlib.sha256(stego_cover.coefficients().astype("<i4").tobytes()).hexdigest()
-        assert digest == ("f04d1717bc624c1b1f38fde1e7415acd2cf0453bd7c72a43e68424d202a23671")
+        assert digest == ("6d68c4461201b68249a188d00dd80015b3b6df87a8b8f351a23edfabb013ffa1")
         assert jpeg.extract(stego_cover, "pw") == b"known answer"
 
     def test_format_7_has_no_keyless_fingerprint(self, tmp_path):

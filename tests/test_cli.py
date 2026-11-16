@@ -541,7 +541,7 @@ class TestCleanErrors:
             == 0
         )
         out = capsys.readouterr().out
-        assert "JPEG (format 7)" in out and "JPEG-compatibility" not in out
+        assert "JPEG (format 9)" in out and "JPEG-compatibility" not in out
         assert run("extract", tmp_path / "s.jpg") == 0
         assert capsys.readouterr().out.endswith("hello")
 

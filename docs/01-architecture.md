@@ -312,16 +312,17 @@ has already computed, so asking for the first 32 positions and then the first
 Three formats are versioned independently; each carries its own magic and
 version so that a future change can be detected rather than misread.
 
-### 1.5.1 Payload inside an image (stego formats 3 to 7)
+### 1.5.1 Payload inside an image (stego formats 3 to 9)
 
-All formats carry the same fields, except that formats 6 and 7 have no cost
-byte; they differ in how the bits reach the samples. shardpix writes format
-6 (pixels) or 7 (JPEG) and reads all five.
+All formats carry the same fields, except that formats 6 to 9 have no cost
+byte; they differ in how the bits reach the samples and in how the
+passphrase is hardened. shardpix writes format 8 (pixels) or 9 (JPEG) and
+reads all seven.
 
 | Field | Size | Content |
 | --- | --- | --- |
 | salt | 16 B | Random per embedding |
-| cost | 1 B | Formats 3 to 5 only: log2 of scrypt's N (17; 10–18 accepted when reading); bit 7 set in formats 4 and 5. Formats 6 and 7 fix N = 2^17 by their version |
+| cost | 1 B | Formats 3 to 5 only: log2 of scrypt's N (17; 10–18 accepted when reading); bit 7 set in formats 4 and 5. Formats 6 and 7 fix N = 2^17 by their version, formats 8 and 9 the Argon2id parameters |
 | length | 4 B | Size of nonce + body, XOR-masked with a key-derived mask |
 | nonce | 12 B | AES-256-GCM nonce |
 | body | n + 16 B | AES-256-GCM ciphertext and tag; AAD = domain, format version, length |
@@ -356,8 +357,16 @@ bits of the older formats, so all adaptive formats agree on w₀ and the
 128 positions of format 6 are a prefix of the 136 of format 4. The cost
 byte was a keyless fingerprint, since anyone can decode the public block
 and found the same value in every image; the cost is now fixed by the
-version (N = 2^17). Domains `shardpix/stego/v6` and `shardpix/jpeg/v2`. The
-extractor tries 6, 4, 3 on pixels and 7, 5 on JPEG. A JPEG output keeps
+version (N = 2^17). Domains `shardpix/stego/v6` and `shardpix/jpeg/v2`.
+
+**Formats 8 and 9 (#34).** Formats 6 and 7 with the passphrase hardened by
+Argon2id (RFC 9106: 256 MiB, 3 passes, 4 lanes, 32-byte output, salt =
+domain ‖ `|` ‖ per-image salt) instead of scrypt; everything else, embedding
+included, is identical. The parameters are fixed by the version like the
+scrypt cost of formats 6 and 7: written in the image they would be a public
+constant again (SR-07). Domains `shardpix/stego/v8` and `shardpix/jpeg/v3`.
+The extractor tries 8, 6, 4, 3 on pixels and 9, 7, 5 on JPEG, so a wrong
+passphrase costs one Argon2id and one scrypt derivation (about 1 s). A JPEG output keeps
 the cover's metadata and marker layout (06 §6.13, SR-09).
 
 **Format 3 (matching, replacement).** One bit per sample, salt and cost on
@@ -386,7 +395,29 @@ a sample.
 The printable form is `spx1-` followed by lowercase, unpadded base32. A share
 of a 32-byte vault key is 109 bytes.
 
-### 1.5.3 Vault file (vault format v1)
+### 1.5.3 Vault file (vault formats 2 and 1)
+
+Format 2, written since #34:
+
+| Field | Size | Content |
+| --- | --- | --- |
+| magic | 4 B | `SPXV` |
+| version | 1 B | `2` |
+| group id | 16 B | Same as the shares |
+| nonce | 12 B | AES-256-GCM nonce |
+| ciphertext | * | AES-256-GCM(key, nonce, plaintext, AAD = the 33 bytes above) |
+
+`plaintext = k (1 B) ‖ n (1 B) ‖ content length (8 B) ‖ name length (2 B) ‖
+original file name (UTF-8) ‖ file contents ‖ zero padding`. The threshold,
+the share count and the file name are inside the ciphertext. The plaintext
+is padded to the Padmé length [Nikitin et al., PETS 2019] of
+max(length, 4 KiB): the low bits of the length are rounded up so that only
+O(log log n) bits of it remain, at most 12 % larger (4 KiB for small
+files); `unseal` checks that the padding is zeros. Until a vault is opened,
+`k` and `n` are unknown; a failed `unseal` names the threshold the shares
+carry.
+
+Format 1, still read:
 
 | Field | Size | Content |
 | --- | --- | --- |
@@ -399,7 +430,10 @@ of a 32-byte vault key is 109 bytes.
 | ciphertext | * | AES-256-GCM(key, nonce, plaintext, AAD = the 35 bytes above) |
 
 `plaintext = name length (2 B) ‖ original file name (UTF-8) ‖ file contents`.
-The file name is inside the ciphertext, so the vault does not reveal it.
+
+The version byte is in the associated data of both, so a format-2 vault
+rewritten as format 1 (any `k`, `n`) or the reverse fails authentication
+(`TestVaultFormats`).
 
 ## 1.6 Architectural decisions
 

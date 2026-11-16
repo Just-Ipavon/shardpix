@@ -65,8 +65,10 @@ algorithm picks the changes with the lowest total cost. The extractor only
 computes the syndrome; it never needs the costs.
 
 Formats 6 and 7 are formats 4 and 5 without the public scrypt cost byte,
-which anyone could decode without a key (06 §6.4, SR-07); 4 and 5 are
-still read. What format 7 adds for JPEG:
+which anyone could decode without a key (06 §6.4, SR-07), and formats 8 and
+9, the ones written now, are 6 and 7 with the passphrase hardened by
+Argon2id instead of scrypt (01 §1.5.1); the older ones are still read. What
+the JPEG formats add:
 
 - **Only non-zero AC coefficients move.** Turning a zero into a non-zero
   is the most detectable change in a JPEG, so zeros and DC coefficients are
@@ -100,10 +102,10 @@ JPEG, palette image) unless `--allow-unsuitable`.
 
 | Input | What shardpix does | Output | Verdict |
 | --- | --- | --- | --- |
-| JPEG from a phone or camera | Embeds in the coefficients (format 7) | JPEG | **Good cover**, as taken |
-| PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 6) | PNG | **Good cover** |
+| JPEG from a phone or camera | Embeds in the coefficients (format 9) | JPEG | **Good cover**, as taken |
+| PNG, TIFF or BMP photo, 8-bit | Embeds in the pixels (format 8) | PNG | **Good cover** |
 | RAW / DNG (iPhone ProRAW, Android RAW) | Not read directly: export it to an 8-bit PNG or TIFF | PNG | **Good cover**, after export |
-| HEIC (iPhone "High Efficiency") | With `pip install "shardpix[heic]"` (pillow-heif): decoded to pixels, embedded in the pixels (format 6); without it, refused with that hint | PNG | Works, but a PNG among the phone's HEIC/JPEG photos stands out; prefer the camera on JPEG. Converting HEIC to JPEG compresses the photo twice |
+| HEIC (iPhone "High Efficiency") | With `pip install "shardpix[heic]"` (pillow-heif): decoded to pixels, embedded in the pixels (format 8); without it, refused with that hint | PNG | Works, but a PNG among the phone's HEIC/JPEG photos stands out; prefer the camera on JPEG. Converting HEIC to JPEG compresses the photo twice |
 | 16-bit PNG or TIFF (greyscale or colour) | Refused | — | Export as 8-bit |
 | Animated GIF or PNG, multi-page TIFF | Refused: only the first frame would be kept | — | Export one frame as a still image |
 | Screenshot | Embeds in the pixels | PNG | Works, but flat areas leave little texture; prefer photos |
@@ -163,6 +165,6 @@ the output must carry the matching extension (`.jpg` or `.png`).
 | You have | Do |
 | --- | --- |
 | A phone | Use its JPEG photos as they are: textured, full resolution, never shared |
-| RAW exports or PNG photos | Use them: they give PNG outputs (format 6) |
+| RAW exports or PNG photos | Use them: they give PNG outputs (format 8) |
 | HEIC photos | Switch the camera to JPEG for the photos you will use, or install `shardpix[heic]` and accept a PNG output |
 | Images from the web | Do not use them: the original is one reverse image search away |

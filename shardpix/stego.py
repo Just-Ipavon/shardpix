@@ -9,17 +9,24 @@ neither tell which samples were used nor distinguish the bits from noise.
 first into samples chosen by a *public* walk (the extractor must read them
 before it has a key). The keys are derived from the passphrase and that
 salt, so two images sealed with the same passphrase use unrelated keys and
-unrelated positions, and scrypt work cannot be precomputed for common image
-sizes. Nothing else is public: the salt is uniformly random, so reading the
-public samples tells an observer nothing about whether an image holds a
-payload. The scrypt cost is fixed by the format version; raising it means a
-new version.
+unrelated positions, and the passphrase work cannot be precomputed for
+common image sizes. Nothing else is public: the salt is uniformly random, so
+reading the public samples tells an observer nothing about whether an image
+holds a payload.
+
+**Passphrase hardening.** Formats 8 (pixels) and 9 (JPEG, in
+:mod:`shardpix.jpeg`) derive the keys with Argon2id (RFC 9106: 256 MiB,
+3 passes, 4 lanes); formats 3-7 used scrypt (N = 2^17, r = 8) and are still
+read. The parameters are fixed by the format version, never written to the
+image: a public parameter block is a constant anyone could decode without a
+key (SR-07), so raising them means a new version.
 
 Formats 3 and 4 (and 5, in :mod:`shardpix.jpeg`) also wrote the scrypt cost
 in a public byte after the salt. That byte was a constant (``0x91`` in
 format 4) that anyone with the source could decode without a key, which
 told shardpix images apart from clean ones (docs/06 SR-07). They are still
-read; formats 6 and 7 replaced them and are the only ones written.
+read; formats 6 and 7 replaced them, and formats 8 and 9 (the same layout
+with Argon2id) replaced those; only 8 and 9 are written.
 
 **Eligible samples.** Only samples in the range 2-253 carry data, and
 embedding never moves a sample out of that range. Samples at 0 or 255 can
@@ -56,6 +63,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from . import costs, stc
@@ -63,8 +71,10 @@ from .errors import CapacityError, PayloadNotFoundError
 from .images import Carrier
 from .progress import Progress, span
 
-FORMAT_VERSION = 6
-"""Format written by :attr:`Method.ADAPTIVE`; the other methods write format 3."""
+FORMAT_VERSION = 8
+"""Format written by :attr:`Method.ADAPTIVE` (Argon2id); the other methods write format 3."""
+SCRYPT_ADAPTIVE_VERSION = 6
+"""Adaptive format with scrypt: read, and written only on request (tests, benchmarks)."""
 ADAPTIVE_V4 = 4
 """Adaptive format with a public cost byte: read, and written only by benchmarks."""
 LEGACY_VERSION = 3
@@ -105,21 +115,32 @@ HEADER_WIDTH = 64
 """Widest code carrying the public block and the length in the adaptive formats (4-7)."""
 LENGTH_BITS = LENGTH_BYTES * 8
 
-JPEG_VERSION = 7
-"""Format of payloads in JPEG coefficients (:mod:`shardpix.jpeg`)."""
+JPEG_VERSION = 9
+"""Format of payloads in JPEG coefficients (:mod:`shardpix.jpeg`), with Argon2id."""
+JPEG_SCRYPT_VERSION = 7
+"""JPEG format with scrypt: read, and written only on request."""
 JPEG_LEGACY_VERSION = 5
 """JPEG format with a public cost byte: read, and written only by benchmarks."""
 COST_VERSIONS = frozenset({LEGACY_VERSION, ADAPTIVE_V4, JPEG_LEGACY_VERSION})
 """Formats whose public block ends with the scrypt cost byte (SR-07)."""
+ARGON2_VERSIONS = frozenset({FORMAT_VERSION, JPEG_VERSION})
+"""Formats whose passphrase is hardened with Argon2id instead of scrypt."""
+
+ARGON2_MEMORY_KIB = 256 * 1024
+ARGON2_ITERATIONS = 3
+ARGON2_LANES = 4
+"""Argon2id parameters of formats 8 and 9 (RFC 9106; about 0.5 s and 256 MiB per guess)."""
 
 _DOMAIN = b"shardpix/stego/v3"
 _DOMAIN_V4 = b"shardpix/stego/v4"
 _DOMAINS = {
     LEGACY_VERSION: _DOMAIN,
     ADAPTIVE_V4: _DOMAIN_V4,
-    FORMAT_VERSION: b"shardpix/stego/v6",
+    SCRYPT_ADAPTIVE_VERSION: b"shardpix/stego/v6",
+    FORMAT_VERSION: b"shardpix/stego/v8",
     JPEG_LEGACY_VERSION: b"shardpix/jpeg/v1",
-    JPEG_VERSION: b"shardpix/jpeg/v2",
+    JPEG_SCRYPT_VERSION: b"shardpix/jpeg/v2",
+    JPEG_VERSION: b"shardpix/jpeg/v3",
 }
 _PUBLIC_WALK_KEY = hashlib.sha256(_DOMAIN + b"|salt-walk").digest()
 _PUBLIC_CODE_SEED = hashlib.sha256(_DOMAIN_V4 + b"|public-code").digest()
@@ -137,7 +158,7 @@ class Method(str, Enum):
     """Overwrite the least significant bit (classic LSB replacement)."""
 
     ADAPTIVE = "adaptive"
-    """+-1 changes placed by a syndrome-trellis code where HiLL costs are lowest (format 6)."""
+    """+-1 changes placed by a syndrome-trellis code where HiLL costs are lowest (format 8)."""
 
 
 @dataclass(frozen=True)
@@ -189,8 +210,9 @@ def derive_key(
 ) -> StegoKey:
     """Derive the walk, encryption and masking keys for one embedding.
 
-    scrypt makes every passphrase guess expensive, and the per-image salt
-    means guesses cannot be shared between images. Without a passphrase the
+    Argon2id (formats 8, 9) or scrypt (formats 3-7) makes every passphrase
+    guess expensive, and the per-image salt means guesses cannot be shared
+    between images; ``log_n`` only applies to scrypt. Without a passphrase the
     keys depend on the salt alone: the payload is still scattered and
     encrypted, but anyone running shardpix can read it. Each format version
     has its own domain, so the two never share a key.
@@ -202,7 +224,16 @@ def derive_key(
         log_n = SCRYPT_LOG_N
     if log_n not in SCRYPT_LOG_N_ACCEPTED:
         raise ValueError(f"scrypt cost 2^{log_n} is outside the accepted range")
-    if passphrase:
+    if passphrase and version in ARGON2_VERSIONS:
+        secret = unicodedata.normalize("NFC", passphrase).encode("utf-8")
+        master = Argon2id(
+            salt=domain + b"|" + salt,
+            length=32,
+            iterations=ARGON2_ITERATIONS,
+            lanes=ARGON2_LANES,
+            memory_cost=ARGON2_MEMORY_KIB,
+        ).derive(secret)
+    elif passphrase:
         secret = unicodedata.normalize("NFC", passphrase).encode("utf-8")
         n = 1 << log_n
         master = hashlib.scrypt(
@@ -518,9 +549,9 @@ def embed(
 ) -> tuple[Carrier, EmbedReport]:
     """Hide ``payload`` in ``carrier`` and return the stego carrier.
 
-    The adaptive method writes format 6, the others format 3. ``version``
-    can ask the adaptive method for format 4 instead, which benchmarks use so
-    that the published measurements stay reproducible.
+    The adaptive method writes format 8, the others format 3. ``version``
+    can ask the adaptive method for format 6 (scrypt) or 4 instead, which
+    benchmarks use so that the published measurements stay reproducible.
     """
     cover = carrier.samples()
     eligible = eligible_mask(cover)
@@ -537,7 +568,8 @@ def embed(
     adaptive = method is Method.ADAPTIVE
     if version is None:
         version = FORMAT_VERSION if adaptive else LEGACY_VERSION
-    if version not in ((FORMAT_VERSION, ADAPTIVE_V4) if adaptive else (LEGACY_VERSION,)):
+    adaptive_versions = (FORMAT_VERSION, SCRYPT_ADAPTIVE_VERSION, ADAPTIVE_V4)
+    if version not in (adaptive_versions if adaptive else (LEGACY_VERSION,)):
         raise ValueError(f"method {method.value} cannot write format {version}")
     span(progress, 0.0, 1.0)(0.0, "deriving the key")
     key = derive_key(passphrase, salt, log_n, version)
@@ -596,7 +628,7 @@ def _not_found() -> PayloadNotFoundError:
 
 
 def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
-    """Recover and authenticate the payload hidden in ``carrier`` (format 6, 4 or 3)."""
+    """Recover and authenticate the payload hidden in ``carrier`` (format 8, 6, 4 or 3)."""
     samples = carrier.samples()
     eligible = eligible_mask(samples)
     largest_frame = max_frame_bytes(int(np.count_nonzero(eligible)))
@@ -607,7 +639,7 @@ def extract(carrier: Carrier, passphrase: str | None = None) -> bytes:
     # trying: each format's public bytes are decoded its own way, and the
     # older formats are attempted only if their cost byte is plausible.
     n_eligible = int(np.count_nonzero(eligible))
-    for version in (FORMAT_VERSION, ADAPTIVE_V4, LEGACY_VERSION):
+    for version in (FORMAT_VERSION, SCRYPT_ADAPTIVE_VERSION, ADAPTIVE_V4, LEGACY_VERSION):
         try:
             return _extract(samples, eligible, n_eligible, largest_frame, passphrase, version)
         except PayloadNotFoundError:

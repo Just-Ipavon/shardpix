@@ -195,8 +195,8 @@ bytes of each cover and hides the share the way that file is stored:
 
 | Cover | How the share is hidden | Output |
 | --- | --- | --- |
-| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 7): never decoded or recompressed, same quality tables, EXIF and marker layout (a progressive JPEG is written back as baseline, with a warning) | `.jpg` |
-| PNG, TIFF, BMP, RAW export | In the pixels (format 6) | `.png` |
+| JPEG (phone photos, cameras) | In the JPEG's own coefficients (format 9): never decoded or recompressed, same quality tables, EXIF and marker layout (a progressive JPEG is written back as baseline, with a warning) | `.jpg` |
+| PNG, TIFF, BMP, RAW export | In the pixels (format 8) | `.png` |
 | iPhone HEIC | With `pip install "shardpix[heic]"`: decoded to pixels; better: set the camera to *Most Compatible* (JPEG) | PNG |
 
 Choose textured photos you took yourself and never shared, and send the
@@ -239,7 +239,7 @@ shardpix with this work.) The measurements:
   BOSSbase images the pooled detector stays at chance, about 50%, from 1 to
   50 images.
 - **Real covers, not lab covers.** Phone photos are JPEG, so shardpix hides
-  the share inside the JPEG coefficients themselves (format 7) and returns a
+  the share inside the JPEG coefficients themselves (format 9) and returns a
   JPEG with the same quality settings and metadata - no conversion that
   would betray the image. Measured with DCTR and GFR on BOSSbase and on
   ALASKA2, real camera photos: at quality 90-95, like a phone's, one image

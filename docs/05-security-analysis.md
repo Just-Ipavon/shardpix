@@ -60,12 +60,12 @@ way to understand how such tools are built.
 | Id | Property | Against | Argument | Verified by |
 | --- | --- | --- | --- | --- |
 | SP-01 | The file is confidential without k shares | ADV-1, ADV-2 | AES-256-GCM under a uniformly random key that exists only as Shamir shares (and briefly in memory). | `test_vault.py::TestFailures` |
-| SP-02 | The file and its metadata are authentic | ADV-4 | GCM tag over the ciphertext; the header (group id, k, n, nonce) is the associated data; the file name is inside the ciphertext. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
+| SP-02 | The file and its metadata are authentic | ADV-4 | GCM tag over the ciphertext; the header (version, group id, nonce; k and n too in format 1) is the associated data; the file name, k and n (format 2) are inside the ciphertext. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
 | SP-03 | k − 1 shares reveal nothing about the key | ADV-1 | Each byte of key ‖ MAC key has its own random polynomial of degree k − 1, so any k − 1 values are uniform whatever the key. The MACs depend only on the MAC key, which is shared the same way, so they add nothing — even for a low-entropy secret (ADR-08). Only the secret's length leaks. | `TestSecrecy` (exhaustive over all coefficients), `test_mac_is_not_keyed_with_the_secret` |
 | SP-04 | Damaged or altered shares are detected and identified | ADV-4 | The checksum catches accidental damage without a key; once k good shares reconstruct the MAC key, every other share is checked and reported. A second cluster (a fabricated set) makes `combine` fail, whatever its size. | `TestAuthentication`, `TestRobustSearch` |
 | SP-05 | An image reveals neither its payload nor which samples hold it | ADV-2, ADV-3 | Payload sealed with AES-256-GCM; positions from a ChaCha20 walk keyed by scrypt(passphrase, per-image salt); length masked. Without the passphrase the written bits are indistinguishable from random (formats 6 and 7; in formats 3-5 the public cost byte is a constant, 06 SR-07). | `TestAuthentication`, `TestKeyDerivation` |
 | SP-06 | A fabricated set of shares is never accepted as the vault key | ADV-4 | Clusters are disjoint; each candidate key is tested against the vault's GCM tag, which a forger cannot satisfy without the real key. Outside a vault (`split`/`combine`) there is no such check, so `combine` refuses whenever the shares authenticate more than one secret. | `TestForgedSets`, `test_fabricated_set_larger_than_the_genuine_one_is_refused` |
-| SP-07 | Passphrase guessing is expensive and per image | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s per guess, OWASP's first recommendation), salted per image, so no table can be precomputed for an image size and no guess carries over to another image. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
+| SP-07 | Passphrase guessing is expensive and per image | ADV-2 | Argon2id with 256 MiB, 3 passes, 4 lanes (RFC 9106; ≈ 0.5 s per guess) in formats 8 and 9, scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0.4 s) in formats 3-7, salted per image, so no table can be precomputed for an image size and no guess carries over to another image. Weak passphrases are refused at seal time (`shardpix.passphrase`, ≥ 50 estimated bits). | `test_production_argon2_cost`, `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image`, `test_passphrase.py` |
 | SP-08 | One error message for every extraction failure | ADV-3, ADV-4 | Wrong passphrase, clean image and modified image all raise the same `PayloadNotFoundError`, so the tool is no oracle for "is there something here?". | `TestAuthentication` |
 | SP-09 | Neither classical nor trained steganalysis (SPAM, SRM-lite) detects a vault share in format 6 | ADV-3, ADV-5 | Adaptive ±1 embedding with syndrome-trellis codes [31] and HiLL costs [30] (ADR-12), no forced moves at 0/255 (ADR-06), and a fixed payload of 1,256 bits (1,264 in formats 3-5). Measured on format 4, which differs only by the public cost byte (format-4 images themselves are recognisable without a key, 06 SR-07): at chance on BOSSbase 512x512 (§5.5.6), also when up to fifty images of one vault are pooled (§5.5.7); format 3 was weakly detectable, and strongly so once pooled (§5.5.5, §5.5.7). | Benchmarks (§5.5.1–5.5.7) |
 | SP-10 | Restoring a file cannot escape the output directory or abuse the terminal | ADV-4 | `safe_filename` keeps the base name, strips control and format characters, leading dots and dashes, and NTFS stream separators, and replaces reserved names as Win32 trims them; `--force` never replaces a file under a restored name. | `TestRestoredNames`, `TestSafeFilename` |
@@ -88,7 +88,9 @@ a weak trend there, §5.5.9), or that the vault file itself is inconspicuous
 | --- | --- | --- | --- |
 | File encryption | AES-256-GCM | 256-bit random key, 96-bit random nonce, 35-byte AAD | `cryptography` |
 | Stego payload encryption | AES-256-GCM | 256-bit derived key, 96-bit random nonce, AAD = domain ‖ version ‖ length | `cryptography` |
-| Passphrase hardening | scrypt [9] | N = 2^17, r = 8, p = 1, 128-bit salt per image; N fixed by the format version (6, 7); formats 3-5 store it in the image, 2^10 to 2^18 accepted when reading | `hashlib` |
+| Passphrase hardening | Argon2id (RFC 9106) | m = 256 MiB, t = 3, p = 4, 128-bit salt per image; fixed by the format version (8, 9) | `cryptography` |
+| Passphrase hardening, formats 3-7 | scrypt [9] | N = 2^17, r = 8, p = 1, 128-bit salt per image; N fixed by the format version (6, 7); formats 3-5 store it in the image, 2^10 to 2^18 accepted when reading | `hashlib` |
+| Vault padding | Padmé | max(length, 4 KiB) rounded up to O(log log n) significant bits, ≤ 12 % overhead (vault format 2) | this project |
 | Key separation | HKDF-SHA256 | Labels `order`, `aead`, `length` | `cryptography` |
 | Sample positions | ChaCha20 keystream | 256-bit key, rejection-sampled modular reduction | `cryptography` |
 | Share authentication | HMAC-SHA256 | 256-bit shared MAC key, tag truncated to 128 bits | `hmac` |
@@ -700,18 +702,25 @@ about them (07 §7.6).
 RGB, and TIFF and BMP covers become PNG (06 SR-14). Use photographs, not
 palette graphics, as PNG covers.
 
-**The vault file is not hidden.** Its magic, group id, threshold and number
-of shares are in clear (authenticated, not encrypted). Anyone who finds it
-knows it is a shardpix vault and how many images open it — but not its file
-name, contents or which images belong to it. The ciphertext is not padded,
-so the vault file's size reveals the length of the plaintext plus its name.
+**The vault file is not hidden.** Its magic and group id are in clear
+(authenticated, not encrypted): anyone who finds it knows it is a shardpix
+vault. Since vault format 2 it no longer tells how many images open it (k
+and n are encrypted), and its size reveals only the Padmé bucket of the
+contents (at least 4 KiB, then O(log log n) bits of the length), not the
+length itself. Format-1 vaults, still read, keep k and n in clear and are
+not padded.
 
 **One passphrase per vault.** All images of a vault use the same passphrase,
 so every holder who must be able to take part in a recovery knows it. The
 passphrase protects the images against outsiders (ADV-2); confidentiality
 among holders rests on the threshold (SP-03), not on the passphrase.
-Passphrase strength is not checked: a guessable passphrase leaves only the
-scrypt cost (SP-07) between ADV-2 and the shares.
+Passphrase strength is estimated at seal time and a passphrase below 50
+bits is refused (`--allow-weak-passphrase` overrides). The estimate is
+pessimistic for chosen passphrases (the length rule of NIST SP 800-63-1)
+and exact only for generated ones (`shardpix passphrase`, diceware from the
+EFF list, 12.9 bits per word); it cannot know that a long sentence is a
+famous quote. A guessable passphrase still leaves only the Argon2id cost
+(SP-07) between ADV-2 and the shares.
 
 **Python is not constant-time.** GF(256) table lookups and other operations
 on secret data have data-dependent timing, and Python cannot reliably wipe

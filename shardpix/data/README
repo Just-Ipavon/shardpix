@@ -1,0 +1,12 @@
+eff_large_wordlist.txt
+----------------------
+
+The words (without the dice numbers) of the EFF large wordlist for random
+passphrases, by the Electronic Frontier Foundation:
+https://www.eff.org/dice
+https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt
+
+Licensed under the Creative Commons Attribution 3.0 United States license
+(CC BY 3.0 US, https://creativecommons.org/licenses/by/3.0/us/). The only
+change is that the dice numbers were removed. Used by shardpix.passphrase to
+generate diceware passphrases and to recognise them when estimating strength.

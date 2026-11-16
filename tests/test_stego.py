@@ -258,11 +258,39 @@ class TestKeyDerivation:
     def test_format_6_cost_is_fixed_by_the_version(self, rgb_carrier, monkeypatch):
         """Format 6 stores no cost: raising it takes a new format version."""
         monkeypatch.setattr(stego, "SCRYPT_LOG_N", 11)
-        stego_carrier, _ = stego.embed(rgb_carrier, b"fixed cost", PASSPHRASE)
+        stego_carrier, _ = stego.embed(
+            rgb_carrier, b"fixed cost", PASSPHRASE, version=stego.SCRYPT_ADAPTIVE_VERSION
+        )
         assert stego.extract(stego_carrier, PASSPHRASE) == b"fixed cost"
         monkeypatch.setattr(stego, "SCRYPT_LOG_N", 12)
         with pytest.raises(PayloadNotFoundError):
             stego.extract(stego_carrier, PASSPHRASE)
+
+    def test_format_8_cost_is_fixed_by_the_version(self, rgb_carrier, monkeypatch):
+        """Format 8 stores no Argon2id parameter either."""
+        stego_carrier, _ = stego.embed(rgb_carrier, b"fixed cost", PASSPHRASE)
+        assert stego.extract(stego_carrier, PASSPHRASE) == b"fixed cost"
+        monkeypatch.setattr(stego, "ARGON2_ITERATIONS", 2)
+        with pytest.raises(PayloadNotFoundError):
+            stego.extract(stego_carrier, PASSPHRASE)
+
+    def test_production_argon2_cost(self):
+        from .conftest import PRODUCTION_ARGON2
+
+        assert PRODUCTION_ARGON2 == (256 * 1024, 3, 4)
+
+    def test_argon2_and_scrypt_formats_never_share_a_key(self):
+        salt = bytes(range(16))
+        keys = {
+            v: stego.derive_key(PASSPHRASE, salt, 10, v).aead
+            for v in (
+                stego.FORMAT_VERSION,
+                stego.SCRYPT_ADAPTIVE_VERSION,
+                stego.JPEG_VERSION,
+                stego.JPEG_SCRYPT_VERSION,
+            )
+        }
+        assert len(set(keys.values())) == 4
 
     def test_forged_cost_is_rejected_before_any_key_derivation(self, rgb_carrier):
         """A cost of 2^30 would make scrypt allocate 128 GiB; it must never be attempted."""

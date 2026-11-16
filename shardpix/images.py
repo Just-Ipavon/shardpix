@@ -142,7 +142,7 @@ def load_image(path: str | Path) -> Carrier:
 
     HEIC/HEIF photos are read through the optional ``pillow-heif`` decoder
     (``shardpix[heic]``): decoded to pixels like any other lossy input, they
-    give a PNG (format 6).
+    give a PNG (format 8).
     """
     path = Path(path)
     if is_heif(path):
