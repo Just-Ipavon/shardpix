@@ -39,6 +39,7 @@ import multiprocessing as mp
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -565,6 +566,13 @@ def _merge(old: list[dict], new: list[dict]) -> list[dict]:
     return [rows[k] for k in sorted(rows)]
 
 
+def _save_scores(path: Path, scores: dict[str, np.ndarray]) -> None:
+    """``np.savez_compressed`` with the scores as named arrays (passed through
+    ``Any``: recent NumPy stubs read ``**scores`` as its ``allow_pickle``)."""
+    save: Any = np.savez_compressed
+    save(path, **scores)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("covers", nargs="*", type=Path, help="cover images or directories")
@@ -646,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
                     detectors[name] = _merge(detectors.get(name, []), rows)
             args.data.parent.mkdir(parents=True, exist_ok=True)
             args.data.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
-            np.savez_compressed(scores_path, **scores)
+            _save_scores(scores_path, scores)
 
         if todo:
             save(run_features(covers, todo, args.seed, on_rate=save, scores=scores))

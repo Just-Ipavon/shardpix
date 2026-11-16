@@ -156,9 +156,10 @@ def feature_matrices(
             # Each chunk is saved as it completes, so a run killed halfway
             # resumes from the last chunk instead of from the first image.
             chunk_files = {d: _chunk_file(paths[d], start) for d in missing}
-            if all(f is not None and f.exists() for f in chunk_files.values()):
-                for d in missing:
-                    parts[d].append(np.load(chunk_files[d]))
+            saved = [f for f in chunk_files.values() if f is not None and f.exists()]
+            if len(saved) == len(chunk_files):
+                for d, f in zip(missing, saved, strict=True):
+                    parts[d].append(np.load(f))
                 continue
             stop = min(start + CHUNK, len(_PATHS))
             rows = pool.map(
@@ -168,8 +169,9 @@ def feature_matrices(
             )
             for j, d in enumerate(missing):
                 parts[d].append(np.stack([r[j] for r in rows]))
-                if chunk_files[d] is not None:
-                    np.save(chunk_files[d], parts[d][-1])
+                chunk = chunk_files[d]
+                if chunk is not None:
+                    np.save(chunk, parts[d][-1])
             print(f"    {name}: {stop}/{len(_PATHS)} images", flush=True)
     for d in missing:
         done[d] = np.concatenate(parts[d])
