@@ -8,7 +8,7 @@ import glob
 import os
 import re
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -146,6 +146,50 @@ def make_console(*, stderr: bool = False) -> Console:
     return Console(stderr=stderr, highlight=False, soft_wrap=not stream.isatty())
 
 
+def _first_line(path: Path) -> str:
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise ShardpixError(f"cannot read passphrase file {path}: {exc.strerror}") from exc
+    except UnicodeDecodeError as exc:
+        raise ShardpixError(f"passphrase file {path} is not valid UTF-8") from exc
+    if not lines or not lines[0]:
+        raise ShardpixError(f"passphrase file {path} is empty")
+    return lines[0]
+
+
+def _prompt(label: str, *, confirm: bool) -> str:
+    try:
+        first = getpass.getpass(f"{label}: ")
+        if not first:
+            raise ShardpixError("empty passphrase")
+        if confirm and getpass.getpass(f"Repeat {label[0].lower()}{label[1:]}: ") != first:
+            raise ShardpixError("passphrases do not match")
+    except EOFError as exc:  # Ctrl-D, or no input to read from
+        raise ShardpixError("no passphrase entered") from exc
+    return first
+
+
+def read_holder_passphrases(
+    args: argparse.Namespace, images: Sequence[Path], *, confirm: bool
+) -> list[str] | None:
+    """One passphrase per image (per-holder mode), in the images' order, or ``None``."""
+    files = getattr(args, "holder_passphrase_files", None)
+    if files:
+        if len(files) != len(images):
+            raise ShardpixError(
+                f"--holder-passphrase-files needs one file per image: {len(images)} images, "
+                f"{len(files)} files"
+            )
+        return [_first_line(Path(f)) for f in files]
+    if getattr(args, "holder_passphrases", False):
+        return [
+            _prompt(f"Passphrase of the holder of {image.name}", confirm=confirm)
+            for image in images
+        ]
+    return None
+
+
 def read_passphrase(args: argparse.Namespace, *, confirm: bool) -> str | None:
     """Return the passphrase selected on the command line, or ``None``.
 
@@ -153,26 +197,9 @@ def read_passphrase(args: argparse.Namespace, *, confirm: bool) -> str | None:
     shell history and in the process list.
     """
     if getattr(args, "passphrase_file", None):
-        path: Path = args.passphrase_file
-        try:
-            lines = path.read_text(encoding="utf-8-sig").splitlines()
-        except OSError as exc:
-            raise ShardpixError(f"cannot read passphrase file {path}: {exc.strerror}") from exc
-        except UnicodeDecodeError as exc:
-            raise ShardpixError(f"passphrase file {path} is not valid UTF-8") from exc
-        if not lines or not lines[0]:
-            raise ShardpixError(f"passphrase file {path} is empty")
-        return lines[0]
+        return _first_line(args.passphrase_file)
     if getattr(args, "passphrase", False):
-        try:
-            first = getpass.getpass("Passphrase: ")
-            if not first:
-                raise ShardpixError("empty passphrase")
-            if confirm and getpass.getpass("Repeat passphrase: ") != first:
-                raise ShardpixError("passphrases do not match")
-        except EOFError as exc:  # Ctrl-D, or no input to read from
-            raise ShardpixError("no passphrase entered") from exc
-        return first
+        return _prompt("Passphrase", confirm=confirm)
     return None
 
 
@@ -190,11 +217,15 @@ def require_passphrase(args: argparse.Namespace) -> str | None:
             "(--insecure-no-passphrase hides the data so that anyone running shardpix "
             "can read it)"
         )
+    _check_strength(args, passphrase)
+    return passphrase
+
+
+def _check_strength(args: argparse.Namespace, passphrase: str | None, whose: str = "") -> None:
     if passphrase is not None and not args.allow_weak_passphrase:
         problem = passphrases.check(passphrase)
         if problem is not None:
-            raise ShardpixError(problem)
-    return passphrase
+            raise ShardpixError(f"{whose}{problem}")
 
 
 def check_output(path: Path, *, force: bool, inputs: tuple[Path, ...] = ()) -> None:
@@ -230,7 +261,11 @@ def _same_file(first: Path, second: Path) -> bool:
 
 def input_files(args: argparse.Namespace, *paths: Path) -> tuple[Path, ...]:
     """``paths`` plus the payload (``-i``) and passphrase files the command reads."""
-    extra = (getattr(args, "input", None), getattr(args, "passphrase_file", None))
+    extra = (
+        getattr(args, "input", None),
+        getattr(args, "passphrase_file", None),
+        *(getattr(args, "holder_passphrase_files", None) or ()),
+    )
     return (*paths, *(Path(p) for p in extra if p is not None))
 
 
@@ -419,8 +454,26 @@ def _share_label(share: shamir.Share) -> str:
     return f"#{share.index} ({share.group})"
 
 
-def _add_passphrase_options(parser: argparse.ArgumentParser, *, hiding: bool = False) -> None:
+def _add_passphrase_options(
+    parser: argparse.ArgumentParser, *, hiding: bool = False, per_holder: bool = False
+) -> None:
     group = parser.add_mutually_exclusive_group()
+    if per_holder:
+        group.add_argument(
+            "-P",
+            "--holder-passphrases",
+            action="store_true",
+            help="per-holder passphrases: ask for one passphrase per image, so that each "
+            "holder knows only their own and can read only their own share",
+        )
+        group.add_argument(
+            "--holder-passphrase-files",
+            nargs="+",
+            type=Path,
+            metavar="FILE",
+            help="per-holder passphrases from files, one per image in the order the "
+            "images are given (first line of each)",
+        )
     group.add_argument(
         "-p",
         "--passphrase",
@@ -705,7 +758,11 @@ def _outcome_table(outcomes: tuple[vault.ImageOutcome, ...]) -> Table:
 
 def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     check_covers(args.covers, vault.SHARE_BYTES, args.allow_unsuitable, console)
-    passphrase = require_passphrase(args)
+    holders = read_holder_passphrases(args, args.covers, confirm=True)
+    if holders is not None:
+        for cover, holder in zip(args.covers, holders, strict=True):
+            _check_strength(args, holder, f"{cover.name}: ")
+    passphrase = holders if holders is not None else require_passphrase(args)
     with progress_bar("Sealing") as progress:
         result = vault.seal(
             args.file,
@@ -763,6 +820,11 @@ def cmd_seal(args: argparse.Namespace, console: Console) -> int:
     if rewritten:
         verb = "is" if len(rewritten) == 1 else "are"
         console.print(STRUCTURE_WARNING.format(names=f"{escape(', '.join(rewritten))} {verb}"))
+    if holders is not None:
+        console.print(
+            "Per-holder passphrases: give each holder their image and only their own "
+            "passphrase; unseal with -P (or --holder-passphrase-files) in the same order."
+        )
     console.print("Keep the vault file anywhere; give each image to a different holder.")
     console.print("Never publish the original covers next to the images.")
     return 0
@@ -772,7 +834,7 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
     inputs = input_files(args, args.vault, *args.images)
     if args.output is not None:
         check_output(args.output, force=args.force, inputs=inputs)
-    passphrase = read_passphrase(args, confirm=False)
+    passphrase = _opening_passphrase(args)
     with progress_bar("Unsealing") as progress:
         result = vault.unseal(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
@@ -796,8 +858,16 @@ def cmd_unseal(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def _opening_passphrase(args: argparse.Namespace) -> vault.PassphraseLookup:
+    """The vault's passphrase, or each image's own with per-holder passphrases."""
+    holders = read_holder_passphrases(args, args.images, confirm=False)
+    if holders is None:
+        return read_passphrase(args, confirm=False)
+    return dict(zip(args.images, holders, strict=True))
+
+
 def cmd_verify(args: argparse.Namespace, console: Console) -> int:
-    passphrase = read_passphrase(args, confirm=False)
+    passphrase = _opening_passphrase(args)
     with progress_bar("Verifying") as progress:
         result = vault.verify(args.vault, args.images, passphrase, progress)
     console.print(_outcome_table(result.outcomes))
@@ -1088,7 +1158,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="file name of the vault, the encrypted copy of FILE (default: FILE's name "
         "followed by .spx, e.g. notes.pdf.spx)",
     )
-    _add_passphrase_options(p, hiding=True)
+    _add_passphrase_options(p, hiding=True, per_holder=True)
     p.add_argument(
         "-f",
         "--force",
@@ -1138,7 +1208,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="where to save the recovered file (default: its original name, in the current folder)",
     )
-    _add_passphrase_options(p)
+    _add_passphrase_options(p, per_holder=True)
     p.add_argument(
         "-f",
         "--force",
@@ -1161,7 +1231,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("vault", type=Path, help="the vault file (.spx) written by 'seal'")
     p.add_argument("images", type=Path, nargs="+", metavar="IMAGE", help="images to check")
-    _add_passphrase_options(p)
+    _add_passphrase_options(p, per_holder=True)
     p.set_defaults(handler=cmd_verify)
 
     p = _command(

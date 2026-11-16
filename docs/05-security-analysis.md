@@ -710,10 +710,25 @@ contents (at least 4 KiB, then O(log log n) bits of the length), not the
 length itself. Format-1 vaults, still read, keep k and n in clear and are
 not padded.
 
-**One passphrase per vault.** All images of a vault use the same passphrase,
-so every holder who must be able to take part in a recovery knows it. The
+**One passphrase per vault, unless per-holder.** By default all images of a
+vault use the same passphrase, so every holder who must be able to take
+part in a recovery knows it, and could read every other holder's image. With
+per-holder passphrases (`seal -P` or `--holder-passphrase-files`, #35) each
+image has its own: a holder can read only their own share, and a stolen
+image is only as exposed as its holder's passphrase. Either way the
 passphrase protects the images against outsiders (ADV-2); confidentiality
-among holders rests on the threshold (SP-03), not on the passphrase.
+among holders rests on the threshold (SP-03). Recovery then needs each
+participating holder to type their own passphrase (`unseal -P`), and the
+sealer knew them all.
+
+Public-key recipients (each share encrypted to its holder's X25519 key, so
+the sealer needs no shared secret) are not implemented. The keyed walk would
+have to come from an ephemeral public key written in the image, and an X25519
+public key is not uniformly random: without an Elligator 2 encoding it would
+be a keyless fingerprint like SR-07. That needs an Elligator-capable
+primitive and its own steganalysis argument; per-holder passphrases give the
+property the issue asked for (a holder extracts only their own share)
+without either.
 Passphrase strength is estimated at seal time and a passphrase below 50
 bits is refused (`--allow-weak-passphrase` overrides). The estimate is
 pessimistic for chosen passphrases (the length rule of NIST SP 800-63-1)

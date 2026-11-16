@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import os
 import unicodedata
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 
@@ -98,6 +98,36 @@ PAYLOAD_FRAME_BYTES = stego.PUBLIC_BYTES + SHARE_BYTES + stego.FRAME_OVERHEAD
 """Bytes actually written into each image: salt and cost, then the sealed and framed share."""
 
 RandomBytes = Callable[[int], bytes]
+
+Passphrases = str | None | Sequence[str | None]
+"""For :func:`seal`: one passphrase for every image, or one per cover, in order."""
+PassphraseLookup = str | None | Mapping[Path, str | None] | Callable[[Path], str | None]
+"""For opening: one passphrase for every image, or each image's own (per holder)."""
+
+
+def _per_cover(passphrase: Passphrases, count: int) -> list[str | None]:
+    if passphrase is None or isinstance(passphrase, str):
+        return [passphrase] * count
+    per_cover = list(passphrase)
+    if len(per_cover) != count:
+        raise VaultError(
+            f"one passphrase per cover is needed: {count} covers, {len(per_cover)} passphrases"
+        )
+    given = [unicodedata.normalize("NFC", p) for p in per_cover if p]
+    if len(set(given)) != len(given):
+        raise VaultError(
+            "two holders were given the same passphrase; with per-holder passphrases "
+            "each holder needs their own"
+        )
+    return per_cover
+
+
+def _lookup(passphrase: PassphraseLookup, path: Path) -> str | None:
+    if passphrase is None or isinstance(passphrase, str):
+        return passphrase
+    if callable(passphrase):
+        return passphrase(path)
+    return passphrase.get(path)
 
 
 def padded_length(length: int) -> int:
@@ -248,7 +278,7 @@ def seal(
     covers: Sequence[Path],
     threshold: int,
     out_dir: Path,
-    passphrase: str | None = None,
+    passphrase: Passphrases = None,
     *,
     method: stego.Method = stego.Method.ADAPTIVE,
     vault_name: str | None = None,
@@ -267,6 +297,9 @@ def seal(
     before success is reported; this doubles the key derivations.
     ``vault_version=1`` writes the old, unpadded format with *k* and *n* in
     clear (tests and reproducible benchmarks only).
+    ``passphrase`` is one passphrase for every image, or a sequence with one
+    per cover (per-holder passphrases: each holder can read only their own
+    image's share; they must differ).
     """
     if vault_version not in (VERSION, LEGACY_VERSION):
         raise VaultError(f"cannot write vault format {vault_version}")
@@ -283,6 +316,7 @@ def seal(
         raise VaultError("each cover image must be a different file")
     if out_dir.exists() and not out_dir.is_dir():
         raise VaultError(f"{out_dir} exists and is not a directory")
+    per_cover = _per_cover(passphrase, count)
 
     try:
         if source.stat().st_size > MAX_FILE_BYTES:
@@ -338,18 +372,18 @@ def seal(
 
     _write(out_dir, lambda: out_dir.mkdir(parents=True, exist_ok=True))
     sealed = []
-    for i, (cover, opened_cover, share, output) in enumerate(
-        zip(covers, opened, shares, outputs, strict=True)
+    for i, (cover, opened_cover, share, output, image_passphrase) in enumerate(
+        zip(covers, opened, shares, outputs, per_cover, strict=True)
     ):
         image_progress = span(
             progress, 0.05 + 0.95 * i / count, 0.05 + 0.95 * (i + 1) / count, f"{cover.name}: "
         )
         stego_file, embed_report = media.hide(
-            opened_cover, share.to_bytes(), passphrase, random_bytes, method, image_progress
+            opened_cover, share.to_bytes(), image_passphrase, random_bytes, method, image_progress
         )
         write_new(output, stego_file, overwrite=force)
         if check:
-            _check_share_written(output, share, passphrase)
+            _check_share_written(output, share, image_passphrase)
         sealed.append(
             SealedImage(
                 cover,
@@ -478,10 +512,14 @@ def _read_share(path: Path, passphrase: str | None) -> shamir.Share | ImageOutco
 def unseal(
     vault_path: Path,
     images: Sequence[Path],
-    passphrase: str | None = None,
+    passphrase: PassphraseLookup = None,
     progress: Progress | None = None,
 ) -> UnsealResult:
-    """Recover the file sealed in ``vault_path`` from (some of) its images."""
+    """Recover the file sealed in ``vault_path`` from (some of) its images.
+
+    ``passphrase`` is the vault's passphrase, or with per-holder passphrases a
+    mapping (or function) from each image path to its own.
+    """
     header, plaintext, outcomes = _open(vault_path, images, passphrase, progress)
     header, name, data = _parse_plaintext(header, plaintext)
     return UnsealResult(
@@ -505,7 +543,7 @@ class VerifyResult:
 def verify(
     vault_path: Path,
     images: Sequence[Path],
-    passphrase: str | None = None,
+    passphrase: PassphraseLookup = None,
     progress: Progress | None = None,
 ) -> VerifyResult:
     """Check which images hold a valid share of ``vault_path`` and whether they open it.
@@ -526,7 +564,7 @@ def verify(
 def _open(
     vault_path: Path,
     images: Sequence[Path],
-    passphrase: str | None,
+    passphrase: PassphraseLookup,
     progress: Progress | None,
 ) -> tuple[VaultHeader, bytes, tuple[ImageOutcome, ...]]:
     header, ciphertext = read_vault(vault_path)
@@ -538,7 +576,7 @@ def _open(
     shares: list[shamir.Share] = []
     for i, path in enumerate(images):
         report(i / len(images), f"reading {path.name}")
-        result = _read_share(path, passphrase)
+        result = _read_share(path, _lookup(passphrase, path))
         if isinstance(result, ImageOutcome):
             outcomes[path] = result
             continue

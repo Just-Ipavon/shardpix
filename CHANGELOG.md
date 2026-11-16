@@ -40,6 +40,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Per-holder passphrases (#35).** `seal -P` asks for one passphrase per
+  image (`--holder-passphrase-files` reads them from files, in the images'
+  order), so each holder knows only their own and can read only their own
+  share; `unseal` and `verify` take `-P` or `--holder-passphrase-files` the
+  same way, and `vault.seal`/`unseal`/`verify` accept a sequence or a
+  mapping of passphrases. Each is checked for strength and they must differ.
+  Public-key recipients are not implemented: an ephemeral X25519 key in the
+  image would be a keyless fingerprint without Elligator 2 (docs/05 §5.6).
 - **Vault format 2, Argon2id images and passphrase checks (#34).** New vaults
   keep the threshold and the number of images inside the ciphertext, so the
   `.spx` file no longer says how many images open it, and pad the contents

@@ -769,11 +769,27 @@ sono cifrati), e la sua dimensione rivela solo la fascia Padmé del contenuto
 stessa. I vault in formato 1, ancora letti, tengono k e n in chiaro e non
 hanno padding.
 
-**Una passphrase per vault.** Tutte le immagini di un vault usano la stessa
-passphrase, quindi ogni custode che deve poter partecipare a un recupero la
-conosce. La passphrase protegge le immagini dagli estranei (ADV-2); la
-riservatezza tra i custodi si basa sulla soglia (SP-03), non sulla
-passphrase. La robustezza della passphrase viene stimata alla sigillatura e
+**Una passphrase per vault, salvo quelle per custode.** Per default tutte le
+immagini di un vault usano la stessa passphrase, quindi ogni custode che deve
+poter partecipare a un recupero la conosce, e potrebbe leggere l'immagine di
+ogni altro custode. Con le passphrase per custode (`seal -P` o
+`--holder-passphrase-files`, #35) ogni immagine ha la sua: un custode può
+leggere solo la propria quota, e un'immagine rubata è esposta solo quanto la
+passphrase del suo custode. In entrambi i casi la passphrase protegge le
+immagini dagli estranei (ADV-2); la riservatezza tra i custodi si basa sulla
+soglia (SP-03). Il recupero richiede allora che ogni custode partecipante
+digiti la propria passphrase (`unseal -P`), e chi ha sigillato le conosceva
+tutte.
+
+I destinatari a chiave pubblica (ogni quota cifrata verso la chiave X25519 del
+suo custode, così chi sigilla non ha bisogno di un segreto condiviso) non sono
+implementati. Il cammino con chiave dovrebbe venire da una chiave pubblica
+effimera scritta nell'immagine, e una chiave pubblica X25519 non è
+uniformemente casuale: senza una codifica Elligator 2 sarebbe un'impronta
+leggibile senza chiave come SR-07. Servirebbero una primitiva con Elligator e
+un argomento di steganalisi a parte; le passphrase per custode danno la
+proprietà richiesta dalla issue (un custode estrae solo la propria quota)
+senza nessuno dei due. La robustezza della passphrase viene stimata alla sigillatura e
 una passphrase sotto i 50 bit viene rifiutata (`--allow-weak-passphrase` lo
 consente comunque). La stima è pessimista per le passphrase scelte (la regola
 della lunghezza di NIST SP 800-63-1) ed esatta solo per quelle generate
