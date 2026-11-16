@@ -105,9 +105,9 @@ def eval_poly(coefficients: Sequence[np.ndarray], x: int) -> np.ndarray:
     """
     if not coefficients:
         raise ValueError("at least one coefficient is required")
-    result = np.zeros_like(np.asarray(coefficients[0], dtype=np.uint8))
+    result: np.ndarray = np.zeros_like(np.asarray(coefficients[0], dtype=np.uint8))
     for coefficient in reversed(coefficients):
-        result = mul_bytes(result, x) ^ np.asarray(coefficient, dtype=np.uint8)
+        result = np.bitwise_xor(mul_bytes(result, x), np.asarray(coefficient, dtype=np.uint8))
     return result
 
 

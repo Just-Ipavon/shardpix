@@ -37,6 +37,9 @@ jobs:
         run: ruff format --check .
 
       - name: Type check
+        # One Python, one set of NumPy/Pillow stubs: the result does not
+        # depend on which versions each matrix entry happens to resolve.
+        if: matrix.python-version == '3.13'
         run: mypy
 
       - name: Test
