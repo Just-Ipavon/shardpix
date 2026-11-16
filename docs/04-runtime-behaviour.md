@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-04 — Dynamic view |
-| System | shardpix 3.0.0 |
+| System | shardpix 4.0.0 |
 | Status | Approved |
 | Last revised | 2026-10-18 |
 
