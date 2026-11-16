@@ -48,11 +48,11 @@ def test_generated_passphrases():
     seen = {passphrase.generate() for _ in range(50)}
     assert len(seen) == 50
     for phrase in seen:
-        parts = phrase.split("-")
+        parts = phrase.split(" ")
         assert len(parts) == 6 and all(p in passphrase.wordlist() for p in parts)
         assert passphrase.estimate_bits(phrase) == pytest.approx(6 * math.log2(7776))
         assert passphrase.check(phrase) is None
-    assert passphrase.generate(4, " ").count(" ") == 3
+    assert passphrase.generate(4, "-").count("-") >= 3
     with pytest.raises(ValueError):
         passphrase.generate(3)
 
@@ -89,6 +89,19 @@ def test_long_or_generated_passphrases_pass(strong):
     assert passphrase.check(strong) is None
 
 
+@pytest.mark.parametrize("sep", [" ", "-"])
+def test_hyphenated_list_words_count_once(sep):
+    phrase = sep.join(["t-shirt", "yo-yo", "abacus", "drop-down", "zoom"])
+    assert passphrase.estimate_bits(phrase) == pytest.approx(5 * math.log2(7776))
+
+
+def test_generation_with_hyphenated_words_is_scored_exactly(monkeypatch):
+    picks = iter(["t-shirt", "felt-tip", "abacus", "zoom", "yo-yo", "drop-down"])
+    monkeypatch.setattr(passphrase.secrets, "choice", lambda pool: next(picks))
+    phrase = passphrase.generate()
+    assert passphrase.estimate_bits(phrase) == pytest.approx(6 * math.log2(7776))
+
+
 def test_unicode_is_normalised():
     composed, decomposed = "café " * 8, "café " * 8
     assert passphrase.estimate_bits(composed) == passphrase.estimate_bits(decomposed)
@@ -96,8 +109,8 @@ def test_unicode_is_normalised():
 
 def test_cli_generates_passphrases(capsys):
     assert main(["passphrase", "--words", "8", "-n", "3"]) == 0
-    lines = capsys.readouterr().out.split()
-    assert len(lines) == 3 and all(len(line.split("-")) == 8 for line in lines)
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 3 and all(len(line.split(" ")) == 8 for line in lines)
 
 
 def test_cli_seal_refuses_a_weak_passphrase(tmp_path, capsys):

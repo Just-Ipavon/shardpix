@@ -54,12 +54,33 @@ def _wordset() -> frozenset[str]:
     return frozenset(wordlist())
 
 
-def generate(words: int = DEFAULT_WORDS, separator: str = "-") -> str:
-    """A diceware passphrase of ``words`` words drawn with the OS CSPRNG."""
+def generate(words: int = DEFAULT_WORDS, separator: str = " ") -> str:
+    """A diceware passphrase of ``words`` words drawn with the OS CSPRNG.
+
+    Words are separated by spaces: four words of the list contain a hyphen
+    (``t-shirt``), so a hyphen would make the word count ambiguous to a reader.
+    """
     if not 4 <= words <= 20:
         raise ValueError("a generated passphrase has 4 to 20 words")
     pool = wordlist()
     return separator.join(secrets.choice(pool) for _ in range(words))
+
+
+def _list_words(tokens: list[str]) -> int | None:
+    """Fewest list words that ``tokens`` (split on separators) can be read as,
+    rejoining neighbours with ``-`` for the four hyphenated words of the list
+    (``t-shirt``); ``None`` if they cannot all be read as list words."""
+    words = _wordset()
+    best: list[int | None] = [0] + [None] * len(tokens)
+    for end in range(1, len(tokens) + 1):
+        for start in (end - 1, end - 2):
+            if start < 0 or best[start] is None:
+                continue
+            if "-".join(tokens[start:end]) in words:
+                candidate = best[start] + 1
+                if best[end] is None or candidate < best[end]:
+                    best[end] = candidate
+    return best[-1]
 
 
 def _effective_length(text: str) -> int:
@@ -104,8 +125,9 @@ def estimate_bits(passphrase: str) -> float:
     if not text:
         return 0.0
     tokens = [t for t in _SEPARATORS.split(text.lower()) if t]
-    if len(tokens) >= 2 and all(t in _wordset() for t in tokens):
-        return len(tokens) * WORD_BITS
+    count = _list_words(tokens)
+    if count is not None and count >= 2:
+        return count * WORD_BITS
     mixed = any(c.isupper() for c in text) and any(not c.isalpha() for c in text)
     return _chosen_bits(_effective_length(text), mixed)
 
