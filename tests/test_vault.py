@@ -684,3 +684,155 @@ class TestVaultFormats:
         save_png(rewritten, images_of(result)[0], overwrite=True)
         opened = vault.unseal(result.vault_path, images_of(result)[:2], PASSPHRASE)
         assert opened.data == secret_file.read_bytes()
+
+
+class TestPerHolderPassphrases:
+    """Each image under its own passphrase: a holder reads only their own share (#35)."""
+
+    HOLDERS = ["alice passphrase", "bob passphrase", "carol passphrase"]
+
+    @pytest.fixture
+    def per_holder(self, tmp_path, covers, secret_file):
+        return vault.seal(secret_file, covers[:3], 2, tmp_path / "out", self.HOLDERS)
+
+    def test_each_holder_reads_only_their_own_share(self, per_holder):
+        images = images_of(per_holder)
+        for i, image in enumerate(images):
+            for j, holder in enumerate(self.HOLDERS):
+                if i == j:
+                    assert vault.media.reveal(image, holder)
+                else:
+                    with pytest.raises(vault.PayloadNotFoundError):
+                        vault.media.reveal(image, holder)
+
+    def test_any_two_holders_open_the_vault(self, per_holder, secret_file):
+        images = images_of(per_holder)
+        for a, b in itertools.combinations(range(3), 2):
+            mapping = {images[a]: self.HOLDERS[a], images[b]: self.HOLDERS[b]}
+            assert vault.unseal(per_holder.vault_path, list(mapping), mapping).data == (
+                secret_file.read_bytes()
+            )
+        lookup = dict(zip(images, self.HOLDERS, strict=True))
+        assert vault.verify(per_holder.vault_path, images, lookup.get).opens
+
+    def test_one_holder_alone_cannot_open_it(self, per_holder):
+        images = images_of(per_holder)
+        # Bob's passphrase on every image: only Bob's share comes out.
+        with pytest.raises(VaultError) as caught:
+            vault.unseal(per_holder.vault_path, images, self.HOLDERS[1])
+        statuses = [o.status for o in caught.value.outcomes]
+        assert statuses.count(Status.NO_PAYLOAD) == 2
+
+    def test_passphrases_must_match_the_covers_and_differ(self, tmp_path, covers, secret_file):
+        with pytest.raises(VaultError, match="one passphrase per cover"):
+            vault.seal(secret_file, covers[:3], 2, tmp_path / "a", self.HOLDERS[:2])
+        with pytest.raises(VaultError, match="same passphrase"):
+            vault.seal(secret_file, covers[:3], 2, tmp_path / "b", ["same", "same", "other"])
+        assert not (tmp_path / "a").exists() and not (tmp_path / "b").exists()
+
+    def test_cli_round_trip_with_holder_passphrase_files(
+        self, tmp_path, covers, secret_file, capsys
+    ):
+        from shardpix.cli import main
+
+        files = []
+        for i, holder in enumerate(self.HOLDERS):
+            path = tmp_path / f"holder{i}.txt"
+            path.write_text(holder + "\n")
+            files.append(str(path))
+        out = tmp_path / "cli"
+        assert (
+            main(
+                [
+                    "seal",
+                    str(secret_file),
+                    *map(str, covers[:3]),
+                    "-k",
+                    "2",
+                    "-d",
+                    str(out),
+                    "--holder-passphrase-files",
+                    *files,
+                ]
+            )
+            == 0
+        )
+        assert "Per-holder passphrases" in capsys.readouterr().out
+        images = sorted(out.glob("photo*.png"))
+        vault_file = out / "minutes.pdf.spx"
+        restored = tmp_path / "restored.pdf"
+        assert (
+            main(
+                [
+                    "unseal",
+                    str(vault_file),
+                    str(images[2]),
+                    str(images[0]),
+                    "-o",
+                    str(restored),
+                    "--holder-passphrase-files",
+                    files[2],
+                    files[0],
+                ]
+            )
+            == 0
+        )
+        assert restored.read_bytes() == secret_file.read_bytes()
+        capsys.readouterr()
+        # Swapped files: neither image gives a share.
+        assert (
+            main(
+                [
+                    "verify",
+                    str(vault_file),
+                    str(images[0]),
+                    str(images[1]),
+                    "--holder-passphrase-files",
+                    files[1],
+                    files[0],
+                ]
+            )
+            == 1
+        )
+        assert (
+            main(
+                [
+                    "verify",
+                    str(vault_file),
+                    str(images[0]),
+                    "--holder-passphrase-files",
+                    files[0],
+                    files[1],
+                ]
+            )
+            != 0
+        )  # count mismatch
+
+    def test_cli_prompts_once_per_holder(self, tmp_path, covers, secret_file, monkeypatch):
+        from shardpix.cli import main
+
+        answers = iter(["h1 phrase", "h1 phrase", "h2 phrase", "h2 phrase"])
+        prompts = []
+
+        def fake_getpass(prompt):
+            prompts.append(prompt)
+            return next(answers)
+
+        monkeypatch.setattr("getpass.getpass", fake_getpass)
+        assert (
+            main(
+                [
+                    "seal",
+                    str(secret_file),
+                    *map(str, covers[:2]),
+                    "-k",
+                    "2",
+                    "-d",
+                    str(tmp_path / "p"),
+                    "-P",
+                ]
+            )
+            == 0
+        )
+        assert prompts[0] == "Passphrase of the holder of photo0.png: "
+        assert prompts[1].startswith("Repeat passphrase of the holder of photo0.png")

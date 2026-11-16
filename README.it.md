@@ -154,13 +154,17 @@ shardpix analyze sospetta.png
 | `-p, --passphrase` | Chiede una passphrase |
 | `--passphrase-file` | Legge la passphrase dalla prima riga di un file |
 | `--insecure-no-passphrase` | Nasconde senza passphrase (`seal`, `embed`): chiunque può leggere |
+| `-P, --holder-passphrases` | Una passphrase per immagine (`seal`, `unseal`, `verify`): ogni custode legge solo la propria quota |
+| `--holder-passphrase-files` | Lo stesso, un file per immagine nell'ordine delle immagini |
+| `--allow-weak-passphrase` | Accetta una passphrase stimata sotto i 50 bit (`seal`, `embed`) |
 | `-t, --text` / `-i, --input` | Cosa nascondere: un testo tra virgolette o un file (`embed`, `split`) |
 | `-o, --output` | File di output |
 | `--name` | Nome del file vault (`seal`) |
 | `-f, --force` | Sovrascrive gli output esistenti (gli input non vengono mai sovrascritti) |
 
 Le passphrase non sono mai accettate come argomenti della riga di comando:
-finirebbero nella cronologia della shell e nell'elenco dei processi.
+finirebbero nella cronologia della shell e nell'elenco dei processi. `shardpix passphrase`
+ne genera una diceware (6 parole, circa 77 bit).
 
 ### Quando qualcosa va storto
 

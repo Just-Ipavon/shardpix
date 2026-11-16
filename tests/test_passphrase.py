@@ -129,3 +129,33 @@ def test_cli_seal_refuses_a_weak_passphrase(tmp_path, capsys):
     assert "looks weak" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
     assert main([*argv, "--allow-weak-passphrase"]) == 0
+
+
+def test_cli_checks_every_holder_passphrase(tmp_path, capsys):
+    from PIL import Image
+
+    from .conftest import processed_image
+
+    covers, files = [], []
+    for i, phrase in enumerate(["abacus-abdomen-zoom-yodel", "pw"]):
+        path = tmp_path / f"c{i}.png"
+        Image.fromarray(processed_image(64, 80, seed=i)).save(path)
+        covers.append(str(path))
+        holder = tmp_path / f"h{i}.txt"
+        holder.write_text(phrase)
+        files.append(str(holder))
+    secret = tmp_path / "s.txt"
+    secret.write_text("x")
+    argv = [
+        "seal",
+        str(secret),
+        *covers,
+        "-k",
+        "2",
+        "-d",
+        str(tmp_path / "out"),
+        "--holder-passphrase-files",
+        *files,
+    ]
+    assert main(argv) != 0
+    assert "c1.png: the passphrase looks weak" in capsys.readouterr().err
