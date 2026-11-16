@@ -13,7 +13,8 @@ alone for secrets whose loss or disclosure would cause serious harm.
 
 | Version | Supported |
 | --- | --- |
-| 3.x | Yes |
+| 4.x | Yes |
+| 3.x | No: security fixes are in 4.0.0 (see the changelog); upgrade, and re-seal for vault format 2 |
 | 2.x | No: images in formats 4 and 5 can be recognised without the passphrase (SR-07); upgrade and re-seal |
 | 1.x | No |
 | 0.x | No (pre-releases, older image format) |

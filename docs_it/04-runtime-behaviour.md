@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-04 — Vista dinamica |
-| Sistema | shardpix 3.0.0 |
+| Sistema | shardpix 4.0.0 |
 | Stato | Approvato |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/04-runtime-behaviour.md](../docs/04-runtime-behaviour.md); in caso di differenze fa fede l'inglese) |

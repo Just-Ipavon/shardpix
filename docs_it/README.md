@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| Sistema | shardpix 3.0.0 |
+| Sistema | shardpix 4.0.0 |
 | Tipo di documento | Software Design Description (SDD) |
 | Struttura di riferimento | ISO/IEC/IEEE 1016 |
 | Notazione dei diagrammi | UML 2.5, resa in Mermaid |

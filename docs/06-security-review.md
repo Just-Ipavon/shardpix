@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-06 — Internal security review report |
-| System | shardpix 3.0.0 (first review on 1.0.0-1.1.0, second review on 2.0.0, §6.13) |
+| System | shardpix 4.0.0 (first review on 1.0.0-1.1.0, second review on 2.0.0, §6.13) |
 | Status | Complete |
 | Last revised | 2026-10-18 |
 
@@ -455,7 +455,7 @@ decoded.
 Files were created with the umask, typically mode 0644, including recovered
 plaintext and text shares. `images.write_new` now creates every output with
 mode 0600 and `O_NOFOLLOW`, which also refuses a symbolic link when
-overwriting with `--force`. Until the release after 3.0.0, `--force` truncated
+overwriting with `--force`. Until 4.0.0, `--force` truncated
 the existing file in place, which kept its mode and owner: a world-readable
 file, or one another user had created in a shared directory, then held the
 recovered plaintext. Overwriting now writes a new private file and renames it

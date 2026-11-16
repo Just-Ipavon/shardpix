@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-01 — Vista architetturale |
-| Sistema | shardpix 3.0.0 |
+| Sistema | shardpix 4.0.0 |
 | Stato | Approvato |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/01-architecture.md](../docs/01-architecture.md); in caso di differenze fa fede l'inglese) |
@@ -679,7 +679,7 @@ allontana sempre da zero. Il JPEG viene riscritto con le sue tabelle di
 quantizzazione e i suoi marcatori (EXIF, ICC). `media.py` effettua la scelta
 in base ai primi byte del file, quindi né il vault né la CLI hanno
 un'opzione per il metodo. Il formato 7 (dalla 3.0.0) è il formato 5 senza il
-byte di costo pubblico.
+byte di costo pubblico, e il formato 9 (dalla 4.0.0) è il formato 7 con Argon2id.
 
 **Conseguenze.** Le foto del telefono vengono usate così come sono state
 scattate e il file stego è un JPEG della stessa qualità. Una nuova dipendenza

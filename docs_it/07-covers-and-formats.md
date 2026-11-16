@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-07 — Immagini di copertura, formati delle immagini e metodi di inserimento |
-| Sistema | shardpix 3.0.0 |
+| Sistema | shardpix 4.0.0 |
 | Stato | Approvato |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/07-covers-and-formats.md](../docs/07-covers-and-formats.md); in caso di differenze fa fede l'inglese) |

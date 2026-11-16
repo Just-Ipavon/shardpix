@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-01 — Architectural view |
-| System | shardpix 3.0.0 |
+| System | shardpix 4.0.0 |
 | Status | Approved |
 | Last revised | 2026-10-18 |
 
@@ -646,7 +646,8 @@ DC coefficients are never changed, and ±1 always moves away from zero. The
 JPEG is written back with its quantisation tables and markers (EXIF, ICC).
 `media.py` makes the choice from the file's first bytes, so neither the
 vault nor the CLI has a method option. Format 7 (since 3.0.0) is format 5
-without the public cost byte.
+without the public cost byte, and format 9 (since 4.0.0) is format 7 with
+Argon2id.
 
 **Consequences.** Phone photos are used as taken and the stego file is a
 JPEG of the same quality. One new dependency (`jpeglib`, which bundles

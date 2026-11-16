@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-06 — Rapporto della revisione di sicurezza interna |
-| Sistema | shardpix 3.0.0 (prima revisione sulla 1.0.0-1.1.0, seconda revisione sulla 2.0.0, §6.13) |
+| Sistema | shardpix 4.0.0 (prima revisione sulla 1.0.0-1.1.0, seconda revisione sulla 2.0.0, §6.13) |
 | Stato | Completo |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/06-security-review.md](../docs/06-security-review.md); in caso di differenze fa fede l'inglese) |
@@ -484,8 +484,8 @@ sensori più grandi dei telefoni) prima che venga decodificato alcunché.
 I file venivano creati secondo la umask, tipicamente con modalità 0644,
 compresi il testo in chiaro recuperato e le quote in formato testo.
 `images.write_new` ora crea ogni output con modalità 0600 e `O_NOFOLLOW`, che
-rifiuta anche un link simbolico quando si sovrascrive con `--force`. Fino al
-rilascio successivo alla 3.0.0, `--force` troncava il file esistente sul
+rifiuta anche un link simbolico quando si sovrascrive con `--force`. Fino alla
+4.0.0, `--force` troncava il file esistente sul
 posto, che conservava permessi e proprietario: un file leggibile da tutti, o
 creato da un altro utente in una cartella condivisa, riceveva così il testo in
 chiaro recuperato. Ora la sovrascrittura scrive un nuovo file privato e lo
