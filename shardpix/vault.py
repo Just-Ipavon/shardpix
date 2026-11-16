@@ -153,7 +153,8 @@ class VaultHeader:
     def to_bytes(self) -> bytes:
         """The header as stored, which is also the AES-GCM associated data."""
         if self.version == LEGACY_VERSION:
-            assert self.threshold is not None and self.shares is not None
+            if self.threshold is None or self.shares is None:
+                raise VaultError("a format-1 header needs its threshold and share count")
             return (
                 MAGIC
                 + bytes([LEGACY_VERSION])
@@ -338,7 +339,8 @@ def seal(
         except OSError as exc:
             raise VaultError(f"cannot read {source}: {exc.strerror}") from exc
         filename = source.name
-    assert data is not None and filename is not None
+    if data is None or filename is None:  # unreachable: checked above
+        raise VaultError("nothing to seal")
     if len(data) > MAX_FILE_BYTES:  # the file grew after stat()
         raise VaultError("files larger than 2 GiB are not supported")
     name = filename.encode("utf-8")
@@ -429,7 +431,8 @@ def seal(
 def _plaintext(header: VaultHeader, name: bytes, data: bytes) -> bytes:
     if header.version == LEGACY_VERSION:
         return len(name).to_bytes(2, "big") + name + data
-    assert header.threshold is not None and header.shares is not None
+    if header.threshold is None or header.shares is None:
+        raise VaultError("the vault's threshold and share count are needed to seal it")
     inner = (
         bytes([header.threshold, header.shares])
         + len(data).to_bytes(8, "big")
