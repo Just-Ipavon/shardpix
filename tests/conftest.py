@@ -15,16 +15,25 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from shardpix import stego
+from shardpix import passphrase, stego
 from shardpix.images import Carrier, from_pil
 
 PRODUCTION_SCRYPT = (stego.SCRYPT_LOG_N, stego.SCRYPT_R, stego.SCRYPT_P)
+PRODUCTION_ARGON2 = (stego.ARGON2_MEMORY_KIB, stego.ARGON2_ITERATIONS, stego.ARGON2_LANES)
 
 
 @pytest.fixture(autouse=True)
 def fast_scrypt(monkeypatch):
-    """Use a cheap scrypt cost in tests; the real cost is checked in test_stego."""
+    """Use cheap passphrase costs in tests; the real ones are checked in test_stego."""
     monkeypatch.setattr(stego, "SCRYPT_LOG_N", 10)
+    monkeypatch.setattr(stego, "ARGON2_MEMORY_KIB", 64)
+    monkeypatch.setattr(stego, "ARGON2_ITERATIONS", 1)
+
+
+@pytest.fixture(autouse=True)
+def any_passphrase(monkeypatch):
+    """Tests use short passphrases; the strength check has its own tests."""
+    monkeypatch.setattr(passphrase, "MIN_BITS", 0)
 
 
 def natural_image(

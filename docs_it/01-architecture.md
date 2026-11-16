@@ -317,12 +317,12 @@ Tre formati hanno versioni indipendenti; ciascuno porta il proprio magic e la
 propria versione, in modo che una modifica futura possa essere rilevata invece
 che interpretata in modo errato.
 
-### 1.5.1 Carico all'interno di un'immagine (formati stego da 3 a 7)
+### 1.5.1 Carico all'interno di un'immagine (formati stego da 3 a 9)
 
-Tutti i formati contengono gli stessi campi, salvo che i formati 6 e 7 non
+Tutti i formati contengono gli stessi campi, salvo che i formati da 6 a 9 non
 hanno il byte di costo; differiscono nel modo in cui i bit raggiungono i
-campioni. shardpix scrive il formato 6 (pixel) o 7 (JPEG) e legge tutti e
-cinque.
+campioni e in come la passphrase viene rafforzata. shardpix scrive il formato
+8 (pixel) o 9 (JPEG) e li legge tutti e sette.
 
 | Campo | Dimensione | Contenuto |
 | --- | --- | --- |
@@ -365,8 +365,17 @@ formati precedenti, quindi tutti i formati adattivi concordano su w₀ e le
 byte di costo era un'impronta leggibile senza chiave, perché chiunque può
 decodificare il blocco pubblico e vi trovava lo stesso valore in ogni
 immagine; il costo è ora fissato dalla versione (N = 2^17). Domini
-`shardpix/stego/v6` e `shardpix/jpeg/v2`. L'estrattore prova 6, 4, 3 sui
-pixel e 7, 5 sul JPEG. Un output JPEG mantiene i metadati e la disposizione
+`shardpix/stego/v6` e `shardpix/jpeg/v2`.
+
+**Formati 8 e 9 (#34).** I formati 6 e 7 con la passphrase rafforzata da
+Argon2id (RFC 9106: 256 MiB, 3 passate, 4 corsie, output di 32 byte, sale =
+dominio ‖ `|` ‖ sale dell'immagine) invece di scrypt; tutto il resto,
+inserimento compreso, è identico. I parametri sono fissati dalla versione
+come il costo di scrypt dei formati 6 e 7: scritti nell'immagine
+tornerebbero a essere una costante pubblica (SR-07). Domini
+`shardpix/stego/v8` e `shardpix/jpeg/v3`. L'estrattore prova 8, 6, 4, 3 sui
+pixel e 9, 7, 5 sul JPEG, quindi una passphrase sbagliata costa una
+derivazione Argon2id e una scrypt (circa 1 s). Un output JPEG mantiene i metadati e la disposizione
 dei marker dell'immagine di copertura (06 §6.13, SR-09).
 
 **Formato 3 (matching, replacement).** Un bit per campione, sale e costo sul
@@ -395,7 +404,29 @@ pubblico e quello con chiave non condividono mai un campione.
 La forma stampabile è `spx1-` seguito da base32 minuscolo senza padding. Una
 quota di una chiave di vault da 32 byte occupa 109 byte.
 
-### 1.5.3 File vault (formato vault v1)
+### 1.5.3 File vault (formati vault 2 e 1)
+
+Formato 2, scritto da #34:
+
+| Campo | Dimensione | Contenuto |
+| --- | --- | --- |
+| magic | 4 B | `SPXV` |
+| version | 1 B | `2` |
+| group id | 16 B | Lo stesso delle quote |
+| nonce | 12 B | Nonce AES-256-GCM |
+| ciphertext | * | AES-256-GCM(chiave, nonce, testo in chiaro, AAD = i 33 byte precedenti) |
+
+`plaintext = k (1 B) ‖ n (1 B) ‖ lunghezza del contenuto (8 B) ‖ lunghezza del
+nome (2 B) ‖ nome originale del file (UTF-8) ‖ contenuto ‖ padding a zero`.
+Soglia, numero di quote e nome del file sono nel testo cifrato. Il testo in
+chiaro è portato alla lunghezza Padmé [Nikitin et al., PETS 2019] di
+max(lunghezza, 4 KiB): i bit bassi della lunghezza vengono arrotondati per
+eccesso, così ne restano solo O(log log n) bit, con al massimo il 12 % in più
+(4 KiB per i file piccoli); `unseal` verifica che il padding sia di zeri.
+Finché un vault non viene aperto `k` e `n` sono ignoti; un `unseal` fallito
+indica la soglia che portano le quote.
+
+Formato 1, ancora letto:
 
 | Campo | Dimensione | Contenuto |
 | --- | --- | --- |
@@ -408,8 +439,10 @@ quota di una chiave di vault da 32 byte occupa 109 byte.
 | ciphertext | * | AES-256-GCM(chiave, nonce, testo in chiaro, AAD = i 35 byte precedenti) |
 
 `plaintext = name length (2 B) ‖ original file name (UTF-8) ‖ file contents`.
-Il nome del file è all'interno del testo cifrato, quindi il vault non lo
-rivela.
+
+Il byte di versione fa parte dei dati associati di entrambi, quindi un vault
+in formato 2 riscritto come formato 1 (con qualunque `k`, `n`) o viceversa
+non supera l'autenticazione (`TestVaultFormats`).
 
 ## 1.6 Decisioni architetturali
 

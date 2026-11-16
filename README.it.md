@@ -202,8 +202,8 @@ memorizzato:
 
 | Immagine | Come viene nascosta la quota | Risultato |
 | --- | --- | --- |
-| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 7): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker (un JPEG progressivo viene riscritto come baseline, con un avviso) | `.jpg` |
-| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 6) | `.png` |
+| JPEG (foto del telefono, fotocamere) | Nei coefficienti del JPEG stesso (formato 9): mai decodificato né ricompresso, stesse tabelle di qualità, EXIF e struttura dei marker (un JPEG progressivo viene riscritto come baseline, con un avviso) | `.jpg` |
+| PNG, TIFF, BMP, esportazione da RAW | Nei pixel (formato 8) | `.png` |
 | HEIC dell'iPhone | Con `pip install "shardpix[heic]"`: decodificata in pixel; meglio impostare la fotocamera su *Più compatibile* (JPEG) | PNG |
 
 Scegli foto con texture, scattate da te e mai condivise, e invia i risultati
@@ -249,7 +249,7 @@ confronta shardpix con questi lavori.) Le misure:
   livello del caso, circa 50%, da 1 a 50 immagini.
 - **Foto vere, non foto di laboratorio.** Le foto del telefono sono JPEG,
   quindi shardpix nasconde la quota direttamente nei coefficienti del JPEG
-  (formato 7) e restituisce un JPEG con le stesse impostazioni di qualità e
+  (formato 9) e restituisce un JPEG con le stesse impostazioni di qualità e
   gli stessi metadati, senza conversioni che tradirebbero l'immagine.
   Misurato con DCTR e GFR su BOSSbase e su ALASKA2, foto vere di
   fotocamere: a qualità 90-95, come quelle del telefono, un'immagine è al

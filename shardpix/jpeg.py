@@ -1,4 +1,4 @@
-"""Adaptive steganography inside JPEG files (stego format 7; format 5 is still read).
+"""Adaptive steganography inside JPEG files (stego format 9; formats 7 and 5 are still read).
 
 Phone cameras save JPEG. Hiding data in the decoded pixels of a JPEG and
 saving PNG is detectable at any rate, because the pixels of a decoded JPEG
@@ -21,7 +21,8 @@ public or keyed candidate coefficients, and the coder picks the changes
 with the lowest UERD cost (:func:`shardpix.costs.uerd`). Keys come from
 their own domain, so a JPEG payload never shares a key with a PNG one.
 Format 5 also wrote the scrypt cost in a public byte, a constant anyone
-could decode without a key (docs/06 SR-07); format 7 writes only the salt.
+could decode without a key (docs/06 SR-07); format 7 writes only the salt,
+and format 9 is format 7 with the passphrase hardened by Argon2id.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from .progress import Progress, span
 
 VERSION = stego.JPEG_VERSION
 LEGACY_VERSION = stego.JPEG_LEGACY_VERSION
+SCRYPT_VERSION = stego.JPEG_SCRYPT_VERSION
 MAX_COEFFICIENT = 1023
 """Largest magnitude of a baseline 8-bit JPEG coefficient."""
 
@@ -249,8 +251,8 @@ def embed_coefficients(
     without writing files, and with ``version=5`` so that the published
     measurements stay reproducible.
     """
-    if version not in (VERSION, LEGACY_VERSION):
-        raise ValueError(f"JPEG covers take format {VERSION} or {LEGACY_VERSION}")
+    if version not in (VERSION, SCRYPT_VERSION, LEGACY_VERSION):
+        raise ValueError(f"JPEG covers take format {VERSION}, {SCRYPT_VERSION} or {LEGACY_VERSION}")
     eligible = eligible_mask(coefficients)
     n_eligible = int(np.count_nonzero(eligible))
     room = stego.max_frame_bytes(n_eligible) - stego.FRAME_OVERHEAD
@@ -506,7 +508,7 @@ def extract(cover: JpegCover, passphrase: str | None = None) -> bytes:
     if largest_frame < stego.FRAME_OVERHEAD:
         raise _not_found()
 
-    for version in (VERSION, LEGACY_VERSION):
+    for version in (VERSION, SCRYPT_VERSION, LEGACY_VERSION):
         try:
             return _extract(coefficients, eligible, n_eligible, largest_frame, passphrase, version)
         except PayloadNotFoundError:

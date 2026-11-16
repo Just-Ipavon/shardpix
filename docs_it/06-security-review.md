@@ -436,7 +436,7 @@ suoi problemi rilevati, e che cosa si è fatto:
 | SR-14 | Media | Impronta della ricodifica PNG | Accettato, documentato |
 | SR-15 | Bassa | Asimmetrie dell'inserimento | Accettato, misurato |
 | SR-16 | Bassa | Dimensione del file controllata prima della lettura, non dopo | Corretto |
-| SR-17 | Bassa | Metadati del vault in chiaro; GF(256) non a tempo costante; robustezza della passphrase non verificata; EXIF mantenuti | Accettato (05 §5.6) |
+| SR-17 | Bassa | Metadati del vault in chiaro; GF(256) non a tempo costante; robustezza della passphrase non verificata; EXIF mantenuti | In parte corretto (#34: k, n cifrati e dimensione con padding nel formato vault 2, Argon2id, controllo della robustezza); il resto accettato (05 §5.6) |
 
 ### SR-09 — Struttura JPEG (Alta, corretto)
 
@@ -526,11 +526,15 @@ invaliderebbe quelle misure; la regola resta, e le misure valgono per essa.
 file; un file che cresceva nel frattempo sollevava un `OverflowError` non
 gestito. La lunghezza ora viene controllata di nuovo dopo la lettura.
 
-### SR-17 — Accettati come documentato
+### SR-17 — In parte corretto, il resto accettato
 
-Il magic del `.spx` e i suoi *k*, *n* e group id sono leggibili e il testo
-cifrato non ha padding; GF(256) usa tabelle di consultazione; la robustezza
-della passphrase non viene verificata; EXIF e miniature vengono mantenuti,
+Corretto in #34: il formato vault 2 cifra *k* e *n* e aggiunge padding al
+testo cifrato (Padmé, almeno 4 KiB), i formati immagine 8 e 9 rafforzano la
+passphrase con Argon2id, e `seal`/`embed` rifiutano una passphrase stimata
+sotto i 50 bit (`shardpix passphrase` ne genera di diceware). Ancora
+accettati: il magic del `.spx` e il group id sono leggibili, quindi un file
+vault è riconoscibile; GF(256) usa tabelle di consultazione; EXIF e miniature
+vengono mantenuti,
 quindi pubblicare l'originale accanto all'immagine stego le collega (la CLI
 dice di non pubblicare mai le immagini di copertura). Sono tutti elencati in
 05 §5.6.

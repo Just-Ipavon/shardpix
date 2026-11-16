@@ -411,7 +411,7 @@ the hiding layer flawed. Its findings, and what was done:
 | SR-14 | Medium | PNG re-encoding fingerprint | Accepted, documented |
 | SR-15 | Low | Asymmetries of the embedding | Accepted, measured |
 | SR-16 | Low | File size checked before reading, not after | Fixed |
-| SR-17 | Low | Vault metadata in clear; GF(256) not constant time; passphrase strength not checked; EXIF kept | Accepted (05 §5.6) |
+| SR-17 | Low | Vault metadata in clear; GF(256) not constant time; passphrase strength not checked; EXIF kept | Partly fixed (#34: k, n encrypted and size padded in vault format 2, Argon2id, strength check); rest accepted (05 §5.6) |
 
 ### SR-09 — JPEG structure (High, fixed)
 
@@ -495,11 +495,14 @@ measurements; it stays, and the measurements stand for it.
 growing in between raised an unhandled `OverflowError`. The length is now
 checked again after reading.
 
-### SR-17 — Accepted as documented
+### SR-17 — Partly fixed, the rest accepted
 
-The `.spx` magic and its *k*, *n* and group id are readable and the
-ciphertext is not padded; GF(256) uses lookup tables; passphrase strength
-is not checked; EXIF and thumbnails are kept, so publishing the original
+Fixed in #34: vault format 2 encrypts *k* and *n* and pads the ciphertext
+(Padmé, at least 4 KiB), image formats 8 and 9 harden the passphrase with
+Argon2id, and `seal`/`embed` refuse a passphrase estimated below 50 bits
+(`shardpix passphrase` generates diceware ones). Still accepted: the `.spx`
+magic and group id are readable, so a vault file is recognisable; GF(256)
+uses lookup tables; EXIF and thumbnails are kept, so publishing the original
 next to the stego image links them (the CLI says never to publish the
 covers). All are listed in 05 §5.6.
 

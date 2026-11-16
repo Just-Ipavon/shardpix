@@ -20,7 +20,7 @@ from PIL import Image
 from shardpix import shamir, stc, stego, vault
 from shardpix.images import from_pil, load_image
 
-from .conftest import PRODUCTION_SCRYPT
+from .conftest import PRODUCTION_ARGON2, PRODUCTION_SCRYPT
 
 
 def deterministic_random(seed: bytes = b"shardpix-test"):
@@ -112,12 +112,47 @@ def test_stego_pixels_format_4(production_scrypt):
 def test_stego_pixels_format_6(production_scrypt):
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"known answer", "pw", FORMAT_4, random_bytes=deterministic_random()
+        carrier,
+        b"known answer",
+        "pw",
+        FORMAT_4,
+        random_bytes=deterministic_random(),
+        version=stego.SCRYPT_ADAPTIVE_VERSION,
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "8ba14c6f0ba8894edd5a0aab0dfe071c39a643cdbad62d0cfedac5b6e174abe7"
     )
     assert stego.extract(stego_carrier, "pw") == b"known answer"
+
+
+@pytest.fixture
+def production_argon2(monkeypatch):
+    for name, value in zip(
+        ("ARGON2_MEMORY_KIB", "ARGON2_ITERATIONS", "ARGON2_LANES"), PRODUCTION_ARGON2, strict=True
+    ):
+        monkeypatch.setattr(stego, name, value)
+
+
+def test_stego_pixels_format_8(production_argon2):
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"known answer", "pw", FORMAT_4, random_bytes=deterministic_random()
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "9d9c5c9ec80fee6fd22e6bbc3114914fa0fa09845130e9cebb00e81425317e25"
+    )
+    assert stego.extract(stego_carrier, "pw") == b"known answer"
+
+
+def test_stego_pixels_without_passphrase_format_8():
+    carrier = from_pil(Image.fromarray(arithmetic_cover()))
+    stego_carrier, _ = stego.embed(
+        carrier, b"public payload", None, FORMAT_4, random_bytes=deterministic_random(b"public")
+    )
+    assert sha256(stego_carrier.pixels.tobytes()) == (
+        "b2e8a8cc1e8bc6f0708787cba07773c9e84cacbb6e645bc66e2bc1abba248a6d"
+    )
+    assert stego.extract(stego_carrier) == b"public payload"
 
 
 def test_vault_file_and_image(tmp_path, production_scrypt):
@@ -136,6 +171,7 @@ def test_vault_file_and_image(tmp_path, production_scrypt):
         "pw",
         method=FORMAT_3,
         random_bytes=deterministic_random(b"vault"),
+        vault_version=vault.LEGACY_VERSION,
     )
     assert sha256(result.vault_path.read_bytes()) == (
         "d210c0702a3f981197e26dc7873bc312e84c46ad7be66ac4cd6a8aea2ecea969"
@@ -145,6 +181,32 @@ def test_vault_file_and_image(tmp_path, production_scrypt):
     )
     opened = vault.unseal(result.vault_path, [i.output for i in result.images[1:]], "pw")
     assert opened.data == b"pinned vault content"
+
+
+def test_vault_file_format_2(tmp_path):
+    covers = []
+    for i in range(3):
+        path = tmp_path / f"c{i}.png"
+        Image.fromarray(np.roll(arithmetic_cover(), i, axis=1)).save(path)
+        covers.append(path)
+    source = tmp_path / "secret.txt"
+    source.write_bytes(b"pinned vault content")
+    result = vault.seal(
+        source,
+        covers,
+        2,
+        tmp_path / "out",
+        None,
+        method=FORMAT_3,
+        random_bytes=deterministic_random(b"vault2"),
+        check=False,
+    )
+    assert sha256(result.vault_path.read_bytes()) == (
+        "0f4d24aa30f4cd098affd82cc340053febdb5d833bce1331e33a189e52562c0b"
+    )
+    opened = vault.unseal(result.vault_path, [i.output for i in result.images[:2]])
+    assert opened.data == b"pinned vault content"
+    assert (opened.header.threshold, opened.header.shares) == (2, 3)
 
 
 def test_stego_pixels_without_passphrase():
@@ -177,7 +239,12 @@ def test_stego_pixels_without_passphrase_format_4():
 def test_stego_pixels_without_passphrase_format_6():
     carrier = from_pil(Image.fromarray(arithmetic_cover()))
     stego_carrier, _ = stego.embed(
-        carrier, b"public payload", None, FORMAT_4, random_bytes=deterministic_random(b"public")
+        carrier,
+        b"public payload",
+        None,
+        FORMAT_4,
+        random_bytes=deterministic_random(b"public"),
+        version=stego.SCRYPT_ADAPTIVE_VERSION,
     )
     assert sha256(stego_carrier.pixels.tobytes()) == (
         "ed935d560d928e1136b2402e5e4e17934af6753d0f784b400501a5465444af03"

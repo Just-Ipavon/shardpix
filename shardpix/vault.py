@@ -11,17 +11,29 @@ whatever the file size, which keeps the embedding rate - and so the
 statistical footprint in each image - tiny. The vault file itself is plain
 ciphertext and can be stored anywhere.
 
-Vault file layout (big-endian)::
+Vault file layout, format 2 (big-endian), the one written::
 
     magic        4  b"SPXV"
-    version      1  1
+    version      1  2
     group id    16  same identifier as the shares
-    threshold    1  k
-    shares       1  n
     nonce       12  AES-256-GCM nonce
     ciphertext   *  AES-256-GCM(K, nonce, plaintext, aad = every field above)
 
-    plaintext = name length (2 bytes) || original file name (UTF-8) || file contents
+    plaintext = threshold k (1) || shares n (1) || content length (8)
+                || name length (2) || original file name (UTF-8) || file contents
+                || zero padding
+
+The threshold and the share count are inside the ciphertext, so the vault
+file does not tell how many images open it. The plaintext is padded to the
+Padmé length of at least 4 KiB (:func:`padded_length`): the file size then
+reveals O(log log n) bits of the content length instead of all of it, at a
+cost of at most 12 % (and 4 KiB for small files).
+
+Format 1, still read, kept *k* and *n* in clear after the group id and did
+not pad: ``magic || 1 || group id || k || n || nonce || ciphertext`` with
+``plaintext = name length (2) || name || contents``. The version byte is
+part of the associated data, so a format-2 vault rewritten as format 1 (or
+the reverse) fails authentication instead of being read the other way.
 """
 
 from __future__ import annotations
@@ -48,13 +60,22 @@ from .images import write_new
 from .progress import Progress, span
 
 MAGIC = b"SPXV"
-VERSION = 1
+VERSION = 2
+"""Vault format written by :func:`seal`."""
+LEGACY_VERSION = 1
 KEY_BYTES = 32
 NONCE_BYTES = 12
-HEADER_BYTES = len(MAGIC) + 1 + shamir.GROUP_ID_BYTES + 1 + 1 + NONCE_BYTES
+HEADER_BYTES_V1 = len(MAGIC) + 1 + shamir.GROUP_ID_BYTES + 1 + 1 + NONCE_BYTES
+HEADER_BYTES_V2 = len(MAGIC) + 1 + shamir.GROUP_ID_BYTES + NONCE_BYTES
+HEADER_BYTES = HEADER_BYTES_V1
+"""Format-1 header size (kept for callers of the old constant)."""
 MAX_NAME_BYTES = 255
-MAX_FILE_BYTES = 2**31 - 1 - 2 - MAX_NAME_BYTES
+GCM_LIMIT = 2**31 - 1
 """AES-GCM as exposed by ``cryptography`` takes at most 2 GiB per call."""
+INNER_BYTES = 1 + 1 + 8 + 2
+"""Format-2 plaintext fields before the name: k, n, content length, name length."""
+MAX_FILE_BYTES = GCM_LIMIT - INNER_BYTES - MAX_NAME_BYTES
+MIN_PADDED_BYTES = 4096
 VAULT_SUFFIX = ".spx"
 FALLBACK_NAME = "unsealed.bin"
 _WINDOWS_RESERVED = {
@@ -79,39 +100,71 @@ PAYLOAD_FRAME_BYTES = stego.PUBLIC_BYTES + SHARE_BYTES + stego.FRAME_OVERHEAD
 RandomBytes = Callable[[int], bytes]
 
 
+def padded_length(length: int) -> int:
+    """Padmé (Nikitin et al., PETS 2019) of ``max(length, MIN_PADDED_BYTES)``,
+    capped at what one AES-GCM call takes: keep the top bits of the length
+    and round the low ones up, leaking O(log log n) bits at most 12 % cost."""
+    length = max(length, MIN_PADDED_BYTES)
+    exponent = length.bit_length() - 1
+    mantissa_bits = exponent.bit_length()
+    mask = (1 << (exponent - mantissa_bits)) - 1
+    return min((length + mask) & ~mask, GCM_LIMIT)
+
+
 @dataclass(frozen=True)
 class VaultHeader:
     group_id: bytes
-    threshold: int
-    shares: int
+    threshold: int | None
+    """k; ``None`` in a format-2 vault until it is opened."""
+    shares: int | None
     nonce: bytes
+    version: int = VERSION
 
     def to_bytes(self) -> bytes:
-        return (
-            MAGIC
-            + bytes([VERSION])
-            + self.group_id
-            + bytes([self.threshold, self.shares])
-            + self.nonce
-        )
+        """The header as stored, which is also the AES-GCM associated data."""
+        if self.version == LEGACY_VERSION:
+            return (
+                MAGIC
+                + bytes([LEGACY_VERSION])
+                + self.group_id
+                + bytes([self.threshold, self.shares])
+                + self.nonce
+            )
+        return MAGIC + bytes([VERSION]) + self.group_id + self.nonce
+
+    @property
+    def size(self) -> int:
+        return HEADER_BYTES_V1 if self.version == LEGACY_VERSION else HEADER_BYTES_V2
 
     @classmethod
     def from_bytes(cls, data: bytes) -> VaultHeader:
-        if len(data) < HEADER_BYTES or data[: len(MAGIC)] != MAGIC:
+        if len(data) < len(MAGIC) + 1 or data[: len(MAGIC)] != MAGIC:
             raise VaultError("not a shardpix vault file")
-        if data[len(MAGIC)] != VERSION:
-            raise VaultError(f"unsupported vault version {data[len(MAGIC)]}")
+        version = data[len(MAGIC)]
+        if version not in (VERSION, LEGACY_VERSION):
+            raise VaultError(f"unsupported vault version {version}")
+        if len(data) < (HEADER_BYTES_V1 if version == LEGACY_VERSION else HEADER_BYTES_V2):
+            raise VaultError("not a shardpix vault file")
         offset = len(MAGIC) + 1
         group_id = data[offset : offset + shamir.GROUP_ID_BYTES]
         offset += shamir.GROUP_ID_BYTES
-        threshold, shares = data[offset], data[offset + 1]
-        offset += 2
+        threshold = shares = None
+        if version == LEGACY_VERSION:
+            threshold, shares = data[offset], data[offset + 1]
+            offset += 2
         return cls(
             group_id=group_id,
             threshold=threshold,
             shares=shares,
             nonce=data[offset : offset + NONCE_BYTES],
+            version=version,
         )
+
+    def described(self) -> str:
+        """ "k of n" when known."""
+        if self.threshold is None:
+            return "unknown until opened"
+        return f"{self.threshold} of {self.shares}"
 
     @property
     def group(self) -> str:
@@ -124,7 +177,7 @@ class SealedImage:
     output: Path
     share_index: int
     report: stego.EmbedReport
-    format: str = "PNG (format 6)"
+    format: str = "PNG (format 8)"
     jpeg_quality: int | None = None
     """Estimated quality of a JPEG cover; ``None`` for pixel covers."""
 
@@ -203,6 +256,7 @@ def seal(
     random_bytes: RandomBytes = os.urandom,
     progress: Progress | None = None,
     check: bool = True,
+    vault_version: int = VERSION,
 ) -> SealResult:
     """Encrypt ``source`` and hide one share of its key in each cover image.
 
@@ -211,7 +265,11 @@ def seal(
     it was. With ``check`` (the default) every image is read back from disk
     and must give its share, and the vault file must decrypt to the source,
     before success is reported; this doubles the key derivations.
+    ``vault_version=1`` writes the old, unpadded format with *k* and *n* in
+    clear (tests and reproducible benchmarks only).
     """
+    if vault_version not in (VERSION, LEGACY_VERSION):
+        raise VaultError(f"cannot write vault format {vault_version}")
     source, out_dir = Path(source), Path(out_dir)
     covers = [Path(c) for c in covers]
     count = len(covers)
@@ -270,8 +328,9 @@ def seal(
         threshold=threshold,
         shares=count,
         nonce=random_bytes(NONCE_BYTES),
+        version=vault_version,
     )
-    plaintext = len(name).to_bytes(2, "big") + name + data
+    plaintext = _plaintext(header, name, data)
     ciphertext = AESGCM(key).encrypt(header.nonce, plaintext, header.to_bytes())
     shares = shamir.split(
         key, threshold, count, group_id=header.group_id, random_bytes=random_bytes
@@ -318,6 +377,37 @@ def seal(
     return SealResult(vault_path, header, len(data), tuple(sealed))
 
 
+def _plaintext(header: VaultHeader, name: bytes, data: bytes) -> bytes:
+    if header.version == LEGACY_VERSION:
+        return len(name).to_bytes(2, "big") + name + data
+    inner = (
+        bytes([header.threshold, header.shares])
+        + len(data).to_bytes(8, "big")
+        + len(name).to_bytes(2, "big")
+        + name
+        + data
+    )
+    return inner + bytes(padded_length(len(inner)) - len(inner))
+
+
+def _parse_plaintext(header: VaultHeader, plaintext: bytes) -> tuple[VaultHeader, bytes, bytes]:
+    """(header with k and n, name, contents) from an authenticated plaintext."""
+    if header.version == LEGACY_VERSION:
+        name_length = int.from_bytes(plaintext[:2], "big")
+        return header, plaintext[2 : 2 + name_length], plaintext[2 + name_length :]
+    if len(plaintext) < INNER_BYTES:
+        raise VaultError("the vault's contents are malformed")
+    threshold, shares = plaintext[0], plaintext[1]
+    content_length = int.from_bytes(plaintext[2:10], "big")
+    name_length = int.from_bytes(plaintext[10:12], "big")
+    end = INNER_BYTES + name_length + content_length
+    if end > len(plaintext) or any(plaintext[end:]) or not 2 <= threshold <= shares:
+        raise VaultError("the vault's contents are malformed")
+    name = plaintext[INNER_BYTES : INNER_BYTES + name_length]
+    opened = VaultHeader(header.group_id, threshold, shares, header.nonce, header.version)
+    return opened, name, plaintext[INNER_BYTES + name_length : end]
+
+
 def _check_share_written(path: Path, share: shamir.Share, passphrase: str | None) -> None:
     """Read ``path`` back from disk; it must give exactly ``share``."""
     try:
@@ -340,7 +430,7 @@ def read_vault(path: Path) -> tuple[VaultHeader, bytes]:
     except OSError as exc:
         raise VaultError(f"cannot read {path}: {exc.strerror}") from exc
     header = VaultHeader.from_bytes(data)
-    return header, data[HEADER_BYTES:]
+    return header, data[header.size :]
 
 
 def is_bare_name(name: str) -> bool:
@@ -393,11 +483,10 @@ def unseal(
 ) -> UnsealResult:
     """Recover the file sealed in ``vault_path`` from (some of) its images."""
     header, plaintext, outcomes = _open(vault_path, images, passphrase, progress)
-    name_length = int.from_bytes(plaintext[:2], "big")
-    name = plaintext[2 : 2 + name_length].decode("utf-8", errors="replace")
+    header, name, data = _parse_plaintext(header, plaintext)
     return UnsealResult(
-        filename=safe_filename(name),
-        data=plaintext[2 + name_length :],
+        filename=safe_filename(name.decode("utf-8", errors="replace")),
+        data=data,
         header=header,
         outcomes=outcomes,
     )
@@ -427,9 +516,10 @@ def verify(
     """
     header, _ciphertext = read_vault(vault_path)
     try:
-        _, _plaintext, outcomes = _open(vault_path, images, passphrase, progress)
+        header, plaintext, outcomes = _open(vault_path, images, passphrase, progress)
     except VaultError as exc:
         return VerifyResult(header, False, exc.outcomes, str(exc))
+    header, _name, _data = _parse_plaintext(header, plaintext)
     return VerifyResult(header, True, outcomes)
 
 
@@ -492,8 +582,13 @@ def _open(
                     path, Status.UNVERIFIED, "readable share, not enough to verify", share.index
                 ),
             )
+        needed = (
+            header.described()
+            if header.threshold is not None
+            else (f"{shares[0].threshold} of the images")
+        )
         raise VaultError(
-            f"cannot open the vault: {exc} (threshold is {header.threshold} of {header.shares})",
+            f"cannot open the vault: {exc} (threshold is {needed})",
             ordered(),
         ) from exc
 

@@ -66,12 +66,12 @@ documentato per capire come sono costruiti strumenti di questo tipo.
 | Id | Proprietà | Contro | Argomentazione | Verificata da |
 | --- | --- | --- | --- | --- |
 | SP-01 | Il file è riservato senza k quote | ADV-1, ADV-2 | AES-256-GCM con una chiave casuale uniforme che esiste solo sotto forma di quote di Shamir (e, per breve tempo, in memoria). | `test_vault.py::TestFailures` |
-| SP-02 | Il file e i suoi metadati sono autentici | ADV-4 | Tag GCM sul testo cifrato; l'intestazione (id del gruppo, k, n, nonce) costituisce i dati associati; il nome del file è all'interno del testo cifrato. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
+| SP-02 | Il file e i suoi metadati sono autentici | ADV-4 | Tag GCM sul testo cifrato; l'intestazione (versione, id del gruppo, nonce; anche k e n nel formato 1) costituisce i dati associati; il nome del file, k e n (formato 2) sono all'interno del testo cifrato. | `test_tampered_vault_file`, `test_tampered_header_is_detected` |
 | SP-03 | k − 1 quote non rivelano nulla sulla chiave | ADV-1 | Ogni byte di chiave ‖ chiave MAC ha il proprio polinomio casuale di grado k − 1, quindi qualsiasi insieme di k − 1 valori è uniforme qualunque sia la chiave. I MAC dipendono solo dalla chiave MAC, che è condivisa allo stesso modo, quindi non aggiungono nulla — nemmeno per un segreto a bassa entropia (ADR-08). Trapela solo la lunghezza del segreto. | `TestSecrecy` (esaustivo su tutti i coefficienti), `test_mac_is_not_keyed_with_the_secret` |
 | SP-04 | Le quote danneggiate o alterate vengono rilevate e identificate | ADV-4 | Il checksum intercetta i danni accidentali senza bisogno di una chiave; una volta che k quote valide ricostruiscono la chiave MAC, ogni altra quota viene verificata e segnalata. Un secondo cluster (un insieme fabbricato) fa fallire `combine`, qualunque sia la sua dimensione. | `TestAuthentication`, `TestRobustSearch` |
 | SP-05 | Un'immagine non rivela né il suo carico né quali campioni lo contengono | ADV-2, ADV-3 | Carico sigillato con AES-256-GCM; posizioni ottenute da un percorso ChaCha20 con chiave derivata da scrypt(passphrase, sale per immagine); lunghezza mascherata. Senza la passphrase i bit scritti sono indistinguibili da bit casuali (formati 6 e 7; nei formati 3-5 il byte di costo pubblico è una costante, 06 SR-07). | `TestAuthentication`, `TestKeyDerivation` |
 | SP-06 | Un insieme di quote fabbricato non viene mai accettato come chiave del vault | ADV-4 | I cluster sono disgiunti; ogni chiave candidata viene verificata con il tag GCM del vault, che un falsificatore non può soddisfare senza la chiave vera. Fuori da un vault (`split`/`combine`) non esiste questo controllo, quindi `combine` rifiuta ogni volta che le quote autenticano più di un segreto. | `TestForgedSets`, `test_fabricated_set_larger_than_the_genuine_one_is_refused` |
-| SP-07 | Indovinare la passphrase è costoso e va fatto immagine per immagine | ADV-2 | scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0,4 s per tentativo, la prima raccomandazione di OWASP), con sale per immagine, quindi non si può precalcolare alcuna tabella per una dimensione d'immagine e nessun tentativo si riutilizza su un'altra immagine. | `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image` |
+| SP-07 | Indovinare la passphrase è costoso e va fatto immagine per immagine | ADV-2 | Argon2id con 256 MiB, 3 passate, 4 corsie (RFC 9106; ≈ 0,5 s per tentativo) nei formati 8 e 9, scrypt N = 2^17, r = 8 (≈ 128 MiB, ≈ 0,4 s) nei formati 3-7, con sale per immagine, quindi non si può precalcolare alcuna tabella per una dimensione d'immagine e nessun tentativo si riutilizza su un'altra immagine. Le passphrase deboli vengono rifiutate alla sigillatura (`shardpix.passphrase`, ≥ 50 bit stimati). | `test_production_argon2_cost`, `test_production_scrypt_cost`, `test_same_passphrase_scatters_differently_in_every_image`, `test_passphrase.py` |
 | SP-08 | Un unico messaggio di errore per ogni fallimento dell'estrazione | ADV-3, ADV-4 | Passphrase errata, immagine pulita e immagine modificata sollevano tutte lo stesso `PayloadNotFoundError`, quindi lo strumento non fa da oracolo per "c'è qualcosa qui?". | `TestAuthentication` |
 | SP-09 | Né la steganalisi classica né quella addestrata (SPAM, SRM-lite) rilevano una quota del vault nel formato 6 | ADV-3, ADV-5 | Inserimento adattivo ±1 con codici a traliccio di sindrome (STC) [31] e costi HiLL [30] (ADR-12), nessuno spostamento forzato a 0/255 (ADR-06) e un carico fisso di 1.256 bit (1.264 nei formati 3-5). Misurato sul formato 4, che differisce solo per il byte di costo pubblico (le immagini in formato 4 sono di per sé riconoscibili senza chiave, 06 SR-07): al livello del caso su BOSSbase 512x512 (§5.5.6), anche combinando fino a cinquanta immagini della stessa cassaforte (§5.5.7); il formato 3 era debolmente rilevabile, e fortemente una volta aggregato (§5.5.5, §5.5.7). | Benchmark (§5.5.1–5.5.7) |
 | SP-10 | Il ripristino di un file non può uscire dalla directory di output né abusare del terminale | ADV-4 | `safe_filename` conserva il nome base, rimuove i caratteri di controllo e di formato, i punti e trattini iniziali e i separatori di flusso NTFS, e sostituisce i nomi riservati come li riduce Win32; `--force` non sostituisce mai un file con un nome ripristinato. | `TestRestoredNames`, `TestSafeFilename` |
@@ -95,7 +95,9 @@ file del vault in sé passi inosservato — è un testo cifrato riconoscibile.
 | --- | --- | --- | --- |
 | Cifratura del file | AES-256-GCM | Chiave casuale a 256 bit, nonce casuale a 96 bit, AAD di 35 byte | `cryptography` |
 | Cifratura del carico stego | AES-256-GCM | Chiave derivata a 256 bit, nonce casuale a 96 bit, AAD = dominio ‖ versione ‖ lunghezza | `cryptography` |
-| Rafforzamento della passphrase | scrypt [9] | N = 2^17, r = 8, p = 1, sale a 128 bit per immagine; N fissato dalla versione del formato (6, 7); i formati 3-5 lo memorizzano nell'immagine, in lettura si accetta da 2^10 a 2^18 | `hashlib` |
+| Rafforzamento della passphrase | Argon2id (RFC 9106) | m = 256 MiB, t = 3, p = 4, sale a 128 bit per immagine; fissati dalla versione del formato (8, 9) | `cryptography` |
+| Padding del vault | Padmé | max(lunghezza, 4 KiB) arrotondato a O(log log n) bit significativi, ≤ 12 % in più (formato vault 2) | questo progetto |
+| Rafforzamento della passphrase, formati 3-7 | scrypt [9] | N = 2^17, r = 8, p = 1, sale a 128 bit per immagine; N fissato dalla versione del formato (6, 7); i formati 3-5 lo memorizzano nell'immagine, in lettura si accetta da 2^10 a 2^18 | `hashlib` |
 | Separazione delle chiavi | HKDF-SHA256 | Etichette `order`, `aead`, `length` | `cryptography` |
 | Posizioni dei campioni | Keystream ChaCha20 | Chiave a 256 bit, riduzione modulare con campionamento per rifiuto | `cryptography` |
 | Autenticazione delle quote | HMAC-SHA256 | Chiave MAC condivisa a 256 bit, tag troncato a 128 bit | `hmac` |
@@ -759,20 +761,25 @@ con tavolozza diventa RGB a 24 bit, e le immagini di copertura TIFF e BMP
 diventano PNG (06 SR-14). Come immagini di copertura PNG usare fotografie,
 non grafica a tavolozza.
 
-**Il file del vault non è nascosto.** Il suo magic number, l'id del gruppo, la
-soglia e il numero di quote sono in chiaro (autenticati, non cifrati).
-Chiunque lo trovi sa che è un vault shardpix e quante immagini servono per
-aprirlo — ma non il nome del file, il suo contenuto o quali immagini gli
-appartengano. Il testo cifrato non ha padding, quindi la dimensione del file
-del vault rivela la lunghezza del testo in chiaro più quella del suo nome.
+**Il file del vault non è nascosto.** Il suo magic number e l'id del gruppo
+sono in chiaro (autenticati, non cifrati): chiunque lo trovi sa che è un vault
+shardpix. Dal formato vault 2 non dice più quante immagini lo aprono (k e n
+sono cifrati), e la sua dimensione rivela solo la fascia Padmé del contenuto
+(almeno 4 KiB, poi O(log log n) bit della lunghezza), non la lunghezza
+stessa. I vault in formato 1, ancora letti, tengono k e n in chiaro e non
+hanno padding.
 
 **Una passphrase per vault.** Tutte le immagini di un vault usano la stessa
 passphrase, quindi ogni custode che deve poter partecipare a un recupero la
 conosce. La passphrase protegge le immagini dagli estranei (ADV-2); la
 riservatezza tra i custodi si basa sulla soglia (SP-03), non sulla
-passphrase. La robustezza della passphrase non viene verificata: una
-passphrase indovinabile lascia solo il costo di scrypt (SP-07) tra ADV-2 e le
-quote.
+passphrase. La robustezza della passphrase viene stimata alla sigillatura e
+una passphrase sotto i 50 bit viene rifiutata (`--allow-weak-passphrase` lo
+consente comunque). La stima è pessimista per le passphrase scelte (la regola
+della lunghezza di NIST SP 800-63-1) ed esatta solo per quelle generate
+(`shardpix passphrase`, diceware dalla lista EFF, 12,9 bit per parola); non può
+sapere che una frase lunga è una citazione famosa. Una passphrase indovinabile
+lascia comunque solo il costo di Argon2id (SP-07) tra ADV-2 e le quote.
 
 **Python non è a tempo costante.** Le consultazioni di tabelle in GF(256) e
 altre operazioni su dati segreti hanno tempi di esecuzione dipendenti dai

@@ -4,9 +4,9 @@ A cover is embedded the way its file is stored:
 
 * **JPEG** (every phone camera): in the quantised DCT coefficients, written
   back as a JPEG with the same tables and metadata (:mod:`shardpix.jpeg`,
-  format 7);
+  format 9);
 * **anything else Pillow reads** (PNG, TIFF, BMP, RAW exports): in the
-  pixels, written as PNG (:mod:`shardpix.stego`, format 6).
+  pixels, written as PNG (:mod:`shardpix.stego`, format 8).
 
 The choice is made from the file's first bytes, not its name, and the
 output keeps the matching extension. Callers - the vault and the CLI - see
@@ -45,7 +45,7 @@ class Cover:
 
     @property
     def format_name(self) -> str:
-        return "JPEG (format 7)" if self.is_jpeg else "PNG (format 6)"
+        return "JPEG (format 9)" if self.is_jpeg else "PNG (format 8)"
 
     def capacity(self) -> int:
         """Largest payload, in bytes, this cover can hold."""

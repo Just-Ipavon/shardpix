@@ -14,7 +14,7 @@ classifiers = [
 ]
 authors = [{ name = "Pasquale Ruotolo" }]
 dependencies = [
-    "cryptography>=42",
+    "cryptography>=44",
     "jpeglib>=1.0",
     "numpy>=1.24",
     "pillow>=10.0",
@@ -57,6 +57,9 @@ shardpix = "shardpix.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["shardpix*"]
+
+[tool.setuptools.package-data]
+shardpix = ["data/eff_large_wordlist.txt", "data/README"]
 
 [tool.mutmut]
 source_paths = ["shardpix/gf256.py", "shardpix/shamir.py", "shardpix/stego.py", "shardpix/vault.py"]

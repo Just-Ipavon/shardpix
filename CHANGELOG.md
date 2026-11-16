@@ -40,6 +40,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Vault format 2, Argon2id images and passphrase checks (#34).** New vaults
+  keep the threshold and the number of images inside the ciphertext, so the
+  `.spx` file no longer says how many images open it, and pad the contents
+  to the Padmé length of at least 4 KiB, so its size no longer gives the
+  file's length. New images (formats 8 and 9) harden the passphrase with
+  Argon2id (256 MiB, 3 passes) instead of scrypt; the parameters are fixed
+  by the format, never written to the image. `seal` and `embed` refuse a
+  passphrase estimated below 50 bits (`--allow-weak-passphrase` overrides),
+  and `shardpix passphrase` generates diceware passphrases from the bundled
+  EFF word list (CC BY 3.0 US). Vault format 1 and image formats 3 to 7 are
+  still read; rewriting a vault's version byte fails authentication.
+  Requires `cryptography` 44 or later.
 - HEIC covers (#36) with the optional `shardpix[heic]` extra
   (`pillow-heif`): decoded to pixels and written as PNG (format 6), like
   other lossy inputs that are not JPEG. Without the extra, a HEIC file is

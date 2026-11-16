@@ -25,6 +25,7 @@ from rich.progress import Progress as ProgressBar
 from rich.table import Table
 
 from . import __version__, covers, jpeg, media, shamir, stego, vault
+from . import passphrase as passphrases
 from .analysis import chi_square, rs
 from .errors import (
     InconsistentSharesError,
@@ -50,7 +51,7 @@ images: any k of n images open it, fewer reveal nothing.
   share --adaptive +-1 changes------------>  one image per holder
 
 Covers are embedded the way their file is stored: phone JPEGs stay JPEG
-(format 7, same quality and metadata), PNG/TIFF/BMP become PNG (format 6).
+(format 9, same quality and metadata), PNG/TIFF/BMP become PNG (format 8).
 Run 'shardpix COMMAND -h' for the details and examples of each command."""
 
 EPILOG = """\
@@ -86,7 +87,8 @@ passphrases:
   -p prompts for one, --passphrase-file reads it from a file. Passphrases are
   never accepted on the command line, where the shell history would keep
   them. Hiding requires one; --insecure-no-passphrase hides without, and then
-  anyone running shardpix can find and read the payload.
+  anyone running shardpix can find and read the payload. A passphrase that
+  looks guessable is refused: 'shardpix passphrase' generates a strong one.
 
 documentation: https://github.com/Just-Ipavon/shardpix#readme"""
 
@@ -188,6 +190,10 @@ def require_passphrase(args: argparse.Namespace) -> str | None:
             "(--insecure-no-passphrase hides the data so that anyone running shardpix "
             "can read it)"
         )
+    if passphrase is not None and not args.allow_weak_passphrase:
+        problem = passphrases.check(passphrase)
+        if problem is not None:
+            raise ShardpixError(problem)
     return passphrase
 
 
@@ -442,6 +448,12 @@ def _add_passphrase_options(parser: argparse.ArgumentParser, *, hiding: bool = F
             action="store_true",
             help="hide without a passphrase: the data is still encrypted, but with a key "
             "anyone running shardpix can derive, so anyone can locate and read it",
+        )
+        parser.add_argument(
+            "--allow-weak-passphrase",
+            action="store_true",
+            help=f"accept a passphrase estimated below {passphrases.MIN_BITS} bits (a random "
+            "string you made yourself, say); the estimate is deliberately pessimistic",
         )
 
 
@@ -857,6 +869,18 @@ def cmd_split(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
+def cmd_passphrase(args: argparse.Namespace, console: Console) -> int:
+    for _ in range(args.count):
+        phrase = passphrases.generate(args.words)
+        print(phrase)
+    Console(stderr=True).print(
+        f"[dim]{args.words} words from the EFF list: "
+        f"{args.words * passphrases.WORD_BITS:.0f} bits each. Write it down; it is not "
+        "stored anywhere.[/]"
+    )
+    return 0
+
+
 def cmd_combine(args: argparse.Namespace, console: Console) -> int:
     if args.output is not None:
         inputs = input_files(args, *(Path(s) for s in args.shares if s != "-"))
@@ -942,8 +966,8 @@ def build_parser() -> argparse.ArgumentParser:
         "embed",
         "hide a message or a file in an image",
         "Hides one payload, encrypted and authenticated, in a single image. A JPEG\n"
-        "cover gives a JPEG (format 7: same quantisation tables and metadata);\n"
-        "anything else gives a PNG (format 6). The changes are placed where the\n"
+        "cover gives a JPEG (format 9: same quantisation tables and metadata);\n"
+        "anything else gives a PNG (format 8). The changes are placed where the\n"
         "image is textured, by syndrome-trellis codes. Use 'capacity' to see how\n"
         "much fits. The cover itself is never modified.\n\n" + KEYING_NOTE,
         "  shardpix embed photo.jpg -o out.jpg -t - -p\n"
@@ -1247,6 +1271,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace share files already in the folder (without -f shardpix refuses)",
     )
     p.set_defaults(handler=cmd_split)
+
+    p = _command(
+        sub,
+        "passphrase",
+        "generate a diceware passphrase",
+        "Draws words at random from the EFF large word list (7,776 words, 12.9 bits\n"
+        "each) with the operating system's random generator. Six words give about\n"
+        "77 bits: no one guesses that, even with an image to try it on.",
+        "  shardpix passphrase\n  shardpix passphrase --words 8 > passphrase.txt",
+    )
+    p.add_argument(
+        "--words",
+        type=int,
+        default=passphrases.DEFAULT_WORDS,
+        choices=range(4, 21),
+        metavar="N",
+        help="words per passphrase (4-20, default 6)",
+    )
+    p.add_argument(
+        "-n",
+        "--count",
+        type=int,
+        default=1,
+        choices=range(1, 101),
+        metavar="N",
+        help="how many passphrases to print (default 1)",
+    )
+    p.set_defaults(handler=cmd_passphrase)
 
     p = _command(
         sub,

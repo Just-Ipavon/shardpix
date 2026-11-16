@@ -66,7 +66,8 @@ class TestRoundTrip:
         assert sealed.header.threshold == 3 and sealed.header.shares == 5
 
     def test_vault_file_size(self, sealed, secret_file):
-        expected = vault.HEADER_BYTES + 2 + len("minutes.pdf") + secret_file.stat().st_size + 16
+        inner = vault.INNER_BYTES + len("minutes.pdf") + secret_file.stat().st_size
+        expected = vault.HEADER_BYTES_V2 + vault.padded_length(inner) + 16
         assert sealed.vault_path.stat().st_size == expected
 
     def test_without_a_passphrase(self, tmp_path, covers, secret_file):
@@ -78,7 +79,7 @@ class TestRoundTrip:
         jpegs = [phone_jpeg(tmp_path / f"cover{i}.jpg", seed=10 + i) for i in range(3)]
         result = vault.seal(secret_file, jpegs, 2, tmp_path / "out", PASSPHRASE)
         assert [image.output.suffix for image in result.images] == [".jpg"] * 3
-        assert {image.format for image in result.images} == {"JPEG (format 7)"}
+        assert {image.format for image in result.images} == {"JPEG (format 9)"}
         opened = vault.unseal(result.vault_path, images_of(result)[1:], PASSPHRASE)
         assert opened.data == secret_file.read_bytes()
 
@@ -445,7 +446,7 @@ class TestOutcomeDetails:
         result = vault.seal(
             secret_file, [photo, png], 2, tmp_path / "out", method=stego.Method.REPLACEMENT
         )
-        assert [i.format for i in result.images] == ["JPEG (format 7)", "PNG (format 6)"]
+        assert [i.format for i in result.images] == ["JPEG (format 9)", "PNG (format 8)"]
         original = load_image(png).pixels
         sealed_png = load_image(result.images[1].output).pixels
         assert np.array_equal(original >> 1, sealed_png >> 1)  # replacement only touches the LSB
@@ -571,3 +572,115 @@ class TestVerifyAndSelfCheck:
         monkeypatch.setattr(vault, "_check_share_written", lambda *a: calls.append(a))
         vault.seal(secret_file, covers[:3], 2, tmp_path / "out", PASSPHRASE, check=False)
         assert calls == []
+
+
+class TestVaultFormats:
+    """Format 2 (k and n encrypted, padded) is written; format 1 is still read."""
+
+    def _seal(self, tmp_path, covers, secret_file, version, **kw):
+        return vault.seal(
+            secret_file,
+            covers[:3],
+            2,
+            tmp_path / f"v{version}",
+            None,
+            method=stego.Method.MATCHING,
+            vault_version=version,
+            **kw,
+        )
+
+    @pytest.mark.parametrize("version", [vault.VERSION, vault.LEGACY_VERSION])
+    def test_round_trip(self, tmp_path, covers, secret_file, version):
+        result = self._seal(tmp_path, covers, secret_file, version)
+        raw = result.vault_path.read_bytes()
+        assert raw[4] == version
+        opened = vault.unseal(result.vault_path, images_of(result)[1:])
+        assert opened.data == secret_file.read_bytes() and opened.filename == "minutes.pdf"
+        assert (opened.header.threshold, opened.header.shares) == (2, 3)
+        checked = vault.verify(result.vault_path, images_of(result)[:2])
+        assert checked.opens and checked.header.described() == "2 of 3"
+
+    def test_format_2_keeps_k_and_n_out_of_the_file(self, tmp_path, covers, secret_file):
+        result = self._seal(tmp_path, covers, secret_file, vault.VERSION)
+        header, _ = vault.read_vault(result.vault_path)
+        assert (header.threshold, header.shares) == (None, None)
+        assert header.described() == "unknown until opened"
+        assert len(header.to_bytes()) == vault.HEADER_BYTES_V2
+
+    @pytest.mark.parametrize("size", [0, 1, 4000, 50_000, 50_001, 1_000_000])
+    def test_padding_hides_the_exact_length(self, size):
+        padded = vault.padded_length(size)
+        assert padded >= max(size, vault.MIN_PADDED_BYTES)
+        assert padded <= max(size, vault.MIN_PADDED_BYTES) * 1.12
+        # Nearby lengths share a bucket.
+        assert vault.padded_length(size + 1) in (padded, vault.padded_length(padded + 1))
+
+    def test_small_files_share_one_size(self, tmp_path, covers):
+        sizes = set()
+        for n in (1, 100, 2000):
+            source = tmp_path / f"s{n}.bin"
+            source.write_bytes(bytes(n))
+            result = vault.seal(
+                source,
+                covers[:2],
+                2,
+                tmp_path / f"o{n}",
+                None,
+                method=stego.Method.MATCHING,
+                check=False,
+            )
+            sizes.add(result.vault_path.stat().st_size)
+        assert len(sizes) == 1
+
+    def test_downgrade_to_format_1_is_refused(self, tmp_path, covers, secret_file):
+        """Rewriting a format-2 vault as format 1 (with any k, n) fails authentication."""
+        result = self._seal(tmp_path, covers, secret_file, vault.VERSION)
+        raw = result.vault_path.read_bytes()
+        group, nonce = raw[5:21], raw[21:33]
+        forged = vault.MAGIC + bytes([1]) + group + bytes([2, 3]) + nonce + raw[33:]
+        result.vault_path.write_bytes(forged)
+        with pytest.raises(VaultError):
+            vault.unseal(result.vault_path, images_of(result)[:2])
+
+    def test_upgrade_of_format_1_is_refused(self, tmp_path, covers, secret_file):
+        result = self._seal(tmp_path, covers, secret_file, vault.LEGACY_VERSION)
+        raw = result.vault_path.read_bytes()
+        group, nonce = raw[5:21], raw[23:35]
+        forged = vault.MAGIC + bytes([2]) + group + nonce + raw[35:]
+        result.vault_path.write_bytes(forged)
+        with pytest.raises(VaultError):
+            vault.unseal(result.vault_path, images_of(result)[:2])
+
+    def test_unknown_version_and_truncation(self, tmp_path):
+        path = tmp_path / "x.spx"
+        for data in (
+            vault.MAGIC + bytes([3]) + bytes(40),
+            vault.MAGIC + bytes([2]) + bytes(10),
+            b"SPX",
+        ):
+            path.write_bytes(data)
+            with pytest.raises(VaultError):
+                vault.read_vault(path)
+
+    def test_cannot_write_an_unknown_version(self, tmp_path, covers, secret_file):
+        with pytest.raises(VaultError):
+            self._seal(tmp_path, covers, secret_file, 3)
+
+    def test_too_few_images_reports_the_threshold_from_the_shares(
+        self, tmp_path, covers, secret_file
+    ):
+        result = self._seal(tmp_path, covers, secret_file, vault.VERSION)
+        with pytest.raises(VaultError, match="threshold is 2 of the images"):
+            vault.unseal(result.vault_path, images_of(result)[:1])
+
+    def test_old_scrypt_images_still_open_a_vault(self, tmp_path, covers, secret_file, monkeypatch):
+        """Images written before Argon2id (formats 6) open the vault next to new ones."""
+        result = vault.seal(secret_file, covers[:3], 2, tmp_path / "mixed", PASSPHRASE, check=False)
+        old_share = vault.media.reveal(images_of(result)[0], PASSPHRASE)
+        carrier = load_image(covers[0])
+        rewritten, _ = stego.embed(
+            carrier, old_share, PASSPHRASE, version=stego.SCRYPT_ADAPTIVE_VERSION
+        )
+        save_png(rewritten, images_of(result)[0], overwrite=True)
+        opened = vault.unseal(result.vault_path, images_of(result)[:2], PASSPHRASE)
+        assert opened.data == secret_file.read_bytes()
