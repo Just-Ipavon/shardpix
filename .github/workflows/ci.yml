@@ -114,3 +114,30 @@ jobs:
 
       - name: Test (torch- and matplotlib-dependent tests run here)
         run: pytest -q tests/test_ml.py tests/test_benchmarks.py -rs
+
+  package:
+    # What the release publishes, checked on every change: build the sdist
+    # and the wheel with the locked build tools, install the wheel outside
+    # the checkout and run the installed command.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Build (locked, hash-checked)
+        run: |
+          pip install --require-hashes -r requirements/release.lock
+          python scripts/pypi_readme.py main
+          python -m build --no-isolation
+
+      - name: Install the wheel and run it
+        run: |
+          pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          shardpix --version
+          python -c 'import importlib.resources as r; assert r.files("shardpix").joinpath("data/eff_large_wordlist.txt").is_file()'

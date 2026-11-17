@@ -9,6 +9,18 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - Two README figures carry a message for the curious.
+- shardpix is published on PyPI: `pipx install shardpix`. Releases go there
+  from GitHub through trusted publishing (no token), built with hash-locked
+  tools, behind an approval on the `pypi` environment; the release fails if
+  the tag does not match the package version. On PyPI the README's links and
+  images point at the tagged files on GitHub.
+- CI builds the sdist and the wheel on every change and runs the installed
+  command.
+
+### Changed
+
+- Package metadata uses an SPDX license expression (`GPL-3.0-or-later`) and
+  ships the license file in the wheel; setuptools 77 or later builds it.
 
 ## [4.0.0] — 2026-11-16
 
