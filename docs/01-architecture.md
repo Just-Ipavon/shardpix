@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-01 — Architectural view |
-| System | shardpix 4.0.0 |
+| System | shardpix 4.0.1 |
 | Status | Approved |
 | Last revised | 2026-10-18 |
 

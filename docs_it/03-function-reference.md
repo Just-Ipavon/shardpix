@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-03 — Specifica dettagliata dei componenti |
-| Sistema | shardpix 4.0.0 |
+| Sistema | shardpix 4.0.1 |
 | Stato | Approvato |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/03-function-reference.md](../docs/03-function-reference.md); in caso di differenze fa fede l'inglese) |
@@ -63,7 +63,7 @@ test di essere eseguita senza creare un solo file.
 
 ## 3.3 `shardpix/__init__.py` e `__main__.py`
 
-`__init__` espone solo `__version__` (`"4.0.0"`) e non importa alcun
+`__init__` espone solo `__version__` (`"4.0.1"`) e non importa alcun
 sottomodulo, così `import shardpix` è rapido e privo di effetti collaterali.
 `__main__` delega a `cli.main`, così lo strumento si esegue come
 `python -m shardpix` senza installazione.

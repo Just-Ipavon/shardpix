@@ -80,13 +80,16 @@ py -m pip install --user pipx    # Windows
 pipx ensurepath                  # Linux, macOS; then open a new terminal
 py -m pipx ensurepath            # Windows; then open a new PowerShell
 
-# 2. shardpix, straight from GitHub
-pipx install git+https://github.com/Just-Ipavon/shardpix.git
+# 2. shardpix, from PyPI
+pipx install shardpix
 shardpix --version
 ```
 
-Update to the latest version with `pipx reinstall shardpix`, remove it with
-`pipx uninstall shardpix`.
+Update to the latest version with `pipx upgrade shardpix`, remove it with
+`pipx uninstall shardpix`. HEIC photos need the optional extra:
+`pipx install "shardpix[heic]"`. To try the code on `main` before it is
+released, install from GitHub instead:
+`pipx install git+https://github.com/Just-Ipavon/shardpix.git`.
 
 ### Windows and PowerShell
 

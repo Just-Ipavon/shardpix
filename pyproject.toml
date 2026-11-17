@@ -1,16 +1,25 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shardpix"
-version = "4.0.0"
+version = "4.0.1"
 description = "Encrypt a file and hide k-of-n shares of its key in ordinary-looking images."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "GPL-3.0-or-later" }
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+keywords = ["steganography", "shamir", "secret-sharing", "encryption", "aes-gcm", "cli"]
 classifiers = [
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security :: Cryptography",
 ]
 authors = [{ name = "Pasquale Ruotolo" }]
 dependencies = [
@@ -25,6 +34,7 @@ dependencies = [
 Homepage = "https://github.com/Just-Ipavon/shardpix"
 Documentation = "https://github.com/Just-Ipavon/shardpix/tree/main/docs"
 Issues = "https://github.com/Just-Ipavon/shardpix/issues"
+Changelog = "https://github.com/Just-Ipavon/shardpix/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # HEIC/HEIF covers (iPhone "High Efficiency" photos), decoded to pixels.

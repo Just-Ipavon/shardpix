@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-06 — Internal security review report |
-| System | shardpix 4.0.0 (first review on 1.0.0-1.1.0, second review on 2.0.0, §6.13) |
+| System | shardpix 4.0.1 (first review on 1.0.0-1.1.0, second review on 2.0.0, §6.13) |
 | Status | Complete |
 | Last revised | 2026-10-18 |
 
