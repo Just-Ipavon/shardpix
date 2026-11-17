@@ -7,7 +7,7 @@
 #       -c "bash ../assets/demo.sh"
 #   python ../assets/retime.py ../assets/demo.cast ../assets/demo.cast
 #   npx svg-term-cli --in ../assets/demo.cast --out ../assets/demo.svg \
-#       --window --width 100 --height 35 --padding 14
+#       --window --width 100 --height 37 --padding 14
 #
 # SHARDPIX overrides the binary, e.g. SHARDPIX=../.venv/bin/shardpix.
 
@@ -30,6 +30,7 @@ run_typed() {
     sleep 1.5
 }
 
+run_typed "shardpix passphrase > key"
 run_typed "shardpix seal docs/notes.pdf photos/*.png -k 3 --passphrase-file key"
 run_typed "shardpix unseal sealed/notes.pdf.spx sealed/{coffee,street,astronaut}.png --passphrase-file key"
 run_typed "cmp docs/notes.pdf notes.pdf && echo identical"
