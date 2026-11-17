@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Document | SDD-07 — Covers, image formats and embedding methods |
-| System | shardpix 4.0.0 |
+| System | shardpix 4.0.1 |
 | Status | Approved |
 | Last revised | 2026-10-18 |
 

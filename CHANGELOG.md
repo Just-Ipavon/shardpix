@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [4.0.1] — 2026-11-17
+
 ### Added
 
 - Two README figures carry a message for the curious.

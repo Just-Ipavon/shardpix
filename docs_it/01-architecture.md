@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-01 — Vista architetturale |
-| Sistema | shardpix 4.0.0 |
+| Sistema | shardpix 4.0.1 |
 | Stato | Approvato |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/01-architecture.md](../docs/01-architecture.md); in caso di differenze fa fede l'inglese) |

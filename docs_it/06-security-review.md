@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Documento | SDD-06 — Rapporto della revisione di sicurezza interna |
-| Sistema | shardpix 4.0.0 (prima revisione sulla 1.0.0-1.1.0, seconda revisione sulla 2.0.0, §6.13) |
+| Sistema | shardpix 4.0.1 (prima revisione sulla 1.0.0-1.1.0, seconda revisione sulla 2.0.0, §6.13) |
 | Stato | Completo |
 | Ultima revisione | 2026-10-18 |
 | Lingua | Italiano (traduzione di [docs/06-security-review.md](../docs/06-security-review.md); in caso di differenze fa fede l'inglese) |
