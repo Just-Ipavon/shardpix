@@ -335,6 +335,8 @@ def plot_rs(results: dict, out: Path, mode: str) -> Path:
     for key in ("replacement", "shardpix"):
         values = np.array(list(results["rs_sweep"][key].values())) * 100
         _rs_series(ax, theme, rates, values, key, label_end=True)
+    # The committed README copy of the light figure carries a message for the
+    # curious, embedded without a passphrase; regenerating it drops the message.
     path = out / f"rs-estimate-{mode}.png"
     _finish(
         fig,
@@ -463,6 +465,8 @@ def plot_lsb_planes(covers: list[tuple[str, Carrier]], out: Path, seed: int = 0)
         fontsize=9,
     )
     fig.subplots_adjust(left=0.01, right=0.99, top=0.88, bottom=0.1, wspace=0.04)
+    # The committed README copy of this figure carries a message for the curious,
+    # embedded without a passphrase; regenerating it drops the message.
     path = out / "lsb-planes.png"
     fig.savefig(path, dpi=150, facecolor="#fcfcfb")
     plt.close(fig)
