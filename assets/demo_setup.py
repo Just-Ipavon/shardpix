@@ -1,7 +1,8 @@
 """Prepare the directory the README demo is recorded in.
 
-Writes five PNG photographs (scikit-image samples, public domain or CC0), a
-dummy "docs/notes.pdf" and a passphrase file.
+Writes five PNG photographs (scikit-image samples, public domain or CC0) and a
+dummy "docs/notes.pdf". The demo itself generates the passphrase file with
+"shardpix passphrase", since seal refuses weak passphrases.
 
 Usage:
     python assets/demo_setup.py <directory>
@@ -28,5 +29,4 @@ target = Path(sys.argv[1] if len(sys.argv) > 1 else "demo")
 for name, load in PHOTOS.items():
     Image.fromarray(load()).save(target / "photos" / f"{name}.png")
 (target / "docs" / "notes.pdf").write_bytes(np.random.default_rng(0).bytes(48_213))
-(target / "key").write_text("correct horse battery staple\n", encoding="utf-8")
 print(f"demo directory ready: {target}")
